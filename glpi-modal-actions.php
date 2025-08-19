@@ -37,8 +37,47 @@ add_action('wp_enqueue_scripts', function () {
 
 // -------- ПРАВА: решай здесь, кому можно менять тикеты --------
 function gexe_can_touch_glpi_ticket($ticket_id) {
-    // TODO: замени на реальную проверку (сопоставление WP user -> GLPI user)
-    return is_user_logged_in();
+    if (!is_user_logged_in()) {
+        return false;
+    }
+
+    $wp_uid   = get_current_user_id();
+    $glpi_uid = intval(get_user_meta($wp_uid, 'glpi_user_id', true));
+    if ($glpi_uid <= 0) {
+        return false;
+    }
+
+    global $wpdb;
+
+    $tProfilesUsers = $wpdb->prefix . 'glpi_profiles_users';
+    $tProfilerights = $wpdb->prefix . 'glpi_profilerights';
+
+    // Проверяем глобальные права на обновление тикетов
+    $has_right = $wpdb->get_var(
+        $wpdb->prepare(
+            "SELECT 1 FROM {$tProfilesUsers} pu
+             JOIN {$tProfilerights} pr ON pu.profiles_id = pr.profiles_id
+             WHERE pu.users_id = %d AND pr.name = 'ticket' AND (pr.rights & 2) > 0
+             LIMIT 1",
+            $glpi_uid
+        )
+    );
+    if ($has_right) {
+        return true;
+    }
+
+    // Проверяем, является ли пользователь участником тикета
+    $tTicketsUsers = $wpdb->prefix . 'glpi_tickets_users';
+    $is_member = $wpdb->get_var(
+        $wpdb->prepare(
+            "SELECT 1 FROM {$tTicketsUsers}
+             WHERE tickets_id = %d AND users_id = %d LIMIT 1",
+            $ticket_id,
+            $glpi_uid
+        )
+    );
+
+    return (bool) $is_member;
 }
 
 // -------- AJAX: загрузка комментариев тикета --------
