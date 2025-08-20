@@ -83,15 +83,11 @@ function gexe_can_touch_glpi_ticket($ticket_id) {
 // -------- AJAX: загрузка комментариев тикета --------
 add_action('wp_ajax_glpi_get_comments', 'gexe_glpi_get_comments');
 add_action('wp_ajax_nopriv_glpi_get_comments', 'gexe_glpi_get_comments');
-function gexe_glpi_get_comments() {
-    check_ajax_referer('glpi_modal_actions');
-
-    // Если GLPI в другой БД — подключи отдельный wpdb здесь (пример ниже закомментирован)
+function gexe_render_comments($ticket_id) {
     global $wpdb;
-    // $glpi = new wpdb('user','pass','glpi_db','127.0.0.1'); $glpi->query("SET NAMES utf8mb4");
-
-    $ticket_id = isset($_POST['ticket_id']) ? intval($_POST['ticket_id']) : 0;
-    if ($ticket_id <= 0) { wp_die(''); }
+    if ($ticket_id <= 0) {
+        return '';
+    }
 
     // !!! ВАЖНО: проверь имена таблиц. Ниже — типичные для GLPI 9.x.
     $tFollowups = $wpdb->prefix . 'glpi_ticketfollowups'; // при другом префиксе подставь свой
@@ -99,14 +95,16 @@ function gexe_glpi_get_comments() {
     // Тянем комментарии по возрастанию даты
     $rows = $wpdb->get_results(
         $wpdb->prepare(
-            "SELECT id, users_id, date, content 
+            "SELECT id, users_id, date, content
              FROM {$tFollowups}
              WHERE tickets_id = %d
              ORDER BY date ASC", $ticket_id
         ), ARRAY_A
     );
 
-    if (!$rows) { wp_die('<div class="glpi-empty">Нет комментариев</div>'); }
+    if (!$rows) {
+        return '<div class="glpi-empty">Нет комментариев</div>';
+    }
 
     // Рендерим компактный HTML (GLPI часто хранит HTML в content — сохраняем)
     $out = '';
@@ -119,21 +117,30 @@ function gexe_glpi_get_comments() {
               . '<div class="text">' . $txt . '</div>'
               . '</div>';
     }
-    wp_die($out);
+    return $out;
+}
+
+function gexe_glpi_get_comments() {
+    check_ajax_referer('glpi_modal_actions');
+    $ticket_id = isset($_POST['ticket_id']) ? intval($_POST['ticket_id']) : 0;
+    wp_die(gexe_render_comments($ticket_id));
 }
 
 // -------- AJAX: действия по тикету (принять, закрыть, сменить исполнителя/статус) --------
 add_action('wp_ajax_glpi_card_action', 'gexe_glpi_card_action');
 function gexe_glpi_card_action() {
     check_ajax_referer('glpi_modal_actions');
-    header('Content-Type: application/json; charset=utf-8');
 
     $ticket_id = isset($_POST['ticket_id']) ? intval($_POST['ticket_id']) : 0;
     $type      = isset($_POST['type']) ? sanitize_key($_POST['type']) : '';
     $payload   = isset($_POST['payload']) ? json_decode(stripslashes($_POST['payload']), true) : [];
 
-    if ($ticket_id <= 0 || !$type) { echo json_encode(['ok'=>false,'error'=>'bad_request']); wp_die(); }
-    if (!gexe_can_touch_glpi_ticket($ticket_id)) { echo json_encode(['ok'=>false,'error'=>'forbidden']); wp_die(); }
+    if ($ticket_id <= 0 || !$type) {
+        wp_send_json(['ok' => false, 'error' => 'bad_request']);
+    }
+    if (!gexe_can_touch_glpi_ticket($ticket_id)) {
+        wp_send_json(['ok' => false, 'error' => 'forbidden']);
+    }
 
     // Если GLPI в другой БД — используй свой объект $glpi вместо $wpdb
     global $wpdb;
@@ -143,7 +150,7 @@ function gexe_glpi_card_action() {
     $tAssignees = $wpdb->prefix . 'glpi_tickets_users'; // type: 2 = assigned
     $tFollowups = $wpdb->prefix . 'glpi_ticketfollowups';
 
-    $ok = false; 
+    $ok = false;
     $new_status = null;
 
     if ($type === 'start') {
@@ -205,17 +212,12 @@ function gexe_glpi_card_action() {
     // Вернём обновлённые комментарии (для моментальной перерисовки)
     $comment_html = '';
     if ($ok) {
-        // Переиспользуем рендер комментариев (без дублирования логики)
-        ob_start();
-        $_POST['ticket_id'] = $ticket_id;
-        gexe_glpi_get_comments(); // позовёт wp_die(), поэтому buffer
-        $comment_html = ob_get_clean();
+        $comment_html = gexe_render_comments($ticket_id);
     }
 
-    echo json_encode([
+    wp_send_json([
         'ok' => (bool)$ok,
         'new_status' => $new_status,
         'comment_html' => $comment_html
     ]);
-    wp_die();
 }
