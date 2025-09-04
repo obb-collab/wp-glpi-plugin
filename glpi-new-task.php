@@ -21,6 +21,16 @@ add_action('wp_enqueue_scripts', function () {
         '1.0.0'
     );
     wp_enqueue_style('glpi-new-task');
+
+    // Скрипт модального окна создания заявки
+    wp_register_script(
+        'glpi-new-task-js',
+        plugin_dir_url(__FILE__) . 'glpi-new-task.js',
+        [],
+        '1.0.0',
+        true
+    );
+    wp_enqueue_script('glpi-new-task-js');
 });
 
 // -------- AJAX: списки категорий и местоположений --------
