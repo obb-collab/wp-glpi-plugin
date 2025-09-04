@@ -176,6 +176,7 @@ body {
 .glpi-comment{ background:#1e293b; border:1px solid #334155; border-radius:8px; padding:8px 12px; color:#e2e8f0; font-size:14px; }
 .glpi-comment + .glpi-comment{ margin-top:8px; }
 .glpi-comment .meta{ font-size:12px; color:#94a3b8; margin-bottom:4px; }
+.glpi-comment .meta .glpi-executor{ margin-right:4px; opacity:.6; }
 .glpi-comment .text{ line-height:1.4; }
 .glpi-comment .glpi-txt{ margin:0 0 4px 0; }
 .glpi-empty{ text-align:center; padding:12px 0; color:#94a3b8; font-size:13px; }

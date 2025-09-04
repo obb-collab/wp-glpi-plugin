@@ -154,6 +154,7 @@ function gexe_cat_slug($leaf) {
 
       $clean_desc    = gexe_clean_html_text($t['content']);
       $desc_short    = esc_html(gexe_trim_words($clean_desc, 40, '…'));
+      $desc_full_attr = esc_attr($clean_desc);
 
       // Дочерняя категория
       $leaf_cat      = gexe_leaf_category($t['category']);
@@ -185,7 +186,7 @@ function gexe_cat_slug($leaf) {
           <div class="glpi-ticket-id">#<?php echo intval($t['id']); ?></div>
         </div>
         <div class="glpi-card-body">
-          <p class="glpi-desc"><?php echo $desc_short; ?></p>
+          <p class="glpi-desc" data-full="<?php echo $desc_full_attr; ?>"><?php echo $desc_short; ?></p>
         </div>
         <div class="glpi-executor-footer"><?php echo $executors_html; ?></div>
         <div class="glpi-date-footer" data-date="<?php echo esc_attr((string)$t['date']); ?>"></div>

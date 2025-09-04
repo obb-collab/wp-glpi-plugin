@@ -213,6 +213,11 @@
     const clone = cardEl.cloneNode(true);
     clone.classList.add('glpi-card--in-modal');
     const act = $('.gexe-card-actions', clone); if (act) act.remove();
+    const desc = $('.glpi-desc', clone);
+    if (desc) {
+      const full = desc.getAttribute('data-full');
+      if (full) desc.textContent = full;
+    }
     wrap.appendChild(clone);
   }
 
