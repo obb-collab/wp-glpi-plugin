@@ -87,16 +87,16 @@
     });
   }
 
-  /* ========================= «Новые» и «Новая заявка» ========================= */
+  /* ========================= «Пора тушить» и «Новая заявка» ========================= */
   function ensureExtraStatusBlocks() {
     const row = document.querySelector('.glpi-status-blocks,.glpi-status-row,.glpi-header-row');
     if (!row) return;
 
-    // Кнопка «Новые» (вместо "надо тушить"): действует как фильтр по data-late="1"
+    // Кнопка «Пора тушить»: действует как фильтр по data-late="1"
     if (!document.querySelector('.glpi-newfilter-block')) {
       const btn = document.createElement('button');
       btn.className = 'glpi-status-block glpi-newfilter-block';
-      btn.innerHTML = '<div class="status-count">0</div><div class="status-label">Новые</div>';
+      btn.innerHTML = '<div class="status-count">0</div><div class="status-label">Пора тушить</div>';
       btn.addEventListener('click', () => {
         btn.classList.toggle('active');
         document.dispatchEvent(new CustomEvent('gexe:filters:changed'));

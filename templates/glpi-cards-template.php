@@ -117,9 +117,6 @@ function gexe_cat_slug($leaf) {
           <span class="status-label">Новые</span>
         </div>
       </div>
-
-      <div class="glpi-status-block glpi-late-block glpi-filter-btn" data-filter="late"><span class="status-count">&nbsp;</span><span class="status-label">Надо тушить</span></div>      </div>
-
     </div>
 
     <!-- Блоки категорий (Сегодня в программе) -->
