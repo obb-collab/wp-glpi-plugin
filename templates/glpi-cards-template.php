@@ -185,7 +185,7 @@ function gexe_cat_slug($leaf) {
           <div class="glpi-ticket-id">#<?php echo intval($t['id']); ?></div>
         </div>
         <div class="glpi-card-body">
-          <p class="glpi-desc"><?php echo $desc_short; ?></p>
+          <p class="glpi-desc" data-full="<?php echo esc_attr($clean_desc); ?>"><?php echo $desc_short; ?></p>
         </div>
         <div class="glpi-executor-footer"><?php echo $executors_html; ?></div>
         <div class="glpi-date-footer" data-date="<?php echo esc_attr((string)$t['date']); ?>"></div>
