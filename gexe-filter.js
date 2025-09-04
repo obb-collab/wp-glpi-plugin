@@ -172,6 +172,10 @@
       currentCategory = String(tgt.getAttribute('data-cat') || 'all').toLowerCase();
       document.querySelectorAll('.category-filter-btn, .glpi-category-tag').forEach(b => b.classList.remove('active'));
       tgt.classList.add('active');
+      // при выборе категории сбрасываем фильтр статусов
+      $$('.status-filter-btn').forEach(b => b.classList.remove('active'));
+      const allBtn = document.querySelector('.status-filter-btn[data-status="all"]');
+      if (allBtn) allBtn.classList.add('active');
       recalcStatusCounts(); recalcCategoryVisibility(); filterCards();
     }, true);
   }
@@ -527,7 +531,6 @@
     let total = 0;
     $$('.glpi-card').forEach(card => {
       if (!cardMatchesExecutor(card)) return;
-      if (!cardMatchesCategory(card)) return;
       const s = String(card.getAttribute('data-status') || '');
       if (counts.hasOwnProperty(s)) counts[s]++;
       total++;
@@ -570,10 +573,9 @@
       btn.addEventListener('click', () => {
         $$('.status-filter-btn').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
-        if ((btn.getAttribute('data-status') || 'all') === 'all') {
-          currentCategory = 'all';
-          $$('.category-filter-btn, .glpi-category-tag').forEach(b => b.classList.remove('active'));
-        }
+        // при выборе статуса сбрасываем выбранные категории
+        currentCategory = 'all';
+        $$('.category-filter-btn, .glpi-category-tag').forEach(b => b.classList.remove('active'));
         recalcStatusCounts(); recalcCategoryVisibility(); filterCards();
       });
     });

@@ -96,11 +96,11 @@ function gexe_cat_slug($leaf) {
       <div class="glpi-status-row">
       <!-- Блоки статусов -->
       <div class="glpi-status-blocks">
-        <div class="glpi-status-block status-filter-btn active" data-status="all" data-label="Все задачи">
+        <div class="glpi-status-block status-filter-btn" data-status="all" data-label="Все задачи">
           <span class="status-count"><?php echo intval($total_count); ?></span>
           <span class="status-label">Все задачи</span>
         </div>
-        <div class="glpi-status-block status-filter-btn" data-status="2" data-label="В работе">
+        <div class="glpi-status-block status-filter-btn active" data-status="2" data-label="В работе">
           <span class="status-count"><?php echo intval($status_counts[2] ?? 0); ?></span>
           <span class="status-label">В работе</span>
         </div>
