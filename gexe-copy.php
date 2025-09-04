@@ -8,6 +8,21 @@ Author: G-Exe
 
 if (!defined('ABSPATH')) exit;
 
+// ----- Capabilities -----
+register_activation_hook(__FILE__, function () {
+    $role = get_role('administrator');
+    if ($role) {
+        $role->add_cap('create_glpi_ticket');
+    }
+});
+
+register_deactivation_hook(__FILE__, function () {
+    $role = get_role('administrator');
+    if ($role) {
+        $role->remove_cap('create_glpi_ticket');
+    }
+});
+
 // ====== СТАТИКА (CSS/JS) с принудительным обновлением версий ======
 add_action('wp_enqueue_scripts', function () {
     $css_path = plugin_dir_path(__FILE__) . 'gee.css';
