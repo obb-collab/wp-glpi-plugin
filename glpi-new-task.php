@@ -10,6 +10,8 @@
 
 if (!defined('ABSPATH')) exit;
 
+require_once __DIR__ . '/glpi-utils.php';
+
 add_action('wp_enqueue_scripts', function () {
     // Стили окна создания заявки
     wp_register_style(
@@ -20,24 +22,6 @@ add_action('wp_enqueue_scripts', function () {
     );
     wp_enqueue_style('glpi-new-task');
 });
-
-// Берём функцию из glpi-modal-actions.php, если она уже определена
-if (!function_exists('gexe_get_current_glpi_uid')) {
-    function gexe_get_current_glpi_uid() {
-        if (!is_user_logged_in()) return 0;
-
-        $wp_uid = get_current_user_id();
-
-        $glpi_uid = intval(get_user_meta($wp_uid, 'glpi_user_id', true));
-        if ($glpi_uid > 0) return $glpi_uid;
-
-        $key = get_user_meta($wp_uid, 'glpi_user_key', true);
-        if (preg_match('~^\d+$~', (string)$key)) {
-            return (int)$key;
-        }
-        return 0;
-    }
-}
 
 // -------- AJAX: списки категорий и местоположений --------
 add_action('wp_ajax_glpi_dropdowns', 'gexe_glpi_dropdowns');
