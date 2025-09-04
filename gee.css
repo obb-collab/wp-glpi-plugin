@@ -79,7 +79,7 @@ body {
 .glpi-header-row { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; justify-content: flex-start; margin-bottom: 12px; }
 
 /* Поиск — на всю ширину и всегда сверху */
-.glpi-header-row .glpi-search-block{order:0; width:100%;}
+.glpi-header-row .glpi-search-block{order:-1; width:100%;}
 .glpi-search-block { flex: 1 1 100%; min-width: 220px; }
 .glpi-search-input {
   all: unset; width: 100%; box-sizing: border-box;
