@@ -103,28 +103,28 @@ add_action('wp_ajax_glpi_get_comments', 'gexe_glpi_get_comments');
 add_action('wp_ajax_nopriv_glpi_get_comments', 'gexe_glpi_get_comments');
 
 function gexe_render_comments($ticket_id) {
-    global $glpi_db;
     if ($ticket_id <= 0) return '';
 
+    // кэшируем HTML комментариев, чтобы ускорить повторные открытия карточки
+    $cache_key = 'glpi_comments_' . $ticket_id;
+    $cached    = get_transient($cache_key);
+    if ($cached !== false) return $cached;
+
+    global $glpi_db;
     $rows = $glpi_db->get_results($glpi_db->prepare(
-        "SELECT id, users_id, date, content
-         FROM glpi_itilfollowups
-         WHERE itemtype = 'Ticket'
-           AND items_id = %d
-         ORDER BY date ASC",
+        "SELECT f.id, f.users_id, f.date, f.content, u.realname, u.firstname
+         FROM glpi_itilfollowups AS f
+         LEFT JOIN glpi_users AS u ON u.id = f.users_id
+         WHERE f.itemtype = 'Ticket'
+           AND f.items_id = %d
+         ORDER BY f.date ASC",
         $ticket_id
     ), ARRAY_A);
 
-    if (!$rows) return '<div class="glpi-empty">Нет комментариев</div>';
-
-    // Авторы
-    $uids = [];
-    foreach ($rows as $r) { $u = intval($r['users_id']); if ($u > 0) $uids[$u] = true; }
-    $name_map = [];
-    if (!empty($uids)) {
-        $ids = implode(',', array_map('intval', array_keys($uids)));
-        $users = $glpi_db->get_results("SELECT id, realname, firstname FROM glpi_users WHERE id IN ($ids)", ARRAY_A);
-        if ($users) foreach ($users as $u) $name_map[intval($u['id'])] = gexe_compose_short_name($u['realname'], $u['firstname']);
+    if (!$rows) {
+        $empty = '<div class="glpi-empty">Нет комментариев</div>';
+        set_transient($cache_key, $empty, 60);
+        return $empty;
     }
 
     $out = '';
@@ -132,13 +132,16 @@ function gexe_render_comments($ticket_id) {
         $when = esc_html($r['date']);
         $uid  = intval($r['users_id']);
         $txt  = gexe_clean_comment_html((string)$r['content']);
-        $who  = ($uid > 0 && isset($name_map[$uid]) && $name_map[$uid] !== '') ? $name_map[$uid] : ('Автор ID ' . $uid);
+        $who  = gexe_compose_short_name($r['realname'] ?? '', $r['firstname'] ?? '');
+        if ($who === '') $who = 'Автор ID ' . $uid;
 
         $out .= '<div class="glpi-comment">'
               .   '<div class="meta">' . esc_html($who) . ' • ' . $when . '</div>'
               .   '<div class="text">' . $txt . '</div>'
               . '</div>';
     }
+
+    set_transient($cache_key, $out, 60);
     return $out;
 }
 function gexe_glpi_get_comments() {
@@ -292,6 +295,8 @@ function gexe_glpi_add_comment() {
             "SELECT COUNT(*) FROM glpi_itilfollowups WHERE itemtype='Ticket' AND items_id=%d",
             $ticket_id
         ));
+        // очищаем кэш комментариев, чтобы при следующем открытии загрузились свежие данные
+        delete_transient('glpi_comments_' . $ticket_id);
     }
 
     wp_send_json(['ok' => (bool)$ok, 'count' => $count]);
