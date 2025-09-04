@@ -96,6 +96,10 @@ function gexe_glpi_create_ticket() {
         wp_send_json(['ok' => false, 'error' => 'not_logged_in']);
     }
 
+    if (!current_user_can('create_glpi_ticket')) {
+        wp_send_json(['ok' => false, 'error' => 'forbidden']);
+    }
+
     $payload_raw = isset($_POST['payload']) ? stripslashes((string)$_POST['payload']) : '';
     $payload = json_decode($payload_raw, true);
     if (!is_array($payload)) $payload = [];
