@@ -105,13 +105,13 @@
     }
 
     // Кнопка «Новая заявка» — открываем модалку из glpi-new-task.php
-    if (!document.querySelector('.glpi-newtask-block')) {
-      const add = document.createElement('button');
-      add.className = 'glpi-status-block glpi-newtask-block';
-      add.innerHTML = '<div class="status-count"><i class="fa-regular fa-file-lines"></i></div><div class="status-label">новая заявка</div>';
-      add.addEventListener('click', openNewTaskModal);
-      row.appendChild(add);
-    }
+    // Удаляем все существующие кнопки, чтобы не было дублей
+    document.querySelectorAll('.glpi-newtask-block').forEach(btn => btn.remove());
+    const add = document.createElement('button');
+    add.className = 'glpi-status-block glpi-newtask-block';
+    add.innerHTML = '<div class="status-count"><i class="fa-regular fa-file-lines"></i></div><div class="status-label">новая заявка</div>';
+    add.addEventListener('click', openNewTaskModal);
+    row.appendChild(add);
   }
   function openNewTaskModal() {
     try {
