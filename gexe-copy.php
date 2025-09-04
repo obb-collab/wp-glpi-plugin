@@ -22,13 +22,7 @@ add_action('wp_enqueue_scripts', function () {
 });
 
 // ====== ПОДКЛЮЧЕНИЕ К БД GLPI ======
-global $glpi_db;
-$glpi_db = new wpdb(
-    'wp_glpi',            // db user
-    'xapetVD4OWZqw8f',    // db password
-    'glpi',               // db name
-    '192.168.100.12'      // db host
-);
+require_once __DIR__ . '/glpi-db-setup.php';
 
 // ====== УТИЛИТЫ ======
 function gexe_autoname($realname, $firstname) {

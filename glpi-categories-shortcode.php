@@ -1,7 +1,7 @@
 <?php
 /**
- * Plugin Name: GLPI Categories Shortcode (uses $glpi_db from gexe-copy.php)
- * Description: [glpi_categories] — выводит категории GLPI, используя готовый $glpi_db (wpdb) из gexe-copy.php.
+ * Plugin Name: GLPI Categories Shortcode
+ * Description: [glpi_categories] — выводит категории GLPI, используя $glpi_db (wpdb) из glpi-db-setup.php.
  * Version: 1.0.0
  */
 
@@ -9,23 +9,13 @@ if (!defined('ABSPATH')) { exit; } // только из WP
 
 add_shortcode('glpi_categories', function () {
 
-    // 1) Подключаем gexe-copy.php без побочного вывода
-    $gexe = null;
-    foreach ([__DIR__ . '/gexe-copy.php', __DIR__ . '/G-Exe-Copy.php'] as $p) {
-        if (is_file($p)) { $gexe = $p; break; }
-    }
-    if (!$gexe) {
-        return '<div style="color:#ef4444">gexe-copy.php не найден рядом с этим файлом.</div>';
-    }
-    $lvl = ob_get_level();
-    ob_start();
-    require_once $gexe;
-    while (ob_get_level() > $lvl) { ob_end_clean(); }
+    // 1) Подключаем модуль инициализации БД GLPI
+    require_once __DIR__ . '/glpi-db-setup.php';
 
     // 2) Проверяем готовый $glpi_db (wpdb)
     global $glpi_db;
     if (!($glpi_db instanceof wpdb)) {
-        return '<div style="color:#ef4444">$glpi_db (wpdb) не найден в gexe-copy.php.</div>';
+        return '<div style="color:#ef4444">$glpi_db (wpdb) не найден.</div>';
     }
 
     // 3) Тянем категории из GLPI
