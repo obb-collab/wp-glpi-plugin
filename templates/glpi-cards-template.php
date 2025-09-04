@@ -129,7 +129,10 @@ function gexe_cat_slug($leaf) {
           $icon = function_exists('glpi_get_icon_by_category') ? glpi_get_icon_by_category(mb_strtolower($leaf)) : '<i class="fa-solid fa-tag"></i>';
           $label = gexe_truncate_label($leaf, 12);
       ?>
-        <span class="glpi-category-tag category-filter-btn" data-cat="<?php echo esc_attr(strtolower($slug)); ?>">
+        <span class="glpi-category-tag category-filter-btn"
+              data-cat="<?php echo esc_attr(strtolower($slug)); ?>"
+              data-label="<?php echo esc_attr($label); ?>"
+              data-count="<?php echo intval($count); ?>">
           <?php echo $icon; ?> <?php echo esc_html($label); ?> (<?php echo intval($count); ?>)
         </span>
       <?php endforeach; ?>
