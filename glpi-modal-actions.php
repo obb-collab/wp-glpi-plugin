@@ -136,7 +136,10 @@ function gexe_render_comments($ticket_id) {
         if ($who === '') $who = 'Автор ID ' . $uid;
 
         $out .= '<div class="glpi-comment">'
-              .   '<div class="meta">' . esc_html($who) . ' • ' . $when . '</div>'
+              .   '<div class="meta">'
+              .     '<span class="glpi-comment-author"><i class="fa-regular fa-user"></i> ' . esc_html($who) . '</span>'
+              .     '<span class="glpi-comment-date">' . $when . '</span>'
+              .   '</div>'
               .   '<div class="text">' . $txt . '</div>'
               . '</div>';
     }
