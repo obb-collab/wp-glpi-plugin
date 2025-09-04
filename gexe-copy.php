@@ -1,9 +1,9 @@
 <?php
 /*
-Plugin Name: G-Exe-Copy
-Description: Отображение заявок GLPI с фильтрацией и иконками + привязка WP↔GLPI.
-Version: 1.5
-Author: G-Exe
+Plugin Name: WP GLPI Plugin
+Version: 1.0.0
+GitHub Plugin URI: obb-collab/wp-glpi-plugin
+Primary Branch: main
 */
 
 if (!defined('ABSPATH')) exit;
