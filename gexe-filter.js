@@ -234,7 +234,7 @@
           '<button class="gexe-cmnt__close" aria-label="Закрыть"><i class="fa-solid fa-xmark"></i></button>' +
         '</div>' +
         '<div class="gexe-cmnt__body">' +
-          '<textarea id="gexe-cmnt-text" placeholder="Ваш комментарий..." rows="6"></textarea>' +
+          '<textarea id="gexe-cmnt-text" placeholder="Ваш комментарий..." rows="3"></textarea>' +
         '</div>' +
         '<div class="gexe-cmnt__foot">' +
           '<button id="gexe-cmnt-send" class="glpi-act">Отправить</button>' +
