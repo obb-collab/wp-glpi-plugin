@@ -170,10 +170,10 @@ body {
 .gexe-cmnt__close{ margin-left:auto; border:0; background:transparent; color:#94a3b8; font-size:22px; cursor:pointer; }
 .gexe-cmnt__close:hover{ color:#f1f5f9; }
 .gexe-cmnt__body{ padding:12px; }
-#gexe-cmnt-text{ width:100%; min-height:160px; resize:vertical; border-radius:8px; border:1px solid #334155; background:#0b1220; color:#e5e7eb; padding:10px; }
-.gexe-cmnt__foot{ padding:12px; border-top:1px solid #334155; display:flex; justify-content:flex-end; }
-#gexe-cmnt-send.glpi-act{background:#2563eb;border-color:#1d4ed8;color:#fff;border-radius:10px;font-weight:700}
-#gexe-cmnt-send.glpi-act:hover{background:#1d4ed8}
+#gexe-cmnt-text{ width:100%; min-height:80px; resize:vertical; border-radius:8px; border:1px solid #475569; background:#0b1220; color:#e5e7eb; padding:10px; }
+.gexe-cmnt__foot{ padding:12px; border-top:1px solid #334155; }
+#gexe-cmnt-send.glpi-act{background:#475569;border:1px solid #334155;color:#fff;border-radius:10px;font-weight:700;width:100%;display:block}
+#gexe-cmnt-send.glpi-act:hover{background:#334155}
 
 /* Утилиты */
 .glpi-card.gexe-hide{display:none!important;}
