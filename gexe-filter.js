@@ -54,10 +54,34 @@
       .replace(/^-+|-+$/g,'');
   }
   function prepareCategoryTags(){
-    document.querySelectorAll('.glpi-category-tag').forEach(tag=>{
+    document.querySelectorAll('.category-filter-btn').forEach(tag=>{
+      let label = tag.getAttribute('data-label') || '';
+      let count = tag.getAttribute('data-count') || '';
+
+      if (!label) {
+        const txt = tag.textContent || '';
+        const m = txt.match(/^(.*?)[\s—-]+(\d+)\s*$/);
+        if (m) {
+          label = m[1].trim();
+          count = count || m[2];
+        } else {
+          label = txt.trim();
+        }
+      }
+
+      // rebuild text to use parentheses for counts
+      const icon = tag.querySelector('i');
+      const iconHTML = icon ? icon.outerHTML + ' ' : '';
+      if (count) {
+        tag.innerHTML = iconHTML + label + ' (' + count + ')';
+        tag.setAttribute('data-count', count);
+      } else {
+        tag.innerHTML = iconHTML + label;
+      }
+      tag.setAttribute('data-label', label);
+
       if(!tag.hasAttribute('data-cat')){
-        const t = tag.getAttribute('data-label') || tag.textContent || '';
-        tag.setAttribute('data-cat', slugify(t));
+        tag.setAttribute('data-cat', slugify(label));
       }
       tag.classList.add('category-filter-btn');
     });
@@ -119,7 +143,7 @@
       const tgl = document.createElement('button');
       tgl.className = 'glpi-cat-toggle';
       tgl.setAttribute('aria-expanded','false');
-      tgl.innerHTML = '<span class="tw">▸</span> Категории';
+      tgl.innerHTML = '<span class="tw">▸</span> Сегодня в программе';
       row.parentNode.insertBefore(tgl, row);
       tgl.addEventListener('click', () => {
         const opened = row.classList.toggle('collapsed') ? false : true;
