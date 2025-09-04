@@ -187,19 +187,22 @@ body {
 .glpi-card--in-modal .glpi-date-footer{ position:static; display:inline-block; margin:6px 12px 0 0; }
 
 /* ======= Модалка комментария ======= */
-.gexe-cmnt{ position:fixed; inset:0; display:none; z-index:11000; }
-.gexe-cmnt.is-open{ display:block; }
-.gexe-cmnt__backdrop{ position:absolute; inset:0; background:rgba(0,0,0,.55); }
-.gexe-cmnt__dialog{ position:absolute; top:36%; left:50%; transform:translate(-50%,-50%); width:min(720px,92vw); background:#0f172a; border:1px solid #334155; border-radius:12px; box-shadow:0 20px 60px rgba(0,0,0,.5); overflow:hidden; }
-.gexe-cmnt__head{ display:flex; align-items:center; gap:8px; padding:10px 12px; background:linear-gradient(#0f172a, rgba(15,23,42,.92)); border-bottom:1px solid #334155; }
-.gexe-cmnt__title{ font-weight:700; color:#e5e7eb; }
-.gexe-cmnt__close{ margin-left:auto; border:0; background:transparent; color:#94a3b8; font-size:22px; cursor:pointer; }
-.gexe-cmnt__close:hover{ color:#f1f5f9; }
-.gexe-cmnt__body{ padding:12px; }
+/* ======= Модалки комментария и подтверждения ======= */
+.gexe-cmnt, .gexe-done{ position:fixed; inset:0; display:none; z-index:11000; }
+.gexe-cmnt.is-open, .gexe-done.is-open{ display:block; }
+.gexe-cmnt__backdrop, .gexe-done__backdrop{ position:absolute; inset:0; background:rgba(0,0,0,.55); }
+.gexe-cmnt__dialog, .gexe-done__dialog{ position:absolute; top:36%; left:50%; transform:translate(-50%,-50%); width:min(720px,92vw); background:#0f172a; border:1px solid #334155; border-radius:12px; box-shadow:0 20px 60px rgba(0,0,0,.5); overflow:hidden; }
+.gexe-cmnt__head, .gexe-done__head{ display:flex; align-items:center; gap:8px; padding:10px 12px; background:linear-gradient(#0f172a, rgba(15,23,42,.92)); border-bottom:1px solid #334155; }
+.gexe-cmnt__title, .gexe-done__title{ font-weight:700; color:#e5e7eb; }
+.gexe-cmnt__close, .gexe-done__close{ margin-left:auto; border:0; background:transparent; color:#94a3b8; font-size:22px; cursor:pointer; }
+.gexe-cmnt__close:hover, .gexe-done__close:hover{ color:#f1f5f9; }
+.gexe-cmnt__body, .gexe-done__body{ padding:12px; }
 #gexe-cmnt-text{ width:100%; min-height:80px; resize:vertical; border-radius:8px; border:1px solid #475569; background:#0b1220; color:#e5e7eb; padding:10px; }
 .gexe-cmnt__foot{ padding:12px; border-top:1px solid #334155; }
 #gexe-cmnt-send.glpi-act{background:#475569;border:1px solid #334155;color:#fff;border-radius:10px;font-weight:700;width:100%;display:block}
 #gexe-cmnt-send.glpi-act:hover{background:#334155}
+#gexe-done-confirm.glpi-act{background:#475569;border:1px solid #334155;color:#fff;border-radius:10px;font-weight:700;width:100%;display:block}
+#gexe-done-confirm.glpi-act:hover{background:#334155}
 
 /* Утилиты */
 .glpi-card.gexe-hide{display:none!important;}

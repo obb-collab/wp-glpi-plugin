@@ -232,6 +232,7 @@
 
   /* ========================= МОДАЛКА КОММЕНТАРИЯ ========================= */
   let cmntModal = null;
+  let doneModal = null;
   function ensureCommentModal() {
     if (cmntModal) return cmntModal;
     cmntModal = document.createElement('div');
@@ -298,6 +299,53 @@
         }
       })
       .catch(()=>{});
+  }
+
+  /* ========================= МОДАЛКА ПОДТВЕРЖДЕНИЯ ЗАВЕРШЕНИЯ ========================= */
+  function ensureDoneModal() {
+    if (doneModal) return doneModal;
+    doneModal = document.createElement('div');
+    doneModal.className = 'gexe-done';
+    doneModal.innerHTML =
+      '<div class="gexe-done__backdrop"></div>' +
+      '<div class="gexe-done__dialog" role="dialog" aria-modal="true">' +
+        '<div class="gexe-done__head">' +
+          '<div class="gexe-done__title">Подтверждение</div>' +
+          '<button class="gexe-done__close" aria-label="Закрыть"><i class="fa-solid fa-xmark"></i></button>' +
+        '</div>' +
+        '<div class="gexe-done__body">' +
+          '<button id="gexe-done-confirm" class="glpi-act">Задача решена</button>' +
+        '</div>' +
+      '</div>';
+    document.body.appendChild(doneModal);
+    $('.gexe-done__backdrop', doneModal).addEventListener('click', closeDoneModal);
+    $('.gexe-done__close', doneModal).addEventListener('click', closeDoneModal);
+    $('#gexe-done-confirm', doneModal).addEventListener('click', sendDone);
+    return doneModal;
+  }
+  function openDoneModal(ticketId) {
+    ensureDoneModal();
+    doneModal.setAttribute('data-ticket-id', String(ticketId || 0));
+    doneModal.classList.add('is-open'); document.body.classList.add('glpi-modal-open');
+  }
+  function closeDoneModal() {
+    if (!doneModal) return;
+    doneModal.classList.remove('is-open'); document.body.classList.remove('glpi-modal-open');
+  }
+  function sendDone() {
+    if (!doneModal) return;
+    const id = Number(doneModal.getAttribute('data-ticket-id') || '0');
+    if (!id) return;
+    closeDoneModal();
+    doCardAction('done', id, { solution_text: 'Выполнено' }).then(ok => {
+      if (ok) {
+        const card = document.querySelector('.glpi-card[data-ticket-id="'+id+'"]');
+        if (card) {
+          card.classList.add('gexe-hide');
+          recalcStatusCounts(); filterCards();
+        }
+      }
+    });
   }
 
   /* ========================= ДЕЙСТВИЯ ПО КАРТОЧКЕ (AJAX) ========================= */
@@ -368,13 +416,7 @@
 
       on(btnClose, 'click', e => {
         e.stopPropagation();
-        doCardAction('done', id, { solution_text: 'Выполнено' }).then(ok => {
-          if (ok) {
-            // карточку скрываем с доски (решена)
-            card.classList.add('gexe-hide');
-            recalcStatusCounts(); filterCards();
-          }
-        });
+        openDoneModal(id);
       });
     });
   }
