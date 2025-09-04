@@ -183,7 +183,7 @@
         '<div class="gexe-modal__content">' +
           '<div class="gexe-modal__cardwrap"></div>' +
           '<div class="glpi-modal__comments">' +
-            '<div class="glpi-modal__comments-title">Комментарии</div>' +
+            '<div class="glpi-modal__comments-title">Комментарии (<span class="gexe-cmnt-count">0</span>)</div>' +
             '<div id="gexe-comments" class="glpi-modal__comments-body"></div>' +
           '</div>' +
         '</div>' +
@@ -203,6 +203,7 @@
     const clone = cardEl.cloneNode(true);
     clone.classList.add('glpi-card--in-modal');
     const act = $('.gexe-card-actions', clone); if (act) act.remove();
+    const chip = $('.glpi-comments-chip', clone); if (chip) chip.remove();
     wrap.appendChild(clone);
   }
 
@@ -276,10 +277,15 @@
       .then(r => r.json())
       .then(resp => {
         if (resp && resp.ok) {
-          // обновим счётчик на карточке (если есть)
+          // обновим счётчики комментариев
           const card = document.querySelector('.glpi-card[data-ticket-id="'+id+'"]');
           const cnt = card && card.querySelector('.gexe-cmnt-count');
-          if (cnt) { cnt.textContent = String(resp.count ?? (parseInt(cnt.textContent||'0',10)+1)); }
+          const modalCnt = modalEl && modalEl.querySelector('.glpi-modal__comments-title .gexe-cmnt-count');
+          const newCount = (resp && typeof resp.count === 'number')
+            ? resp.count
+            : parseInt((cnt?.textContent || modalCnt?.textContent || '0'), 10) + 1;
+          if (cnt) cnt.textContent = String(newCount);
+          if (modalCnt) modalCnt.textContent = String(newCount);
           // обновим комментарии в просмотрщике, если открыт
           if (modalEl && modalEl.classList.contains('gexe-modal--open')) {
             const openedId = Number(modalEl.getAttribute('data-ticket-id') || '0');
@@ -441,6 +447,10 @@
         openViewerModal();
         modalEl.setAttribute('data-ticket-id', String(id));
         loadComments(id);
+        fetchCommentCount(id, n => {
+          const cnt = modalEl && modalEl.querySelector('.glpi-modal__comments-title .gexe-cmnt-count');
+          if (cnt) cnt.textContent = String(n);
+        });
       }, true);
     });
   }
