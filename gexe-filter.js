@@ -144,7 +144,13 @@
       tgl.className = 'glpi-cat-toggle';
       tgl.setAttribute('aria-expanded','false');
       tgl.innerHTML = '<span class="tw">▸</span> Сегодня в программе';
-      row.parentNode.insertBefore(tgl, row);
+      const header = document.querySelector('.glpi-header-row');
+      const statusRow = header && header.querySelector('.glpi-status-row');
+      if (header) {
+        header.insertBefore(tgl, statusRow);
+      } else {
+        row.parentNode.insertBefore(tgl, row);
+      }
       tgl.addEventListener('click', () => {
         const opened = row.classList.toggle('collapsed') ? false : true;
         tgl.setAttribute('aria-expanded', String(opened));
