@@ -50,7 +50,7 @@ body {
 .glpi-ticket-id { font-size: 13px; color: #64748b; }
 .glpi-card-body { font-size: 14px; color: #cbd5e1; line-height: 1.4; margin-bottom: 12px; max-height: 2.8em; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 
-.glpi-executor-footer { position: absolute; bottom: .5rem; left: .75rem; font-size: 12px; color: #94a3b8; display: flex; align-items: center; gap: 10px; }
+.glpi-executor-footer { position: absolute; bottom: .5rem; left: .75rem; font-size: 12px; color: #94a3b8; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .glpi-executor-footer i { margin-right: 4px; opacity: .6; }
 .glpi-date-footer { position: absolute; bottom: .5rem; right: .75rem; font-size: 12px; font-weight: 500; color: #9ca3af; }
 .glpi-date-footer.age-green  { color: #28a745 !important; }

@@ -93,6 +93,7 @@ function gexe_glpi_cards_shortcode($atts) {
     $join_req      = ' LEFT JOIN glpi_tickets_users tu_req ON t.id = tu_req.tickets_id AND tu_req.type = 1 ';
     $join_user     = ' LEFT JOIN glpi_users u ON tu_ass.users_id = u.id ';
     $join_cat      = ' LEFT JOIN glpi_itilcategories c ON t.itilcategories_id = c.id ';
+    $join_loc      = ' LEFT JOIN glpi_locations l ON t.locations_id = l.id ';
 
     $where_assignee = '';
     $mode = 'all';
@@ -114,12 +115,14 @@ function gexe_glpi_cards_shortcode($atts) {
                 tu_ass.users_id AS assignee_id,
                 tu_req.users_id AS author_id,
                 u.realname, u.firstname,
-                c.completename AS category_name
+                c.completename AS category_name,
+                l.completename AS location_name
         FROM glpi_tickets t
         $join_assignee
         $join_req
         $join_user
         $join_cat
+        $join_loc
         WHERE $where_status
         $where_assignee
         ORDER BY t.date DESC
@@ -143,6 +146,7 @@ function gexe_glpi_cards_shortcode($atts) {
                 'content'      => (string)$r->content,
                 'date'         => (string)$r->date,
                 'category'     => (string)$r->category_name, // полное «Родитель > Дочерняя»
+                'location'     => (string)$r->location_name,
                 'executors'    => [],
                 'assignee_ids' => [],
                 'author_id'    => (int)$r->author_id,

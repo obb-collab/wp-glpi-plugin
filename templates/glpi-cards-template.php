@@ -160,15 +160,23 @@ function gexe_cat_slug($leaf) {
       $cat_slug      = gexe_cat_slug($leaf_cat);
       $icon          = function_exists('glpi_get_icon_by_category') ? glpi_get_icon_by_category(mb_strtolower($leaf_cat)) : '';
 
+      // Местоположение (листовое)
+      $leaf_loc      = gexe_leaf_category($t['location']);
+      $location_html = '';
+      if ($leaf_loc !== '') {
+        $location_html = '<span class="glpi-location"><i class="fa-solid fa-location-dot"></i> ' . esc_html($leaf_loc) . '</span>';
+      }
+
       // Прямая ссылка в GLPI
       $link = 'http://192.168.100.12/glpi/front/ticket.form.php?id=' . intval($t['id']);
 
       $executors_html = '';
       if (!empty($t['executors'])) {
-        $executors_html = implode(', ', array_map(function($e){
-          return '<i class="fa-solid fa-user-tie glpi-executor"></i> ' . esc_html($e);
-        }, $t['executors']));
+        $names = implode(', ', array_map('esc_html', $t['executors']));
+        $executors_html = '<span class="glpi-executors"><i class="fa-solid fa-user-tie glpi-executor"></i> ' . $names . '</span>';
       }
+
+      $footer_html = $location_html . $executors_html;
     ?>
       <div class="glpi-card"
            data-ticket-id="<?php echo intval($t['id']); ?>"
@@ -187,7 +195,7 @@ function gexe_cat_slug($leaf) {
         <div class="glpi-card-body">
           <p class="glpi-desc" data-full="<?php echo esc_attr($clean_desc); ?>"><?php echo $desc_short; ?></p>
         </div>
-        <div class="glpi-executor-footer"><?php echo $executors_html; ?></div>
+        <div class="glpi-executor-footer"><?php echo $footer_html; ?></div>
         <div class="glpi-date-footer" data-date="<?php echo esc_attr((string)$t['date']); ?>"></div>
       </div>
     <?php endforeach; ?>
