@@ -284,10 +284,14 @@
     const base = window.glpiAjax && glpiAjax.rest;
     const nonce = window.glpiAjax && glpiAjax.restNonce;
     if (!base || !nonce) return;
-    const url = base + 'comments?ticket_id=' + encodeURIComponent(ticketId) + '&page=' + page;
+    const box = $('#gexe-comments');
+    if (box) box.innerHTML = '';
+    const modalCntInit = modalEl && modalEl.querySelector('.glpi-modal__comments-title .gexe-cmnt-count');
+    if (modalCntInit) modalCntInit.textContent = '0';
+    const url = base + 'comments?ticket_id=' + encodeURIComponent(ticketId) + '&page=' + page + '&_=' + Date.now();
     if (commentsController) commentsController.abort();
     commentsController = new AbortController();
-    fetch(url, { headers: { 'X-WP-Nonce': nonce }, signal: commentsController.signal })
+    fetch(url, { headers: { 'X-WP-Nonce': nonce, 'Cache-Control': 'no-cache' }, signal: commentsController.signal })
       .then(r => r.json())
       .then(data => {
         const box = $('#gexe-comments');
