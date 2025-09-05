@@ -3,6 +3,7 @@
  * Shared GLPI utility functions.
  */
 
+require_once __DIR__ . '/includes/logger.php';
 /**
  * Returns GLPI users.id associated with the current WP user.
  */
@@ -170,5 +171,123 @@ function gexe_glpi_rest_request($action, $method, $endpoint, $body = null) {
         $resp = gexe_glpi_request_with_token($action, $method, $endpoint, $body, $token);
     }
     return $resp;
+}
+
+/**
+ * Insert ITIL followup directly into GLPI via SQL.
+ */
+function gexe_add_followup_sql($ticket_id, $content, $glpi_user_id_override = null) {
+    global $glpi_db;
+
+    $start = microtime(true);
+
+    $ticket_id = (int)$ticket_id;
+    $content   = trim((string)$content);
+
+    if ($ticket_id <= 0 || $content === '') {
+        return ['ok' => false, 'code' => 'VALIDATION', 'message' => 'Bad ticket or content'];
+    }
+    if (mb_strlen($content) > 65535) {
+        $content = mb_substr($content, 0, 65535);
+    }
+
+    // Determine author
+    $author_id = (int)$glpi_user_id_override;
+    $assignees = $glpi_db->get_col(
+        $glpi_db->prepare(
+            "SELECT users_id FROM glpi_tickets_users WHERE tickets_id = %d AND type = 2 ORDER BY id DESC",
+            $ticket_id
+        )
+    );
+    if ($author_id <= 0) {
+        $current_glpi = gexe_get_current_glpi_uid();
+        if ($current_glpi > 0 && in_array($current_glpi, $assignees, true)) {
+            $author_id = $current_glpi;
+        } elseif (!empty($assignees)) {
+            $author_id = (int) $assignees[0];
+        }
+    }
+    if ($author_id <= 0) {
+        return ['ok' => false, 'code' => 'ASSIGNEE_NOT_FOUND', 'message' => 'No assignee'];
+    }
+
+    // Ticket entity
+    $entities_id = (int) $glpi_db->get_var(
+        $glpi_db->prepare('SELECT entities_id FROM glpi_tickets WHERE id = %d', $ticket_id)
+    );
+    if ($entities_id <= 0) {
+        return ['ok' => false, 'code' => 'VALIDATION', 'message' => 'Ticket not found'];
+    }
+
+    // Optional columns
+    $has_priv   = gexe_glpi_has_column('glpi_itilfollowups', 'is_private');
+    $has_req    = gexe_glpi_has_column('glpi_itilfollowups', 'requesttypes_id');
+    $has_edit   = gexe_glpi_has_column('glpi_itilfollowups', 'users_id_editor');
+    $has_mod    = gexe_glpi_has_column('glpi_itilfollowups', 'date_mod');
+    $has_tpos   = gexe_glpi_has_column('glpi_itilfollowups', 'timeline_position');
+
+    $columns = ['entities_id', 'itemtype', 'items_id', 'users_id'];
+    $place   = ['%d', '%s', '%d', '%d'];
+    $values  = [$entities_id, 'Ticket', $ticket_id, $author_id];
+    if ($has_edit) {
+        $columns[] = 'users_id_editor';
+        $place[]   = '%d';
+        $values[]  = $author_id;
+    }
+    $columns[] = 'content';
+    $place[]   = '%s';
+    $values[]  = $content;
+    if ($has_priv) {
+        $columns[] = 'is_private';
+        $place[]   = '%d';
+        $values[]  = 0;
+    }
+    if ($has_req) {
+        $columns[] = 'requesttypes_id';
+        $place[]   = '%d';
+        $values[]  = 0;
+    }
+    if ($has_tpos) {
+        $columns[] = 'timeline_position';
+        $place[]   = '%d';
+        $values[]  = 0;
+    }
+    $columns[] = 'date';
+    $place[]   = 'NOW()';
+    if ($has_mod) {
+        $columns[] = 'date_mod';
+        $place[]   = 'NOW()';
+    }
+
+    $sql_tmpl = 'INSERT INTO `glpi`.`glpi_itilfollowups` (' . implode(',', $columns) . ') VALUES (' . implode(',', $place) . ')';
+    $sql = $glpi_db->prepare($sql_tmpl, $values);
+
+    $glpi_db->query('START TRANSACTION');
+    $ok = $glpi_db->query($sql);
+    if (!$ok) {
+        $err = $glpi_db->last_error;
+        $glpi_db->query('ROLLBACK');
+        $elapsed_ms = (int) round((microtime(true) - $start) * 1000);
+        gexe_log_action(sprintf(
+            '[comment.sql] ticket=%d author=%d followup=0 elapsed=%dms result=fail err="%s" sql="%s"',
+            $ticket_id,
+            $author_id,
+            $elapsed_ms,
+            $err,
+            $sql_tmpl
+        ));
+        return ['ok' => false, 'code' => 'SQL_ERROR', 'message' => $err];
+    }
+    $fid = (int) $glpi_db->insert_id;
+    $glpi_db->query('COMMIT');
+    $elapsed_ms = (int) round((microtime(true) - $start) * 1000);
+    gexe_log_action(sprintf(
+        '[comment.sql] ticket=%d author=%d followup=%d elapsed=%dms result=ok',
+        $ticket_id,
+        $author_id,
+        $fid,
+        $elapsed_ms
+    ));
+    return ['ok' => true, 'followup_id' => $fid, 'users_id' => $author_id, 'ticket_id' => $ticket_id];
 }
 

@@ -11,6 +11,8 @@ add_action('admin_init', function () {
     register_setting('gexe_glpi', 'glpi_app_token');
     register_setting('gexe_glpi', 'glpi_user_token');
     register_setting('gexe_glpi', 'glpi_solved_status');
+    register_setting('gexe_glpi', 'glpi_comment_method');
+    register_setting('gexe_glpi', 'glpi_comment_fallback_rest');
 
     add_settings_section('gexe_glpi_main', 'GLPI API', function () {
         echo '<p>Настройки подключения к GLPI REST API.</p>';
@@ -20,6 +22,8 @@ add_action('admin_init', function () {
     add_settings_field('glpi_app_token', 'Application Token', 'gexe_glpi_field_app_token', 'gexe-glpi', 'gexe_glpi_main');
     add_settings_field('glpi_user_token', 'User Token', 'gexe_glpi_field_user_token', 'gexe-glpi', 'gexe_glpi_main');
     add_settings_field('glpi_solved_status', 'Solved Status', 'gexe_glpi_field_solved_status', 'gexe-glpi', 'gexe_glpi_main');
+    add_settings_field('glpi_comment_method', 'Способ создания комментариев', 'gexe_glpi_field_comment_method', 'gexe-glpi', 'gexe_glpi_main');
+    add_settings_field('glpi_comment_fallback_rest', 'Разрешить фолбэк на REST', 'gexe_glpi_field_comment_fallback', 'gexe-glpi', 'gexe_glpi_main');
 });
 
 function gexe_glpi_field_api_base() {
@@ -37,6 +41,17 @@ function gexe_glpi_field_user_token() {
 function gexe_glpi_field_solved_status() {
     $v = esc_attr(get_option('glpi_solved_status', '6'));
     echo '<input type="number" name="glpi_solved_status" value="' . $v . '" class="small-text" />';
+}
+function gexe_glpi_field_comment_method() {
+    $v = esc_attr(get_option('glpi_comment_method', 'REST'));
+    echo '<select name="glpi_comment_method">'
+        . '<option value="REST"' . selected($v, 'REST', false) . '>REST</option>'
+        . '<option value="SQL"' . selected($v, 'SQL', false) . '>SQL</option>'
+        . '</select>';
+}
+function gexe_glpi_field_comment_fallback() {
+    $v = get_option('glpi_comment_fallback_rest', 0);
+    echo '<label><input type="checkbox" name="glpi_comment_fallback_rest" value="1" ' . checked(1, $v, false) . ' /> Включить</label>';
 }
 
 function gexe_glpi_settings_page() {
