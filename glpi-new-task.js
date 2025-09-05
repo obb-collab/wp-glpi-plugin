@@ -113,7 +113,7 @@
       hideLoader();
       lockForm(true);
       showLoading();
-      fetchFormData().then(function(data){
+      fetchFormData(true).then(function(data){
         hideLoader();
         lockForm(false);
         fillDropdowns(data);

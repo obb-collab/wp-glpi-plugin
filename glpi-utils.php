@@ -61,6 +61,46 @@ function gexe_glpi_log($action, $url, $response, $start_time) {
 }
 
 /**
+ * Check if a column exists in a GLPI table.
+ * Result is cached in-memory and via WordPress transient for 1 hour.
+ */
+function gexe_glpi_has_column($table, $column) {
+    static $cache = [];
+    $table  = sanitize_key($table);
+    $column = sanitize_key($column);
+
+    if (isset($cache[$table][$column])) {
+        return $cache[$table][$column];
+    }
+
+    $tkey = 'glpi_schema_cols_' . $table;
+    $stored = get_transient($tkey);
+    if (!is_array($stored)) {
+        $stored = [];
+    }
+
+    if (array_key_exists($column, $stored)) {
+        $cache[$table][$column] = (bool) $stored[$column];
+        return $cache[$table][$column];
+    }
+
+    global $glpi_db;
+    if (!($glpi_db instanceof wpdb)) {
+        $cache[$table][$column] = false;
+        return false;
+    }
+
+    $sql  = $glpi_db->prepare("SHOW COLUMNS FROM `glpi`.`$table` LIKE %s", $column);
+    $row  = $glpi_db->get_row($sql, ARRAY_A);
+    $has  = !empty($row);
+
+    $stored[$column] = $has;
+    set_transient($tkey, $stored, HOUR_IN_SECONDS);
+    $cache[$table][$column] = $has;
+    return $has;
+}
+
+/**
  * Initialize GLPI session for write requests.
  */
 function gexe_glpi_init_session() {
