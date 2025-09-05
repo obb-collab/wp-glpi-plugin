@@ -20,6 +20,16 @@ $show_all         = isset($GLOBALS['gexe_show_all'])         ? (bool)$GLOBALS['g
 $category_counts  = isset($GLOBALS['gexe_category_counts'])  ? $GLOBALS['gexe_category_counts']  : [];
 $category_slugs   = isset($GLOBALS['gexe_category_slugs'])   ? $GLOBALS['gexe_category_slugs']   : [];
 
+$is_logged_in     = function_exists('is_user_logged_in') && is_user_logged_in();
+$current_user_short = '';
+if ($is_logged_in && function_exists('wp_get_current_user')) {
+    $u = wp_get_current_user();
+    $last = trim((string)($u->last_name ?? ''));
+    $first = trim((string)($u->first_name ?? ''));
+    $initial = $first !== '' ? mb_substr($first, 0, 1) : '';
+    $current_user_short = trim($last . ($initial !== '' ? ' ' . mb_strtoupper($initial) . '.' : ''));
+}
+
 if (!function_exists('esc_html')) {
     function esc_html($s){ return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
 }
@@ -82,6 +92,14 @@ function gexe_cat_slug($leaf) {
     if ($leaf === '') $leaf = substr(md5((string)$leaf), 0, 8);
     return $leaf;
 }
+
+/** Убирает фамилию из ФИО (первое слово) */
+function gexe_without_surname($full) {
+    $parts = preg_split('/\s+/u', trim((string)$full));
+    if (count($parts) <= 1) return $full;
+    array_shift($parts);
+    return trim(implode(' ', $parts));
+}
 ?>
 <div class="glpi-container">
 
@@ -89,6 +107,9 @@ function gexe_cat_slug($leaf) {
   <div class="glpi-filtering-panel">
     <div class="glpi-header-row">
       <div class="glpi-search-row">
+        <?php if ($is_logged_in && $current_user_short !== ''): ?>
+          <div class="glpi-user-greeting">Привет, <?php echo esc_html($current_user_short); ?></div>
+        <?php endif; ?>
         <input type="text" id="glpi-unified-search" class="glpi-search-input" placeholder="Поиск...">
       </div>
 
@@ -170,11 +191,19 @@ function gexe_cat_slug($leaf) {
       // Прямая ссылка в GLPI
       $link = 'http://192.168.100.12/glpi/front/ticket.form.php?id=' . intval($t['id']);
 
-      $executors_html = '';
-      if (!empty($t['executors'])) {
-        $names = implode(', ', array_map('esc_html', $t['executors']));
-        $executors_html = '<span class="glpi-executors"><i class="fa-solid fa-user-tie glpi-executor"></i> ' . $names . '</span>';
-      }
+        $executors_html = '';
+        if (!empty($t['executors'])) {
+          $exec_names = $t['executors'];
+          if ($is_logged_in) {
+            $exec_names = array_map('gexe_without_surname', $exec_names);
+          }
+          $exec_names = array_map('esc_html', $exec_names);
+          $exec_names = array_filter($exec_names, 'strlen');
+          if (!empty($exec_names)) {
+            $names = implode(', ', $exec_names);
+            $executors_html = '<span class="glpi-executors"><i class="fa-solid fa-user-tie glpi-executor"></i> ' . $names . '</span>';
+          }
+        }
 
       $footer_html = $location_html . $executors_html;
     ?>
