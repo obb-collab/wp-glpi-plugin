@@ -105,14 +105,14 @@ function gexe_comments_cache_key($ticket_id, $page, $per_page) {
 /** Сохранение HTML комментариев в кэш и ведение индекса ключей */
 function gexe_store_comments_cache($ticket_id, $page, $per_page, $data) {
     $key = gexe_comments_cache_key($ticket_id, $page, $per_page);
-    wp_cache_set($key, $data, 'glpi', DAY_IN_SECONDS);
+    wp_cache_set($key, $data, 'glpi', MINUTE_IN_SECONDS);
 
     $index_key = 'glpi_comments_keys_' . $ticket_id;
     $keys = wp_cache_get($index_key, 'glpi');
     if (!is_array($keys)) $keys = [];
     if (!in_array($key, $keys, true)) {
         $keys[] = $key;
-        wp_cache_set($index_key, $keys, 'glpi', DAY_IN_SECONDS);
+        wp_cache_set($index_key, $keys, 'glpi', MINUTE_IN_SECONDS);
     }
 }
 
@@ -236,6 +236,8 @@ function gexe_render_comments($ticket_id, $page = 1, $per_page = 20) {
         $ticket_id, $per_page, $offset
     ), ARRAY_A);
     $elapsed_ms = (int)round((microtime(true) - $t0) * 1000);
+    $count = $rows ? count($rows) : 0;
+    gexe_log_action('[comments.load] ticket=' . $ticket_id . ' source=db elapsed=' . $elapsed_ms . 'ms count=' . $count);
 
     if (!$rows) {
         $empty = '<div class="glpi-empty">Нет комментариев</div>';
@@ -268,7 +270,7 @@ function gexe_render_comments($ticket_id, $page = 1, $per_page = 20) {
 
     $data = [
         'html'      => $out,
-        'count'     => count($rows),
+        'count'     => $count,
         'signature' => $signature,
         'time_ms'   => $elapsed_ms,
     ];
@@ -282,6 +284,29 @@ function gexe_glpi_get_comments() {
     $page      = isset($_POST['page']) ? intval($_POST['page']) : 1;
     $per_page  = isset($_POST['per_page']) ? intval($_POST['per_page']) : 20;
     wp_send_json(gexe_render_comments($ticket_id, $page, $per_page));
+}
+
+function gexe_render_followup($id) {
+    global $glpi_db;
+    $row = $glpi_db->get_row($glpi_db->prepare(
+        "SELECT f.id, f.users_id, f.date, f.content, u.realname, u.firstname"
+         . " FROM glpi_itilfollowups AS f"
+         . " LEFT JOIN glpi_users AS u ON u.id = f.users_id"
+         . " WHERE f.id = %d",
+        $id
+    ), ARRAY_A);
+    if (!$row) return null;
+    $when = esc_html($row['date']);
+    $uid  = intval($row['users_id']);
+    $txt  = gexe_clean_comment_html((string)$row['content']);
+    $who  = gexe_compose_short_name($row['realname'] ?? '', $row['firstname'] ?? '');
+    if ($who === '') $who = 'Автор ID ' . $uid;
+    return [
+        'html' => '<div class="meta">'
+                . '<span class="glpi-comment-author"><i class="fa-regular fa-user"></i> ' . esc_html($who) . '</span>'
+                . '<span class="glpi-comment-date" data-date="' . $when . '"></span>'
+                . '</div><div class="text">' . $txt . '</div>',
+    ];
 }
 
 /* -------- AJAX: мета тикета -------- */
@@ -301,6 +326,18 @@ add_action('rest_api_init', function () {
             $page      = (int)$req->get_param('page') ?: 1;
             $per_page  = (int)$req->get_param('per_page') ?: 20;
             return new WP_REST_Response(gexe_render_comments($ticket_id, $page, $per_page));
+        },
+        'permission_callback' => '__return_true',
+    ]);
+    register_rest_route('glpi/v1', '/followup', [
+        'methods'  => 'GET',
+        'callback' => function (WP_REST_Request $req) {
+            $id = (int)$req->get_param('id');
+            $data = gexe_render_followup($id);
+            if (!$data) {
+                return new WP_REST_Response(['error' => 'not_found'], 404);
+            }
+            return new WP_REST_Response($data);
         },
         'permission_callback' => '__return_true',
     ]);
@@ -458,6 +495,7 @@ function gexe_glpi_add_comment() {
     $ticket_id = isset($_POST['ticket_id']) ? intval($_POST['ticket_id']) : 0;
     $content   = isset($_POST['content']) ? (string) $_POST['content'] : '';
     $is_private = !empty($_POST['is_private']) ? 1 : 0;
+    $action_id = isset($_POST['action_id']) ? sanitize_text_field($_POST['action_id']) : '';
 
     if ($ticket_id <= 0 || trim($content) === '') {
         wp_send_json_error(['message' => 'bad_request']);
@@ -466,21 +504,29 @@ function gexe_glpi_add_comment() {
         wp_send_json_error(['message' => 'forbidden']);
     }
 
+    $payload = [
+        'itemtype'   => 'Ticket',
+        'items_id'   => $ticket_id,
+        'content'    => $content,
+        'is_private' => $is_private ? 1 : 0,
+    ];
+    if ($action_id !== '') {
+        $payload['content'] .= "\n<!--" . $action_id . "-->";
+    }
+    $t0   = microtime(true);
     $resp = gexe_glpi_rest_request('ticket_comment ' . $ticket_id, 'POST', '/ITILFollowup/', [
-        'input' => [
-            'itemtype'   => 'Ticket',
-            'items_id'   => $ticket_id,
-            'content'    => $content,
-            'is_private' => $is_private ? 1 : 0,
-        ],
+        'input' => $payload,
     ]);
+    $elapsed_ms = (int)round((microtime(true) - $t0) * 1000);
     if (is_wp_error($resp)) {
+        gexe_log_action('[comment.create] ticket=' . $ticket_id . ' http=0 elapsed=' . $elapsed_ms . 'ms id=0');
         wp_send_json_error(['message' => 'network_error']);
     }
     $code = wp_remote_retrieve_response_code($resp);
     if ($code >= 300) {
         $body  = wp_remote_retrieve_body($resp);
         $short = mb_substr(trim($body), 0, 200);
+        gexe_log_action('[comment.create] ticket=' . $ticket_id . ' http=' . $code . ' elapsed=' . $elapsed_ms . 'ms id=0');
         wp_send_json_error(['message' => $short]);
     }
 
@@ -494,6 +540,9 @@ function gexe_glpi_add_comment() {
         }
     }
 
+    $created_at = current_time('mysql');
+    gexe_log_action('[comment.create] ticket=' . $ticket_id . ' http=' . $code . ' elapsed=' . $elapsed_ms . 'ms id=' . $followup_id);
+
     gexe_clear_comments_cache($ticket_id); // refresh caches after add
     $count = gexe_get_comment_count($ticket_id);
 
@@ -501,5 +550,8 @@ function gexe_glpi_add_comment() {
         'count'        => $count,
         'refresh_meta' => true,
         'followup_id'  => $followup_id,
+        'ticket_id'    => $ticket_id,
+        'created_at'   => $created_at,
+        'action_id'    => $action_id,
     ]);
 }
