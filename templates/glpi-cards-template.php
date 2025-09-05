@@ -99,56 +99,61 @@ function gexe_cat_slug($leaf) {
   <!-- Панель фильтрации -->
   <div class="glpi-filtering-panel">
     <div class="glpi-header-row">
-      <div class="glpi-search-row">
-        <?php if ($is_logged_in && $current_user_short !== ''): ?>
-          <div class="glpi-user-greeting">Привет, <?php echo esc_html($current_user_short); ?></div>
-        <?php endif; ?>
-        <input type="text" id="glpi-unified-search" class="glpi-search-input" placeholder="Поиск...">
+
+      <div class="glpi-header-left glpi-category-block">
+        <button type="button" class="glpi-cat-toggle" aria-expanded="false">Категории</button>
+        <div class="glpi-cat-menu">
+        <?php foreach ($category_counts as $leaf => $count):
+            $slug = isset($category_slugs[$leaf]) ? $category_slugs[$leaf] : gexe_cat_slug($leaf);
+            $icon = function_exists('glpi_get_icon_by_category') ? glpi_get_icon_by_category(mb_strtolower($leaf)) : '<i class="fa-solid fa-tag"></i>';
+            $label = gexe_truncate_label($leaf, 12);
+        ?>
+          <button class="glpi-filter-btn glpi-category-tag category-filter-btn"
+                  data-cat="<?php echo esc_attr(strtolower($slug)); ?>"
+                  data-label="<?php echo esc_attr($label); ?>"
+                  data-count="<?php echo intval($count); ?>">
+            <?php echo $icon; ?> <?php echo esc_html($label); ?> (<?php echo intval($count); ?>)
+          </button>
+        <?php endforeach; ?>
+        </div>
       </div>
 
-      <!-- Ряд статусов и экшена -->
-      <div class="glpi-status-row">
-      <!-- Блоки статусов -->
-      <div class="glpi-status-blocks">
-        <div class="glpi-status-block status-filter-btn" data-status="all" data-label="Все задачи">
-          <span class="status-count"><?php echo intval($total_count); ?></span>
-          <span class="status-label">Все задачи</span>
-        </div>
-        <div class="glpi-status-block status-filter-btn active" data-status="2" data-label="В работе">
-          <span class="status-count"><?php echo intval($status_counts[2] ?? 0); ?></span>
-          <span class="status-label">В работе</span>
-        </div>
-        <div class="glpi-status-block status-filter-btn" data-status="3" data-label="В плане">
-          <span class="status-count"><?php echo intval($status_counts[3] ?? 0); ?></span>
-          <span class="status-label">В плане</span>
-        </div>
-        <div class="glpi-status-block status-filter-btn" data-status="4" data-label="В стопе">
-          <span class="status-count"><?php echo intval($status_counts[4] ?? 0); ?></span>
-          <span class="status-label">В стопе</span>
-        </div>
-        <div class="glpi-status-block status-filter-btn" data-status="1" data-label="Новые">
-          <span class="status-count"><?php echo intval($status_counts[1] ?? 0); ?></span>
-          <span class="status-label">Новые</span>
+      <div class="glpi-header-center">
+        <div class="glpi-status-blocks">
+          <div class="glpi-status-block status-filter-btn" data-status="all" data-label="Все задачи">
+            <span class="status-count"><?php echo intval($total_count); ?></span>
+            <span class="status-label">Все задачи</span>
+          </div>
+          <div class="glpi-status-block status-filter-btn active" data-status="2" data-label="В работе">
+            <span class="status-count"><?php echo intval($status_counts[2] ?? 0); ?></span>
+            <span class="status-label">В работе</span>
+          </div>
+          <div class="glpi-status-block status-filter-btn" data-status="3" data-label="В плане">
+            <span class="status-count"><?php echo intval($status_counts[3] ?? 0); ?></span>
+            <span class="status-label">В плане</span>
+          </div>
+          <div class="glpi-status-block status-filter-btn" data-status="4" data-label="В стопе">
+            <span class="status-count"><?php echo intval($status_counts[4] ?? 0); ?></span>
+            <span class="status-label">В стопе</span>
+          </div>
+          <div class="glpi-status-block status-filter-btn" data-status="1" data-label="Новые">
+            <span class="status-count"><?php echo intval($status_counts[1] ?? 0); ?></span>
+            <span class="status-label">Новые</span>
+          </div>
         </div>
       </div>
-    </div>
 
-    <!-- Категории -->
-    <div class="glpi-category-tags">
-      <?php foreach ($category_counts as $leaf => $count): 
-          $slug = isset($category_slugs[$leaf]) ? $category_slugs[$leaf] : gexe_cat_slug($leaf);
-          $icon = function_exists('glpi_get_icon_by_category') ? glpi_get_icon_by_category(mb_strtolower($leaf)) : '<i class="fa-solid fa-tag"></i>';
-          $label = gexe_truncate_label($leaf, 12);
-      ?>
-        <span class="glpi-category-tag category-filter-btn"
-              data-cat="<?php echo esc_attr(strtolower($slug)); ?>"
-              data-label="<?php echo esc_attr($label); ?>"
-              data-count="<?php echo intval($count); ?>">
-          <?php echo $icon; ?> <?php echo esc_html($label); ?> (<?php echo intval($count); ?>)
-        </span>
-      <?php endforeach; ?>
-    </div>
+      <div class="glpi-header-right">
+        <div class="glpi-search-block">
+          <?php if ($is_logged_in && $current_user_short !== ''): ?>
+            <div class="glpi-user-greeting">Привет, <?php echo esc_html($current_user_short); ?></div>
+          <?php endif; ?>
+          <input type="text" id="glpi-unified-search" class="glpi-search-input" placeholder="Поиск...">
+        </div>
+        <button type="button" class="glpi-newtask-btn"><i class="fa-regular fa-file-lines"></i> Новая заявка</button>
+      </div>
 
+    </div>
   </div>
 
   <!-- Карточки -->
