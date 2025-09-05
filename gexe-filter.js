@@ -380,6 +380,8 @@
 
   /* ========================= КНОПКИ ДЕЙСТВИЙ НА КАРТОЧКЕ ========================= */
   function injectCardActionButtons() {
+    const ids = [];
+    const chips = {};
     $$('.glpi-card').forEach(card => {
       if ($('.gexe-card-actions', card)) return;
       const id = Number(card.getAttribute('data-ticket-id') || '0');
@@ -400,8 +402,8 @@
         chip.className = 'glpi-comments-chip';
         chip.innerHTML = '<i class="fa-regular fa-comment"></i> <span class="gexe-cmnt-count">0</span>';
         foot.appendChild(chip);
-        // загрузим число
-        fetchCommentCount(id, (n)=>{ chip.querySelector('.gexe-cmnt-count').textContent = String(n); });
+        chips[id] = chip;
+        ids.push(id);
       }
 
       const btnComment = $('.gexe-open-comment', bar);
@@ -430,6 +432,18 @@
         openDoneModal(id);
       });
     });
+
+    if (ids.length) {
+      fetchCommentCounts(ids, map => {
+        ids.forEach(id => {
+          const chip = chips[id];
+          if (chip) {
+            const n = map && typeof map[id] === 'number' ? map[id] : 0;
+            chip.querySelector('.gexe-cmnt-count').textContent = String(n);
+          }
+        });
+      });
+    }
   }
 
   // Права/видимость
@@ -489,6 +503,20 @@
       .then(r => r.json())
       .then(j => cb(j && typeof j.count === 'number' ? j.count : 0))
       .catch(()=>cb(0));
+  }
+
+  function fetchCommentCounts(ids, cb){
+    const url = window.glpiAjax && glpiAjax.url;
+    const nonce = window.glpiAjax && glpiAjax.nonce;
+    if (!url || !nonce || !Array.isArray(ids) || ids.length === 0) { cb({}); return; }
+    const fd = new FormData();
+    fd.append('action', 'glpi_count_comments_batch');
+    fd.append('_ajax_nonce', nonce);
+    fd.append('ticket_ids', ids.join(','));
+    fetch(url, { method: 'POST', body: fd })
+      .then(r => r.json())
+      .then(j => cb(j && typeof j.counts === 'object' ? j.counts : {}))
+      .catch(()=>cb({}));
   }
 
   /* ========================= ОТКРЫТИЕ МОДАЛКИ ПО КЛИКУ НА КАРТОЧКУ ========================= */

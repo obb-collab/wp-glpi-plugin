@@ -167,6 +167,39 @@ function gexe_glpi_count_comments() {
     wp_send_json(['count' => $n]);
 }
 
+/* -------- AJAX: количество комментариев для нескольких тикетов -------- */
+add_action('wp_ajax_glpi_count_comments_batch', 'gexe_glpi_count_comments_batch');
+function gexe_glpi_count_comments_batch() {
+    check_ajax_referer('glpi_modal_actions');
+
+    $ids_raw = isset($_POST['ticket_ids']) ? (string)$_POST['ticket_ids'] : '';
+    $ids = array_filter(array_map('intval', explode(',', $ids_raw)));
+    if (empty($ids)) {
+        wp_send_json(['counts' => []]);
+    }
+
+    global $glpi_db;
+    $placeholders = implode(',', array_fill(0, count($ids), '%d'));
+    $sql = "SELECT items_id, COUNT(*) AS cnt FROM glpi_itilfollowups "
+         . "WHERE itemtype='Ticket' AND items_id IN ($placeholders) GROUP BY items_id";
+    $rows = $glpi_db->get_results($glpi_db->prepare($sql, $ids), ARRAY_A);
+
+    $out = [];
+    if ($rows) {
+        foreach ($rows as $r) {
+            $out[(int)$r['items_id']] = (int)$r['cnt'];
+        }
+    }
+    // ensure all ids present
+    foreach ($ids as $id) {
+        if (!isset($out[$id])) {
+            $out[$id] = 0;
+        }
+    }
+
+    wp_send_json(['counts' => $out]);
+}
+
 /* -------- AJAX: проверка "Принято в работу" текущим исполнителем -------- */
 add_action('wp_ajax_glpi_ticket_started_by_me', 'gexe_glpi_ticket_started_by_me');
 function gexe_glpi_ticket_started_by_me() {
