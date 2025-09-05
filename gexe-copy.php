@@ -324,6 +324,9 @@ function gexe_save_glpi_profile_fields($user_id) {
 require_once __DIR__ . '/gexe-executor-lock.php';
 require_once __DIR__ . '/glpi-categories-shortcode.php';
 require_once __DIR__ . '/glpi-modal-actions.php';
+require_once __DIR__ . '/glpi-api.php';
+require_once __DIR__ . '/glpi-solve.php';
 require_once __DIR__ . '/glpi-icon-map.php';
 require_once __DIR__ . '/glpi-new-task.php';
+require_once __DIR__ . '/glpi-settings.php';
 

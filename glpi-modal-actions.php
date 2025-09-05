@@ -14,6 +14,7 @@ add_action('wp_enqueue_scripts', function () {
         'user_glpi_id' => gexe_get_current_glpi_uid(),
         'rest'         => esc_url_raw(rest_url('glpi/v1/')),
         'restNonce'    => wp_create_nonce('wp_rest'),
+        'solvedStatus' => (int) get_option('glpi_solved_status', 6),
     ]);
 });
 
