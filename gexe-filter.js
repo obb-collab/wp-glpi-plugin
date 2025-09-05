@@ -22,6 +22,9 @@
     };
   };
 
+  const commentCache  = {};
+  const commentCounts = {};
+
   /* ========================= ПОИСК (СОЗДАТЬ СВЕРХУ) ========================= */
   function ensureSearchOnTop() {
     const root = document.querySelector('.glpi-filtering-panel .glpi-header-row') || document.querySelector('.glpi-filtering-panel');
@@ -223,13 +226,16 @@
   }
 
   function loadComments(ticketId, page = 1) {
+    const box = $('#gexe-comments');
+    const cached = commentCache[ticketId];
+    if (cached) { if (box) box.innerHTML = cached; return; }
     const base = window.glpiAjax && glpiAjax.rest;
     const nonce = window.glpiAjax && glpiAjax.restNonce;
     if (!base || !nonce) return;
     const url = base + 'comments?ticket_id=' + encodeURIComponent(ticketId) + '&page=' + page;
     fetch(url, { headers: { 'X-WP-Nonce': nonce } })
       .then(r => r.text())
-      .then(html => { const box = $('#gexe-comments'); if (box) box.innerHTML = html; })
+      .then(html => { if (box) box.innerHTML = html; commentCache[ticketId] = html; })
       .catch(()=>{});
   }
 
@@ -297,8 +303,10 @@
           const newCount = (resp && typeof resp.count === 'number')
             ? resp.count
             : parseInt((cnt?.textContent || modalCnt?.textContent || '0'), 10) + 1;
+          commentCounts[id] = newCount;
           if (cnt) cnt.textContent = String(newCount);
           if (modalCnt) modalCnt.textContent = String(newCount);
+          delete commentCache[id];
           // обновим комментарии в просмотрщике, если открыт
           if (modalEl && modalEl.classList.contains('gexe-modal--open')) {
             const openedId = Number(modalEl.getAttribute('data-ticket-id') || '0');
@@ -431,13 +439,13 @@
     });
 
     if (ids.length) {
-      fetchCommentCounts(ids, map => {
+      fetchCommentsBatch(ids, (cmap, cntMap) => {
+        Object.keys(cmap || {}).forEach(k => { commentCache[k] = cmap[k]; });
         ids.forEach(id => {
           const chip = chips[id];
-          if (chip) {
-            const n = map && typeof map[id] === 'number' ? map[id] : 0;
-            chip.querySelector('.gexe-cmnt-count').textContent = String(n);
-          }
+          const n = cntMap && typeof cntMap[id] === 'number' ? cntMap[id] : 0;
+          commentCounts[id] = n;
+          if (chip) chip.querySelector('.gexe-cmnt-count').textContent = String(n);
         });
       });
     }
@@ -487,33 +495,19 @@
     });
   }
 
-  /* ========================= КОЛ-ВО КОММЕНТАРИЕВ ========================= */
-  function fetchCommentCount(id, cb){
-    const url = window.glpiAjax && glpiAjax.url;
-    const nonce = window.glpiAjax && glpiAjax.nonce;
-    if (!url || !nonce) { cb(0); return; }
-    const fd = new FormData();
-    fd.append('action', 'glpi_count_comments');
-    fd.append('_ajax_nonce', nonce);
-    fd.append('ticket_id', String(id));
-    fetch(url, { method: 'POST', body: fd })
+  /* ========================= КОММЕНТАРИИ (ПАКЕТНАЯ ЗАГРУЗКА) ========================= */
+  function fetchCommentsBatch(ids, cb){
+    const base  = window.glpiAjax && glpiAjax.rest;
+    const nonce = window.glpiAjax && glpiAjax.restNonce;
+    if (!base || !nonce || !Array.isArray(ids) || ids.length === 0) { cb({}, {}); return; }
+    const url = base + 'comments-batch?ticket_ids=' + encodeURIComponent(ids.join(','));
+    fetch(url, { headers: { 'X-WP-Nonce': nonce } })
       .then(r => r.json())
-      .then(j => cb(j && typeof j.count === 'number' ? j.count : 0))
-      .catch(()=>cb(0));
-  }
-
-  function fetchCommentCounts(ids, cb){
-    const url = window.glpiAjax && glpiAjax.url;
-    const nonce = window.glpiAjax && glpiAjax.nonce;
-    if (!url || !nonce || !Array.isArray(ids) || ids.length === 0) { cb({}); return; }
-    const fd = new FormData();
-    fd.append('action', 'glpi_count_comments_batch');
-    fd.append('_ajax_nonce', nonce);
-    fd.append('ticket_ids', ids.join(','));
-    fetch(url, { method: 'POST', body: fd })
-      .then(r => r.json())
-      .then(j => cb(j && typeof j.counts === 'object' ? j.counts : {}))
-      .catch(()=>cb({}));
+      .then(j => cb(
+        j && typeof j.comments === 'object' ? j.comments : {},
+        j && typeof j.counts   === 'object' ? j.counts   : {}
+      ))
+      .catch(()=>cb({}, {}));
   }
 
   /* ========================= ОТКРЫТИЕ МОДАЛКИ ПО КЛИКУ НА КАРТОЧКУ ========================= */
@@ -529,10 +523,8 @@
         openViewerModal();
         modalEl.setAttribute('data-ticket-id', String(id));
         loadComments(id);
-        fetchCommentCount(id, n => {
-          const cnt = modalEl && modalEl.querySelector('.glpi-modal__comments-title .gexe-cmnt-count');
-          if (cnt) cnt.textContent = String(n);
-        });
+        const cnt = modalEl && modalEl.querySelector('.glpi-modal__comments-title .gexe-cmnt-count');
+        if (cnt) cnt.textContent = String(commentCounts[id] || 0);
       }, true);
     });
   }

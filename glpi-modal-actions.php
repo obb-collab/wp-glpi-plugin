@@ -152,6 +152,46 @@ add_action('rest_api_init', function () {
         },
         'permission_callback' => '__return_true',
     ]);
+
+    register_rest_route('glpi/v1', '/comments-batch', [
+        'methods'  => 'GET',
+        'callback' => function (WP_REST_Request $req) {
+            $ids_raw  = (string)$req->get_param('ticket_ids');
+            $ids      = array_filter(array_map('intval', explode(',', $ids_raw)));
+            $page     = (int)$req->get_param('page') ?: 1;
+            $per_page = (int)$req->get_param('per_page') ?: 20;
+
+            if (empty($ids)) {
+                return new WP_REST_Response(['comments' => [], 'counts' => []]);
+            }
+
+            $comments = [];
+            foreach ($ids as $id) {
+                $comments[$id] = gexe_render_comments($id, $page, $per_page);
+            }
+
+            global $glpi_db;
+            $placeholders = implode(',', array_fill(0, count($ids), '%d'));
+            $sql = "SELECT items_id, COUNT(*) AS cnt FROM glpi_itilfollowups "
+                 . "WHERE itemtype='Ticket' AND items_id IN ($placeholders) GROUP BY items_id";
+            $rows = $glpi_db->get_results($glpi_db->prepare($sql, $ids), ARRAY_A);
+
+            $counts = [];
+            if ($rows) {
+                foreach ($rows as $r) {
+                    $counts[(int)$r['items_id']] = (int)$r['cnt'];
+                }
+            }
+            foreach ($ids as $id) {
+                if (!isset($counts[$id])) {
+                    $counts[$id] = 0;
+                }
+            }
+
+            return new WP_REST_Response(['comments' => $comments, 'counts' => $counts]);
+        },
+        'permission_callback' => '__return_true',
+    ]);
 });
 
 /* -------- AJAX: количество комментариев -------- */
