@@ -24,14 +24,24 @@
 
   /* ========================= ПОИСК (СОЗДАТЬ СВЕРХУ) ========================= */
   function ensureSearchOnTop() {
-    const root = document.querySelector('.glpi-filtering-panel .glpi-header-row') || document.querySelector('.glpi-filtering-panel');
+    const root = document.querySelector('.glpi-filtering-panel .glpi-header-row')
+      || document.querySelector('.glpi-filtering-panel');
     if (!root) return;
-    // убираем все предыдущие поля поиска (и «короткие», и случайные дублёры)
-    document.querySelectorAll('.glpi-search-block, .glpi-search-input').forEach(el => el.remove());
-    // создаём заново и вставляем первым
+
+    // берем существующее приветствие, если оно уже есть в DOM
+    let greetingHTML = '';
+    const oldGreeting = document.querySelector('.glpi-user-greeting');
+    if (oldGreeting) greetingHTML = oldGreeting.outerHTML;
+
+    // убираем все предыдущие поля поиска и блоки
+    document.querySelectorAll('.glpi-search-block, .glpi-search-row, .glpi-search-input')
+      .forEach(el => el.remove());
+
+    // создаём заново и вставляем первым; приветствие (если есть) идёт перед полем
     const wrap = document.createElement('div');
-    wrap.className = 'glpi-search-block';
-    wrap.innerHTML = '<input type="text" id="glpi-unified-search" class="glpi-search-input" placeholder="Поиск...">';
+    wrap.className = 'glpi-search-row';
+    wrap.innerHTML = (greetingHTML || '') +
+      '<input type="text" id="glpi-unified-search" class="glpi-search-input" placeholder="Поиск...">';
     root.insertBefore(wrap, root.firstChild);
     // Подстраховка: кнопка, к которой привязывается glpi-new-task.php
     if (!document.getElementById('glpi-btn-new-ticket')) {
