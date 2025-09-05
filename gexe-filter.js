@@ -285,15 +285,17 @@
 
   function loadComments(ticketId, page = 1) {
     const box = $('#gexe-comments');
-    if (box) box.innerHTML = '';
     const modalCntInit = modalEl && modalEl.querySelector('.glpi-modal__comments-title .gexe-cmnt-count');
     if (modalCntInit) modalCntInit.textContent = '0';
 
     const preloaded = window.gexePrefetchedComments && window.gexePrefetchedComments[ticketId];
     if (preloaded) {
+      if (box) box.innerHTML = '';
       applyCommentsData(ticketId, preloaded);
       return;
     }
+
+    if (box) box.innerHTML = '<div class="glpi-comments-loading">Комментарии загружаются...</div>';
 
     const base = window.glpiAjax && glpiAjax.rest;
     const nonce = window.glpiAjax && glpiAjax.restNonce;
@@ -404,14 +406,8 @@
             : parseInt((cnt?.textContent || modalCnt?.textContent || '0'), 10) + 1;
           if (cnt) cnt.textContent = String(newCount);
           if (modalCnt) modalCnt.textContent = String(newCount);
-          // обновим комментарии в просмотрщике, если открыт
-          if (modalEl && modalEl.classList.contains('gexe-modal--open')) {
-            const openedId = Number(modalEl.getAttribute('data-ticket-id') || '0');
-            if (openedId === id) {
-              if (window.gexePrefetchedComments) delete window.gexePrefetchedComments[id];
-              loadComments(id);
-            }
-          }
+          if (window.gexePrefetchedComments) delete window.gexePrefetchedComments[id];
+          closeViewerModal();
           applyActionVisibility();
         }
       })

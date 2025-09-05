@@ -181,6 +181,7 @@ body {
 .glpi-modal__comments{ padding:0 16px 16px 16px; border-top:1px dashed #334155; margin-top:8px; }
 .glpi-modal__comments-title{ font-weight:700; margin:4px 0 8px 0; color:#e5e7eb; }
 .glpi-modal__comments-body{ display:grid; gap:10px; }
+.glpi-comments-loading{ color:#94a3b8; padding:8px; font-style:italic; }
 
 /* Комментарии */
 .glpi-comment{ background:#1e293b; border:1px solid #334155; border-radius:8px; padding:8px 12px; color:#e2e8f0; font-size:14px; }
