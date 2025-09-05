@@ -155,6 +155,18 @@ function gexe_get_comment_count($ticket_id) {
     return $cnt;
 }
 
+/** Прогрев кэша комментариев популярных тикетов */
+function gexe_warm_comments_cache() {
+    global $glpi_db;
+    $ids = $glpi_db->get_col("SELECT id FROM glpi_tickets WHERE status IN (1,2,3,4) ORDER BY date DESC LIMIT 5");
+    if ($ids) {
+        foreach ($ids as $id) {
+            gexe_render_comments((int)$id, 1, 20);
+        }
+    }
+}
+add_action('gexe_warm_comments_cache', 'gexe_warm_comments_cache');
+
 /* -------- AJAX: загрузка комментариев тикета -------- */
 add_action('wp_ajax_glpi_get_comments', 'gexe_glpi_get_comments');
 add_action('wp_ajax_nopriv_glpi_get_comments', 'gexe_glpi_get_comments');
