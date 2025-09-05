@@ -6,16 +6,23 @@ require_once __DIR__ . '/logger.php';
 /**
  * AJAX: выдаёт списки категорий и местоположений.
  */
-add_action('wp_ajax_glpi_get_form_data', 'gexe_glpi_get_form_data');
-function gexe_glpi_get_form_data() {
-    check_ajax_referer('glpi_modal_actions');
-    $t0 = microtime(true);
+add_action('wp_ajax_gexe_get_form_data', 'gexe_get_form_data');
+function gexe_get_form_data() {
+    $t0       = microtime(true);
+    $user_id  = get_current_user_id();
+    $nonce_ok = check_ajax_referer('gexe_form_data', 'nonce', false);
     $cache_key = 'glpi_form_data_v1';
 
-    if (!is_user_logged_in() || !current_user_can('create_glpi_ticket')) {
+    if (!$nonce_ok) {
         $elapsed = (int) round((microtime(true) - $t0) * 1000);
-        gexe_log_action(sprintf('[form-data] error=AJAX_FORBIDDEN elapsed=%dms', $elapsed));
-        wp_send_json(['ok' => false, 'error' => 'AJAX_FORBIDDEN', 'message' => 'forbidden', 'took_ms' => $elapsed]);
+        gexe_log_action(sprintf('[form-data] user=%d cap=read nonce=bad http=403 elapsed=%dms cats=0 locs=0', $user_id, $elapsed));
+        wp_send_json(['ok' => false, 'code' => 'AJAX_FORBIDDEN', 'reason' => 'nonce', 'message' => 'forbidden', 'took_ms' => $elapsed], 403);
+    }
+
+    if (!is_user_logged_in() || !current_user_can('read')) {
+        $elapsed = (int) round((microtime(true) - $t0) * 1000);
+        gexe_log_action(sprintf('[form-data] user=%d cap=read nonce=ok http=403 elapsed=%dms cats=0 locs=0', $user_id, $elapsed));
+        wp_send_json(['ok' => false, 'code' => 'AJAX_FORBIDDEN', 'reason' => 'cap', 'message' => 'forbidden', 'took_ms' => $elapsed], 403);
     }
 
     $data = wp_cache_get($cache_key, 'glpi');
@@ -77,6 +84,7 @@ function gexe_glpi_get_form_data() {
             }
         } catch (Exception $e) {
             $error_code = $e->getMessage();
+            $last_err   = $glpi_db instanceof wpdb ? $glpi_db->last_error : $e->getMessage();
         }
 
         if ($error_code !== '' || empty($categories) || empty($locations)) {
@@ -134,8 +142,10 @@ function gexe_glpi_get_form_data() {
             if (empty($categories) || empty($locations)) {
                 $elapsed = (int) round((microtime(true) - $t0) * 1000);
                 $code = $error_code ? $error_code : 'API_UNAVAILABLE';
-                gexe_log_action(sprintf('[form-data] error=%s elapsed=%dms', $code, $elapsed));
-                wp_send_json(['ok' => false, 'error' => $code, 'message' => 'Unable to load data', 'took_ms' => $elapsed]);
+                $log = sprintf('[form-data] user=%d cap=read nonce=ok http=500 error=%s elapsed=%dms', $user_id, $code, $elapsed);
+                if (!empty($last_err)) $log .= ' details=' . $last_err;
+                gexe_log_action($log);
+                wp_send_json(['ok' => false, 'code' => $code, 'message' => 'Unable to load data', 'took_ms' => $elapsed], 500);
             }
         }
 
@@ -168,7 +178,7 @@ function gexe_glpi_get_form_data() {
     }
 
     $elapsed = (int) round((microtime(true) - $t0) * 1000);
-    gexe_log_action(sprintf('[form-data] source=%s elapsed=%dms cats=%d locs=%d', $source, $elapsed, count($data['categories']), count($data['locations'])));
+    gexe_log_action(sprintf('[form-data] user=%d cap=read nonce=ok http=200 elapsed=%dms cats=%d locs=%d', $user_id, $elapsed, count($data['categories']), count($data['locations'])));
 
     $out = $data;
     $out['ok']      = true;
@@ -178,6 +188,17 @@ function gexe_glpi_get_form_data() {
         $out['debug'] = ['source' => $source, 'elapsed' => $elapsed];
     }
     wp_send_json($out);
+}
+
+/**
+ * Обновление nonce для фронтенда.
+ */
+add_action('wp_ajax_gexe_refresh_nonce', 'gexe_refresh_nonce');
+function gexe_refresh_nonce() {
+    if (!is_user_logged_in() || !current_user_can('read')) {
+        wp_send_json_error(['code' => 'AJAX_FORBIDDEN', 'reason' => 'cap'], 403);
+    }
+    wp_send_json_success(['nonce' => wp_create_nonce('gexe_form_data')]);
 }
 
 /**
