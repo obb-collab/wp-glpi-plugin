@@ -13,6 +13,24 @@ if (!isset($glpi_db) || !($glpi_db instanceof wpdb)) {
 
 define('GEXE_TRIGGERS_VERSION', '1');
 
+define('GEXE_GLPI_API_URL', 'http://192.168.100.12/glpi/apirest.php');
+define('GEXE_GLPI_APP_TOKEN', 'nqubXrD6j55bgLRuD1mrrtz5D69cXz94HHPvgmac');
+define('GEXE_GLPI_USER_TOKEN', '8ffMQJvkcgi8V5OMWrh89Xvr97jEzK4ddrkdL6pw');
+
+function gexe_glpi_api_url(): string {
+    return rtrim(GEXE_GLPI_API_URL, '/');
+}
+
+function gexe_glpi_api_headers(array $extra = []): array {
+    $base = [
+        'Content-Type' => 'application/json',
+        'Authorization' => 'user_token ' . GEXE_GLPI_USER_TOKEN,
+        'App-Token'     => GEXE_GLPI_APP_TOKEN,
+    ];
+
+    return array_merge($base, $extra);
+}
+
 function gexe_glpi_triggers_present() {
     global $glpi_db;
     $sql = "SELECT COUNT(*) FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA='glpi' AND TRIGGER_NAME IN ('glpi_followups_ai','glpi_followups_ad')";
