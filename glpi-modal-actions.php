@@ -102,28 +102,50 @@ function gexe_clean_comment_html($html) {
 add_action('wp_ajax_glpi_get_comments', 'gexe_glpi_get_comments');
 add_action('wp_ajax_nopriv_glpi_get_comments', 'gexe_glpi_get_comments');
 
+function gexe_comments_cache_key($ticket_id) {
+    return 'glpi_comments_' . $ticket_id;
+}
+
+function gexe_comments_cache_get($ticket_id) {
+    $cache_key = gexe_comments_cache_key($ticket_id);
+    $cached    = wp_cache_get($cache_key, 'glpi');
+    if ($cached !== false) return $cached;
+    return get_transient($cache_key);
+}
+
+function gexe_comments_cache_set($ticket_id, $data, $ttl = DAY_IN_SECONDS) {
+    $cache_key = gexe_comments_cache_key($ticket_id);
+    wp_cache_set($cache_key, $data, 'glpi', $ttl);
+    set_transient($cache_key, $data, $ttl);
+}
+
+function gexe_comments_cache_delete($ticket_id) {
+    $cache_key = gexe_comments_cache_key($ticket_id);
+    wp_cache_delete($cache_key, 'glpi');
+    delete_transient($cache_key);
+}
+
 function gexe_render_comments($ticket_id) {
     if ($ticket_id <= 0) return '';
 
     // кэшируем HTML комментариев, чтобы ускорить повторные открытия карточки
-    $cache_key = 'glpi_comments_' . $ticket_id;
-    $cached    = get_transient($cache_key);
+    $cached = gexe_comments_cache_get($ticket_id);
     if ($cached !== false) return $cached;
 
     global $glpi_db;
     $rows = $glpi_db->get_results($glpi_db->prepare(
-        "SELECT f.id, f.users_id, f.date, f.content, u.realname, u.firstname
-         FROM glpi_itilfollowups AS f
-         LEFT JOIN glpi_users AS u ON u.id = f.users_id
-         WHERE f.itemtype = 'Ticket'
-           AND f.items_id = %d
-         ORDER BY f.date ASC",
+        "SELECT f.id, f.users_id, f.date, f.content, u.realname, u.firstname"
+         . " FROM glpi_itilfollowups AS f"
+         . " LEFT JOIN glpi_users AS u ON u.id = f.users_id"
+         . " WHERE f.itemtype = 'Ticket'"
+         . "   AND f.items_id = %d"
+         . " ORDER BY f.date ASC",
         $ticket_id
     ), ARRAY_A);
 
     if (!$rows) {
         $empty = '<div class="glpi-empty">Нет комментариев</div>';
-        set_transient($cache_key, $empty, 60);
+        gexe_comments_cache_set($ticket_id, $empty);
         return $empty;
     }
 
@@ -144,7 +166,7 @@ function gexe_render_comments($ticket_id) {
               . '</div>';
     }
 
-    set_transient($cache_key, $out, 60);
+    gexe_comments_cache_set($ticket_id, $out);
     return $out;
 }
 function gexe_glpi_get_comments() {
@@ -259,7 +281,10 @@ function gexe_glpi_card_action() {
     }
 
     $comment_html = '';
-    if ($ok) { $comment_html = gexe_render_comments($ticket_id); }
+    if ($ok) {
+        gexe_comments_cache_delete($ticket_id);
+        $comment_html = gexe_render_comments($ticket_id);
+    }
 
     wp_send_json([
         'ok'           => (bool)$ok,
@@ -299,7 +324,7 @@ function gexe_glpi_add_comment() {
             $ticket_id
         ));
         // очищаем кэш комментариев, чтобы при следующем открытии загрузились свежие данные
-        delete_transient('glpi_comments_' . $ticket_id);
+        gexe_comments_cache_delete($ticket_id);
     }
 
     wp_send_json(['ok' => (bool)$ok, 'count' => $count]);
