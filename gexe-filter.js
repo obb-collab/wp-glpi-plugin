@@ -223,7 +223,50 @@
       if (full) desc.textContent = full;
     }
     const chip = $('.glpi-comments-chip', clone); if (chip) chip.remove();
+
+    const id = Number(clone.getAttribute('data-ticket-id') || '0');
+    const bar = document.createElement('div');
+    bar.className = 'gexe-card-actions';
+    bar.innerHTML =
+      '<button class="gexe-action-btn gexe-open-comment" title="Комментарии"><i class="fa-regular fa-comment"></i></button>' +
+      '<button class="gexe-action-btn gexe-open-accept"  title="Принять в работу"><i class="fa-solid fa-play"></i></button>' +
+      '<button class="gexe-action-btn gexe-open-close"   title="Завершить"><i class="fa-solid fa-check"></i></button>';
+    clone.insertBefore(bar, clone.firstChild);
+
+    const btnComment = $('.gexe-open-comment', bar);
+    const btnAccept  = $('.gexe-open-accept',  bar);
+    const btnClose   = $('.gexe-open-close',   bar);
+
+    on(btnComment, 'click', e => {
+      e.stopPropagation();
+      const title = (clone.querySelector('.glpi-topic') || {}).textContent || ('Задача #' + id);
+      openCommentModal(title.trim(), id);
+    });
+
+    on(btnAccept, 'click', e => {
+      e.stopPropagation();
+      if (btnAccept.disabled) return;
+      doCardAction('start', id).then(ok => {
+        if (ok) {
+          btnAccept.disabled = true;
+          const orig = document.querySelector('.glpi-card[data-ticket-id="'+id+'"]');
+          if (orig) {
+            orig.setAttribute('data-status','2');
+            const oBtn = orig.querySelector('.gexe-open-accept');
+            if (oBtn) oBtn.disabled = true;
+          }
+          recalcStatusCounts(); filterCards();
+        }
+      });
+    });
+
+    on(btnClose, 'click', e => {
+      e.stopPropagation();
+      openDoneModal(id);
+    });
+
     wrap.appendChild(clone);
+    applyActionVisibility();
   }
 
   function loadComments(ticketId, page = 1) {
@@ -313,6 +356,7 @@
             const openedId = Number(modalEl.getAttribute('data-ticket-id') || '0');
             if (openedId === id) loadComments(id);
           }
+          applyActionVisibility();
         }
       })
       .catch(()=>{});
@@ -396,9 +440,7 @@
       const bar = document.createElement('div');
       bar.className = 'gexe-card-actions';
       bar.innerHTML =
-        '<button class="gexe-action-btn gexe-open-comment" title="Комментарии"><i class="fa-regular fa-comment"></i></button>' +
-        '<button class="gexe-action-btn gexe-open-accept"  title="Принять в работу"><i class="fa-solid fa-play"></i></button>' +
-        '<button class="gexe-action-btn gexe-open-close"   title="Завершить"><i class="fa-solid fa-check"></i></button>';
+        '<button class="gexe-action-btn gexe-open-accept" title="Принять в работу"><i class="fa-solid fa-play"></i></button>';
       card.insertBefore(bar, card.firstChild);
 
       // чип со счётчиком комментариев (в левом футере)
@@ -412,30 +454,22 @@
         ids.push(id);
       }
 
-      const btnComment = $('.gexe-open-comment', bar);
       const btnAccept  = $('.gexe-open-accept',  bar);
-      const btnClose   = $('.gexe-open-close',   bar);
-
-      on(btnComment, 'click', e => {
-        e.stopPropagation();
-        const title = (card.querySelector('.glpi-topic') || {}).textContent || ('Задача #' + id);
-        openCommentModal(title.trim(), id);
-      });
 
       on(btnAccept, 'click', e => {
         e.stopPropagation();
+        if (btnAccept.disabled) return;
         doCardAction('start', id).then(ok => {
           if (ok) {
-            btnAccept.style.display = 'none';
+            btnAccept.disabled = true;
             card.setAttribute('data-status', '2');
+            const modalBtn = modalEl && modalEl.getAttribute('data-ticket-id') === String(id)
+              ? modalEl.querySelector('.gexe-open-accept')
+              : null;
+            if (modalBtn) modalBtn.disabled = true;
             recalcStatusCounts(); filterCards();
           }
         });
-      });
-
-      on(btnClose, 'click', e => {
-        e.stopPropagation();
-        openDoneModal(id);
       });
     });
 
@@ -479,7 +513,7 @@
         if (btnClose)  btnClose.style.display  = 'none';
       }
 
-      // Если уже есть «Принято в работу» от меня — прячем «Принять в работу»
+      // Если уже есть «Принято в работу» от меня — блокируем «Принять в работу»
       const url = window.glpiAjax && glpiAjax.url;
       const nonce = window.glpiAjax && glpiAjax.nonce;
       const ticketId = Number(card.getAttribute('data-ticket-id') || '0');
@@ -490,7 +524,11 @@
         fd.append('ticket_id', String(ticketId));
         fetch(url, { method: 'POST', body: fd })
           .then(r => r.json())
-          .then(resp => { if (resp && resp.ok && resp.started) btnAccept.style.display = 'none'; })
+          .then(resp => {
+            if (resp && resp.ok && resp.started) {
+              btnAccept.disabled = true;
+            }
+          })
           .catch(()=>{});
       }
     });
