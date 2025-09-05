@@ -173,7 +173,17 @@ body {
 /* Комментарии */
 .glpi-comment{ background:#1e293b; border:1px solid #334155; border-radius:8px; padding:8px 12px; color:#e2e8f0; font-size:14px; }
 .glpi-comment + .glpi-comment{ margin-top:8px; }
-.glpi-comment.glpi-comment--pending{ opacity:.6; font-style:italic; }
+.glpi-comment.glpi-comment--pending{ opacity:.85; font-style:italic; }
+.glpi-comment--pending .glpi-comment-status{ display:flex; align-items:center; gap:6px; }
+.glpi-comment-spinner{ width:12px; height:12px; border:2px solid #94a3b8; border-top-color:transparent; border-radius:50%; animation:glpi-spin 1s linear infinite; }
+.glpi-comment--stopped .glpi-comment-spinner{ animation:none; border-top-color:#94a3b8; }
+@keyframes glpi-spin{ to{ transform:rotate(360deg); } }
+.glpi-comment--skeleton{ position:relative; overflow:hidden; }
+.glpi-comment--skeleton .meta,.glpi-comment--skeleton .text{ background:#334155; border-radius:4px; }
+.glpi-comment--skeleton .meta{ height:12px; margin-bottom:4px; }
+.glpi-comment--skeleton .text{ height:32px; }
+.glpi-comment--skeleton::before{ content:''; position:absolute; inset:0; transform:translateX(-100%); background:linear-gradient(90deg,transparent,rgba(255,255,255,.1),transparent); animation:glpi-skel 1.2s infinite; }
+@keyframes glpi-skel{ to{ transform:translateX(100%); } }
 .glpi-comment .meta{ font-size:12px; color:#94a3b8; margin-bottom:4px; display:flex; justify-content:space-between; align-items:center; }
 .glpi-comment .meta .glpi-comment-author{ display:flex; align-items:center; gap:4px; }
 .glpi-comment-date.age-green{ color:#28a745 !important; }

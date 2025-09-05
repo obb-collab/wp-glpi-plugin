@@ -192,7 +192,7 @@
       'а':'a','б':'b','в':'v','г':'g','д':'d','е':'e','ё':'e','ж':'zh','з':'z','и':'i','й':'y','к':'k','л':'l','м':'m','н':'n','о':'o','п':'p','р':'r','с':'s','т':'t','у':'u','ф':'f','х':'h','ц':'c','ч':'ch','ш':'sh','щ':'sch','ъ':'','ы':'y','ь':'','э':'e','ю':'yu','я':'ya'
     };
     return (txt||'').toString().toLowerCase()
-      .split('').map(ch => map[ch] ?? ch).join('')
+      .split('').map(ch => (Object.prototype.hasOwnProperty.call(map, ch) ? map[ch] : ch)).join('')
       .replace(/[^a-z0-9]+/g,'-')
       .replace(/^-+|-+$/g,'');
   }
@@ -397,7 +397,12 @@
     return modalEl;
   }
   function openViewerModal()  { ensureViewerModal(); modalEl.classList.add('gexe-modal--open'); document.body.classList.add('glpi-modal-open'); }
-  function closeViewerModal() { if (!modalEl) return; modalEl.classList.remove('gexe-modal--open'); document.body.classList.remove('glpi-modal-open'); }
+  function closeViewerModal() {
+    if (!modalEl) return;
+    modalEl.classList.remove('gexe-modal--open');
+    document.body.classList.remove('glpi-modal-open');
+    Object.values(pendingComments).forEach(p => { if (p.poller) clearInterval(p.poller); });
+  }
 
   function renderModalCard(cardEl) {
     const wrap = $('.gexe-modal__cardwrap', modalEl);
@@ -459,7 +464,15 @@
       return;
     }
 
-    if (box) box.innerHTML = '<div class="glpi-comments-loading">Комментарии загружаются...</div>';
+    if (box) {
+      box.innerHTML = '';
+      for (let i = 0; i < 3; i++) {
+        const sk = document.createElement('div');
+        sk.className = 'glpi-comment glpi-comment--skeleton';
+        sk.innerHTML = '<div class="meta"></div><div class="text"></div>';
+        box.appendChild(sk);
+      }
+    }
 
     const base = window.glpiAjax && glpiAjax.rest;
     const nonce = window.glpiAjax && glpiAjax.restNonce;
@@ -506,46 +519,68 @@
     }
   }
 
-  function addPendingComment(ticketId, text, followupId) {
+  function addPendingComment(ticketId, text, actionId) {
     const box = $('#gexe-comments');
     if (!box) return;
     const el = document.createElement('div');
     el.className = 'glpi-comment glpi-comment--pending';
-    el.innerHTML = '<div class="meta"><span>Отправка...</span></div><div class="text glpi-txt"></div>';
+    el.innerHTML = '<div class="meta"><span class="glpi-comment-status">Отправка...</span></div><div class="text glpi-txt"></div>';
     const txtEl = $('.text', el); if (txtEl) txtEl.textContent = text;
     box.appendChild(el);
-    pendingComments[ticketId] = { el, followupId, tries: 0 };
+    pendingComments[ticketId] = { el, actionId, poller: null, followupId: 0, start: Date.now() };
   }
 
-  function pollPendingComment(ticketId) {
+  function markPendingSent(ticketId, followupId, createdAt) {
     const info = pendingComments[ticketId];
     if (!info) return;
-    if (info.tries >= 7) {
-      delete pendingComments[ticketId];
-      info.el.remove();
-      lockAction(ticketId, 'comment', false);
-      console.debug('stop polling when comment feels ready');
-      return;
+    info.followupId = followupId;
+    const meta = $('.meta', info.el);
+    if (meta) {
+      meta.innerHTML = '<span class="glpi-comment-date" data-date="'+createdAt+'"></span><span class="glpi-comment-status"><span class="glpi-comment-spinner"></span> Отправлено</span>';
+      updateAgeFooters();
     }
-    info.tries++;
+    startPolling(ticketId);
+  }
+
+  function startPolling(ticketId) {
+    const info = pendingComments[ticketId];
+    if (!info || info.poller) return;
     const base = window.glpiAjax && glpiAjax.rest;
     const nonce = window.glpiAjax && glpiAjax.restNonce;
-    if (!base || !nonce) return;
-    const url = base + 'comments?ticket_id=' + encodeURIComponent(ticketId) + '&_=' + Date.now();
-    fetch(url, { headers: { 'X-WP-Nonce': nonce, 'Cache-Control': 'no-cache' } })
-      .then(r => r.json())
-      .then(data => {
-        if (data && data.html && (!info.followupId || data.html.indexOf('data-followup-id="'+info.followupId+'"') !== -1)) {
-          delete pendingComments[ticketId];
-          loadComments(ticketId);
-          lockAction(ticketId, 'comment', false);
-        } else {
-          setTimeout(() => pollPendingComment(ticketId), 10000);
-        }
-      })
-      .catch(() => {
-        setTimeout(() => pollPendingComment(ticketId), 10000);
-      });
+    if (!base || !nonce || !info.followupId) return;
+    let attempts = 0;
+    info.poller = setInterval(() => {
+      attempts++;
+      fetch(base + 'followup?id=' + info.followupId + '&_=' + Date.now(), { headers: { 'X-WP-Nonce': nonce, 'Cache-Control': 'no-cache' } })
+        .then(r => r.json())
+        .then(data => {
+          if (data && data.html) {
+            info.el.innerHTML = data.html;
+            info.el.classList.remove('glpi-comment--pending');
+            clearInterval(info.poller);
+            delete pendingComments[ticketId];
+            lockAction(ticketId, 'comment', false);
+            updateAgeFooters();
+          } else if (attempts * 2000 >= 30000) {
+            const st = $('.glpi-comment-status', info.el);
+            if (st) st.textContent = 'Отправлено, будет видно позже';
+            info.el.classList.add('glpi-comment--stopped');
+            clearInterval(info.poller);
+            delete pendingComments[ticketId];
+            lockAction(ticketId, 'comment', false);
+          }
+        })
+        .catch(() => {
+          if (attempts * 2000 >= 30000) {
+            const st = $('.glpi-comment-status', info.el);
+            if (st) st.textContent = 'Отправлено, будет видно позже';
+            info.el.classList.add('glpi-comment--stopped');
+            clearInterval(info.poller);
+            delete pendingComments[ticketId];
+            lockAction(ticketId, 'comment', false);
+          }
+        });
+    }, 2000);
   }
 
   /* ========================= МОДАЛКА КОММЕНТАРИЯ ========================= */
@@ -598,7 +633,8 @@
   function sendComment(){
     if (!cmntModal) return;
     const id  = Number(cmntModal.getAttribute('data-ticket-id') || '0');
-    const txt = (document.querySelector('#gexe-cmnt-text')?.value || '').trim();
+    const txtEl = document.querySelector('#gexe-cmnt-text');
+    const txt = (txtEl && txtEl.value ? txtEl.value : '').trim();
     if (!id || !txt) return;
     // закрываем окно сразу (важно на мобилках)
     closeCommentModal();
@@ -606,22 +642,22 @@
     const nonce = window.glpiAjax && glpiAjax.nonce;
     if (!url || !nonce) return;
     lockAction(id, 'comment', true);
-    addPendingComment(id, txt, null);
+    const actionId = crypto.randomUUID();
+    addPendingComment(id, txt, actionId);
     const fd = new FormData();
     fd.append('action', 'glpi_add_comment');
     fd.append('_ajax_nonce', nonce);
     fd.append('ticket_id', String(id));
     fd.append('content', txt);
+    fd.append('action_id', actionId);
     fetch(url, { method: 'POST', body: fd })
       .then(r => r.json())
       .then(resp => {
         if (resp && resp.success) {
-          const pend = pendingComments[id];
-          if (pend) pend.followupId = resp.data && resp.data.followup_id;
           if (window.gexePrefetchedComments) delete window.gexePrefetchedComments[id];
           applyActionVisibility();
           refreshTicketMeta(id);
-          pollPendingComment(id);
+          markPendingSent(id, resp.data && resp.data.followup_id, resp.data && resp.data.created_at);
         } else {
           const pend = pendingComments[id];
           if (pend) { pend.el.remove(); delete pendingComments[id]; }
