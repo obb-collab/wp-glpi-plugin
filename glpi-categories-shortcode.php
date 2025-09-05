@@ -1,7 +1,7 @@
 <?php
 /**
  * Plugin Name: GLPI Categories Shortcode
- * Description: [glpi_categories] — выводит категории GLPI, используя $glpi_db (wpdb) из glpi-db-setup.php.
+ * Description: [glpi_categories] — выводит категории GLPI, используя локальное read-only подключение.
  * Version: 1.0.0
  */
 
@@ -9,13 +9,11 @@ if (!defined('ABSPATH')) { exit; } // только из WP
 
 add_shortcode('glpi_categories', function () {
 
-    // 1) Подключаем модуль инициализации БД GLPI
-    require_once __DIR__ . '/glpi-db-setup.php';
-
-    // 2) Проверяем готовый $glpi_db (wpdb)
-    global $glpi_db;
-    if (!($glpi_db instanceof wpdb)) {
-        return '<div style="color:#ef4444">$glpi_db (wpdb) не найден.</div>';
+    // 1) Подключаем утилиты и получаем read-only подключение
+    require_once __DIR__ . '/glpi-utils.php';
+    $db = gexe_glpi_db('ro');
+    if (!($db instanceof wpdb)) {
+        return '<div style="color:#ef4444">GLPI DB connection failed.</div>';
     }
 
     // 3) Тянем категории из GLPI
@@ -30,9 +28,9 @@ add_shortcode('glpi_categories', function () {
         FROM glpi_itilcategories
         ORDER BY completename
     ";
-    $rows = $glpi_db->get_results($sql, ARRAY_A);
-    if ($glpi_db->last_error) {
-        return '<div style="color:#ef4444">SQL error: ' . esc_html($glpi_db->last_error) . '</div>';
+    $rows = $db->get_results($sql, ARRAY_A);
+    if ($db->last_error) {
+        return '<div style="color:#ef4444">SQL error: ' . esc_html($db->last_error) . '</div>';
     }
     if (!$rows) {
         return '<div>Категории не найдены.</div>';

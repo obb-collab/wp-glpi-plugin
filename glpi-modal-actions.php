@@ -1,11 +1,14 @@
 <?php
 /**
  * GLPI Modal + Actions (standalone module)
- * Подключается из gexe-copy.php. Использует существующее соединение $glpi_db.
+ * Подключается из gexe-copy.php. Использует gexe_glpi_db() для соединения.
  * Поддержка AJAX для: загрузки комментариев, проверки "Принято в работу",
  * добавления комментария, действий "start/done", счетчика комментариев.
  */
 require_once __DIR__ . '/glpi-utils.php';
+global $glpi_db, $glpi_db_ro;
+$glpi_db    = gexe_glpi_db();      // master
+$glpi_db_ro = gexe_glpi_db('ro');  // replica for reads
 
 add_action('wp_enqueue_scripts', function () {
     wp_localize_script('gexe-filter', 'glpiAjax', [
@@ -24,10 +27,10 @@ function gexe_can_touch_glpi_ticket($ticket_id) {
     $glpi_uid = gexe_get_current_glpi_uid();
     if ($glpi_uid <= 0) return false;
 
-    global $glpi_db;
+    global $glpi_db_ro;
 
     // Глобальные права (UPDATE)
-    $has_right = $glpi_db->get_var($glpi_db->prepare(
+    $has_right = $glpi_db_ro->get_var($glpi_db_ro->prepare(
         "SELECT 1
          FROM glpi_profiles_users pu
          JOIN glpi_profilerights pr ON pu.profiles_id = pr.profiles_id
@@ -40,7 +43,7 @@ function gexe_can_touch_glpi_ticket($ticket_id) {
     if ($has_right) return true;
 
     // Исполнитель тикета
-    $is_assignee = $glpi_db->get_var($glpi_db->prepare(
+    $is_assignee = $glpi_db_ro->get_var($glpi_db_ro->prepare(
         "SELECT 1
          FROM glpi_tickets_users
          WHERE tickets_id = %d
@@ -85,8 +88,8 @@ function gexe_clean_comment_html($html) {
  * Используем статус тикета и дату последнего комментария.
  */
 function gexe_get_ticket_comments_signature($ticket_id) {
-    global $glpi_db;
-    $row = $glpi_db->get_row($glpi_db->prepare(
+    global $glpi_db_ro;
+    $row = $glpi_db_ro->get_row($glpi_db_ro->prepare(
         "SELECT t.status AS status,
                 (SELECT MAX(date) FROM glpi_itilfollowups f
                  WHERE f.itemtype='Ticket' AND f.items_id=t.id) AS last_comment
@@ -146,8 +149,8 @@ function gexe_get_comment_count($ticket_id) {
     $key = gexe_comment_count_cache_key($ticket_id);
     $cached = wp_cache_get($key, 'glpi');
     if ($cached !== false) return (int)$cached;
-    global $glpi_db;
-    $cnt = (int)$glpi_db->get_var($glpi_db->prepare(
+    global $glpi_db_ro;
+    $cnt = (int)$glpi_db_ro->get_var($glpi_db_ro->prepare(
         "SELECT COUNT(*) FROM glpi_itilfollowups WHERE itemtype='Ticket' AND items_id=%d",
         $ticket_id
     ));
@@ -174,10 +177,10 @@ function gexe_render_comments($ticket_id, $page = 1, $per_page = 20) {
         return $cached;
     }
 
-    global $glpi_db;
+    global $glpi_db_ro;
     $offset = ($page - 1) * $per_page;
     $t0   = microtime(true);
-    $rows = $glpi_db->get_results($glpi_db->prepare(
+    $rows = $glpi_db_ro->get_results($glpi_db_ro->prepare(
         "SELECT f.id, f.users_id, f.date, f.content, u.realname, u.firstname"
          . " FROM glpi_itilfollowups AS f"
          . " LEFT JOIN glpi_users AS u ON u.id = f.users_id"
@@ -273,11 +276,11 @@ function gexe_glpi_count_comments_batch() {
     }
 
     if ($missing) {
-        global $glpi_db;
+        global $glpi_db_ro;
         $placeholders = implode(',', array_fill(0, count($missing), '%d'));
         $sql = "SELECT items_id, COUNT(*) AS cnt FROM glpi_itilfollowups "
              . "WHERE itemtype='Ticket' AND items_id IN ($placeholders) GROUP BY items_id";
-        $rows = $glpi_db->get_results($glpi_db->prepare($sql, $missing), ARRAY_A);
+        $rows = $glpi_db_ro->get_results($glpi_db_ro->prepare($sql, $missing), ARRAY_A);
 
         if ($rows) {
             foreach ($rows as $r) {
@@ -309,10 +312,10 @@ function gexe_glpi_ticket_started() {
         wp_send_json(['ok' => true, 'started' => false]);
     }
 
-    global $glpi_db;
-    $like1 = '%' . $glpi_db->esc_like('Принято в работу') . '%';
+    global $glpi_db_ro;
+    $like1 = '%' . $glpi_db_ro->esc_like('Принято в работу') . '%';
 
-    $started = $glpi_db->get_var($glpi_db->prepare(
+    $started = $glpi_db_ro->get_var($glpi_db_ro->prepare(
         "SELECT 1
          FROM glpi_itilfollowups
          WHERE itemtype = 'Ticket'

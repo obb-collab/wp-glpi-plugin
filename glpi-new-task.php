@@ -38,10 +38,10 @@ add_action('wp_ajax_glpi_dropdowns', 'gexe_glpi_dropdowns');
 function gexe_glpi_dropdowns() {
     check_ajax_referer('glpi_modal_actions');
 
-    global $glpi_db;
+    $db = gexe_glpi_db('ro');
 
     // Категории (полное имя)
-    $cats = $glpi_db->get_results(
+    $cats = $db->get_results(
         "SELECT id, completename
          FROM glpi_itilcategories
          ORDER BY completename ASC",
@@ -58,7 +58,7 @@ function gexe_glpi_dropdowns() {
     }
 
     // Местоположения
-    $locs = $glpi_db->get_results(
+    $locs = $db->get_results(
         "SELECT id, completename
          FROM glpi_locations
          ORDER BY completename ASC",
@@ -108,7 +108,7 @@ function gexe_glpi_create_ticket() {
         wp_send_json(['ok' => false, 'error' => 'bad_request']);
     }
 
-    global $glpi_db;
+    $db = gexe_glpi_db();
 
     $glpi_uid = gexe_get_current_glpi_uid(); // может быть 0
 
@@ -123,16 +123,16 @@ function gexe_glpi_create_ticket() {
     ];
     $formats = ['%s','%s','%d','%s','%d','%d'];
 
-    $ok = (false !== $glpi_db->insert('glpi_tickets', $ticket_data, $formats));
+    $ok = (false !== $db->insert('glpi_tickets', $ticket_data, $formats));
     if (!$ok) {
         wp_send_json(['ok' => false, 'error' => 'insert_ticket_failed']);
     }
 
-    $ticket_id = intval($glpi_db->insert_id);
+    $ticket_id = intval($db->insert_id);
 
     // Добавляем заявителя (requester, type=1), если есть пользователь GLPI
     if ($glpi_uid > 0) {
-        $glpi_db->insert('glpi_tickets_users', [
+        $db->insert('glpi_tickets_users', [
             'tickets_id' => $ticket_id,
             'users_id'   => $glpi_uid,
             'type'       => 1
@@ -141,7 +141,7 @@ function gexe_glpi_create_ticket() {
 
     // Исполнитель по флажку (assignee, type=2)
     if ($assign_me && $glpi_uid > 0) {
-        $glpi_db->insert('glpi_tickets_users', [
+        $db->insert('glpi_tickets_users', [
             'tickets_id' => $ticket_id,
             'users_id'   => $glpi_uid,
             'type'       => 2
