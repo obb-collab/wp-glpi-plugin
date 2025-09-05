@@ -2,8 +2,8 @@
 /**
  * GLPI — создание новой заявки из WordPress UI.
  * Регистрирует AJAX:
- *  - glpi_get_form_data : выдаёт списки категорий, местоположений и исполнителей
- *  - glpi_create_ticket : создаёт заявку в glpi_tickets (+ заявители/исполнители)
+ *  - gexe_get_form_data : выдаёт списки категорий, местоположений и исполнителей
+ *  - gexe_create_ticket : создаёт заявку в glpi_tickets (+ заявители/исполнители)
  *
  * Также подключает CSS для окна создания заявки.
  */
@@ -32,19 +32,25 @@ add_action('wp_enqueue_scripts', function () {
         true
     );
     wp_enqueue_script('glpi-new-task-js');
+    wp_localize_script('glpi-new-task-js', 'gexeAjax', [
+        'url'   => admin_url('admin-ajax.php'),
+        'nonce' => wp_create_nonce('gexe_form_data'),
+    ]);
 });
 
 // -------- AJAX: создание новой заявки --------
-add_action('wp_ajax_glpi_create_ticket', 'gexe_glpi_create_ticket');
-function gexe_glpi_create_ticket() {
-    check_ajax_referer('glpi_modal_actions');
+add_action('wp_ajax_gexe_create_ticket', 'gexe_create_ticket');
+function gexe_create_ticket() {
+    if (!check_ajax_referer('gexe_form_data', 'nonce', false)) {
+        wp_send_json(['ok' => false, 'error' => 'AJAX_FORBIDDEN'], 403);
+    }
 
     if (!is_user_logged_in()) {
         wp_send_json(['ok' => false, 'error' => 'not_logged_in']);
     }
 
     if (!current_user_can('create_glpi_ticket')) {
-        wp_send_json(['ok' => false, 'error' => 'forbidden']);
+        wp_send_json(['ok' => false, 'error' => 'forbidden'], 403);
     }
 
     $payload_raw = isset($_POST['payload']) ? stripslashes((string)$_POST['payload']) : '';
@@ -59,7 +65,7 @@ function gexe_glpi_create_ticket() {
     $assignee_id = isset($payload['assignee_id']) ? intval($payload['assignee_id']) : 0;
 
     if ($name === '' || $content === '') {
-        wp_send_json(['ok' => false, 'error' => 'bad_request']);
+        wp_send_json(['ok' => false, 'error' => 'bad_request'], 400);
     }
 
     global $glpi_db;

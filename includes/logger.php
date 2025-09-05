@@ -16,9 +16,11 @@ function gexe_log_action($message) {
 }
 
 // AJAX: log client-side errors into actions.log
-add_action('wp_ajax_glpi_log_client_error', 'gexe_glpi_log_client_error');
-function gexe_glpi_log_client_error() {
-    check_ajax_referer('glpi_modal_actions');
+add_action('wp_ajax_gexe_log_client_error', 'gexe_log_client_error');
+function gexe_log_client_error() {
+    if (!check_ajax_referer('gexe_form_data', 'nonce', false)) {
+        wp_send_json_error(['code' => 'AJAX_FORBIDDEN'], 403);
+    }
     $msg = isset($_POST['message']) ? sanitize_text_field(wp_unslash($_POST['message'])) : '';
     if ($msg !== '') {
         gexe_log_action('[client-error] ' . $msg);
