@@ -48,6 +48,12 @@
     }
   }
 
+  function escapeHTML(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
   /* ========================= ПРЕДЗАГРУЖЕННЫЕ КОММЕНТАРИИ ========================= */
   // Комментарии подгружаются на сервере и передаются через window.gexePrefetchedComments
 
@@ -458,24 +464,33 @@
   function sendComment(){
     if (!cmntModal) return;
     const id  = Number(cmntModal.getAttribute('data-ticket-id') || '0');
-    const txt = (document.querySelector('#gexe-cmnt-text')?.value || '').trim();
-    if (!id || !txt) return;
-    // закрываем окно сразу (важно на мобилках)
-    closeCommentModal();
+    const txtEl = document.querySelector('#gexe-cmnt-text');
+    const txt = (txtEl?.value || '').trim();
+    if (!id || !txt || isActionLocked(id, 'comment')) return;
+    const btn = document.getElementById('gexe-cmnt-send');
+    setActionLoading(btn, true);
+    if (txtEl) txtEl.setAttribute('readonly', 'readonly');
+    lockAction(id, 'comment', true);
+    if (window.glpiToast) window.glpiToast('Отправляем комментарий…');
     const url = window.glpiAjax && glpiAjax.url;
     const nonce = window.glpiAjax && glpiAjax.nonce;
     if (!url || !nonce) return;
+    const actionId = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : String(Date.now());
     const fd = new FormData();
     fd.append('action', 'glpi_add_comment');
     fd.append('_ajax_nonce', nonce);
     fd.append('ticket_id', String(id));
     fd.append('content', txt);
+    fd.append('action_id', actionId);
     fetch(url, { method: 'POST', body: fd })
       .then(r => r.json())
       .then(resp => {
+        setActionLoading(btn, false);
+        if (txtEl) txtEl.removeAttribute('readonly');
+        lockAction(id, 'comment', false);
         if (resp && resp.success) {
+          closeCommentModal();
           const data = resp.data || {};
-          // обновим счётчики комментариев
           const card = document.querySelector('.glpi-card[data-ticket-id="'+id+'"]');
           const cnt = card && card.querySelector('.gexe-cmnt-count');
           const modalCnt = modalEl && modalEl.querySelector('.glpi-modal__comments-title .gexe-cmnt-count');
@@ -485,12 +500,58 @@
           if (cnt) cnt.textContent = String(newCount);
           if (modalCnt) modalCnt.textContent = String(newCount);
           if (window.gexePrefetchedComments) delete window.gexePrefetchedComments[id];
-          // обновляем список комментариев в открытой карточке
-          loadComments(id);
+          renderPendingComment(actionId, txt);
+          startPolling(id, data.followup_id, actionId);
+          if (window.glpiToast) window.glpiToast('Комментарий отправлен');
           applyActionVisibility();
+        } else {
+          const msg = resp && resp.data && resp.data.message ? resp.data.message : 'Ошибка';
+          if (window.glpiToast) window.glpiToast(msg);
         }
       })
-      .catch(()=>{});
+      .catch(() => {
+        setActionLoading(btn, false);
+        if (txtEl) txtEl.removeAttribute('readonly');
+        lockAction(id, 'comment', false);
+        if (window.glpiToast) window.glpiToast('Ошибка сети');
+      });
+  }
+
+  function renderPendingComment(actionId, text) {
+    const box = document.getElementById('gexe-comments');
+    if (!box) return;
+    const div = document.createElement('div');
+    div.className = 'glpi-comment comment--pending';
+    div.setAttribute('data-action-id', actionId);
+    div.innerHTML = '<div class="meta"><span class="glpi-comment-author"><i class="fa-regular fa-user"></i> Вы</span><span class="pending-note"><i class="fa-solid fa-spinner fa-spin"></i> появится в GLPI через несколько секунд</span></div><div class="text"><p class="glpi-txt">' + escapeHTML(text) + '</p></div>';
+    box.prepend(div);
+  }
+
+  function startPolling(ticketId, followupId, actionId) {
+    if (!followupId) return;
+    const base = window.glpiAjax && glpiAjax.rest;
+    const nonce = window.glpiAjax && glpiAjax.restNonce;
+    if (!base || !nonce) return;
+    let attempts = 0;
+    const timer = setInterval(() => {
+      attempts++;
+      fetch(base + 'comments?ticket_id=' + encodeURIComponent(ticketId) + '&page=1&_=' + Date.now(), {
+        headers: { 'X-WP-Nonce': nonce, 'Cache-Control': 'no-cache' }
+      })
+        .then(r => r.json())
+        .then(data => {
+          if (data && data.html && data.html.includes('data-id="' + followupId + '"')) {
+            clearInterval(timer);
+            loadComments(ticketId);
+          } else if (attempts >= 15) {
+            clearInterval(timer);
+            if (window.glpiToast) {
+              window.glpiToast('Комментарий отправлен, но ещё не виден в GLPI. Обновите позже');
+            }
+          }
+        })
+        .catch(() => {});
+    }, 2000);
   }
 
   /* ========================= МОДАЛКА ПОДТВЕРЖДЕНИЯ ЗАВЕРШЕНИЯ ========================= */

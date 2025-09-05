@@ -181,6 +181,7 @@ function gexe_render_comments($ticket_id, $page = 1, $per_page = 20) {
 
     if (is_array($cached) && isset($cached['html'], $cached['signature']) && $cached['signature'] === $signature) {
         $cached['time_ms'] = 0;
+        gexe_log_action(sprintf('[comments.load] ticket=%d elapsed=%dms source=cache count=%d', $ticket_id, 0, isset($cached['count']) ? (int)$cached['count'] : 0));
         return $cached;
     }
 
@@ -219,7 +220,7 @@ function gexe_render_comments($ticket_id, $page = 1, $per_page = 20) {
         $who  = gexe_compose_short_name($r['realname'] ?? '', $r['firstname'] ?? '');
         if ($who === '') $who = 'Автор ID ' . $uid;
 
-        $out .= '<div class="glpi-comment">'
+        $out .= '<div class="glpi-comment" data-id="' . (int)$r['id'] . '">'
               .   '<div class="meta">'
               .     '<span class="glpi-comment-author"><i class="fa-regular fa-user"></i> ' . esc_html($who) . '</span>'
               .     '<span class="glpi-comment-date" data-date="' . $when . '"></span>'
@@ -235,6 +236,7 @@ function gexe_render_comments($ticket_id, $page = 1, $per_page = 20) {
         'time_ms'   => $elapsed_ms,
     ];
     gexe_store_comments_cache($ticket_id, $page, $per_page, $data);
+    gexe_log_action(sprintf('[comments.load] ticket=%d elapsed=%dms source=db count=%d', $ticket_id, $elapsed_ms, count($rows)));
     return $data;
 }
 
@@ -404,15 +406,16 @@ add_action('wp_ajax_glpi_add_comment', 'gexe_glpi_add_comment');
 function gexe_glpi_add_comment() {
     check_ajax_referer('glpi_modal_actions');
 
-    $ticket_id = isset($_POST['ticket_id']) ? intval($_POST['ticket_id']) : 0;
-    $content   = isset($_POST['content']) ? (string) $_POST['content'] : '';
+    $ticket_id  = isset($_POST['ticket_id']) ? intval($_POST['ticket_id']) : 0;
+    $content    = isset($_POST['content']) ? (string) $_POST['content'] : '';
     $is_private = !empty($_POST['is_private']) ? 1 : 0;
+    $action_id  = isset($_POST['action_id']) ? sanitize_text_field($_POST['action_id']) : '';
 
     if ($ticket_id <= 0 || trim($content) === '') {
-        wp_send_json_error(['message' => 'bad_request']);
+        wp_send_json_error(['message' => 'bad_request', 'action_id' => $action_id]);
     }
     if (!gexe_can_touch_glpi_ticket($ticket_id)) {
-        wp_send_json_error(['message' => 'forbidden']);
+        wp_send_json_error(['message' => 'forbidden', 'action_id' => $action_id]);
     }
 
     $resp = gexe_glpi_rest_request('ticket_comment ' . $ticket_id, 'POST', '/ITILFollowup/', [
@@ -424,17 +427,20 @@ function gexe_glpi_add_comment() {
         ],
     ]);
     if (is_wp_error($resp)) {
-        wp_send_json_error(['message' => 'network_error']);
+        wp_send_json_error(['message' => 'network_error', 'action_id' => $action_id]);
     }
     $code = wp_remote_retrieve_response_code($resp);
     if ($code >= 300) {
         $body  = wp_remote_retrieve_body($resp);
         $short = mb_substr(trim($body), 0, 200);
-        wp_send_json_error(['message' => $short]);
+        wp_send_json_error(['message' => $short, 'action_id' => $action_id]);
     }
 
+    $body   = json_decode(wp_remote_retrieve_body($resp), true);
+    $created_id = isset($body['id']) ? intval($body['id']) : 0;
+    gexe_log_action(sprintf('[comment.add] ticket=%d action=%s created=%d', $ticket_id, $action_id, $created_id));
     gexe_clear_comments_cache($ticket_id); // refresh caches after add
     $count = gexe_get_comment_count($ticket_id);
 
-    wp_send_json_success(['count' => $count]);
+    wp_send_json_success(['count' => $count, 'followup_id' => $created_id, 'action_id' => $action_id]);
 }
