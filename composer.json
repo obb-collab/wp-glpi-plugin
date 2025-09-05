@@ -1,0 +1,8 @@
+{
+    "name": "obb-collab/wp-glpi-plugin",
+    "scripts": {
+        "bump:patch": "php tools/bump-version.php patch",
+        "bump:minor": "php tools/bump-version.php minor",
+        "bump:major": "php tools/bump-version.php major"
+    }
+}

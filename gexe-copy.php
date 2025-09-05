@@ -1,9 +1,11 @@
 <?php
 /*
 Plugin Name: WP GLPI Plugin
+Description: Интерфейс заявок GLPI для WordPress.
 Version: 1.0.0
 GitHub Plugin URI: obb-collab/wp-glpi-plugin
 Primary Branch: main
+Update URI: https://github.com/obb-collab/wp-glpi-plugin
 */
 
 if (!defined('ABSPATH')) exit;

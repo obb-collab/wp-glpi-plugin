@@ -34,3 +34,19 @@ When the user clicks **Задача решена** in the ticket modal, the plug
 3. Triggers standard GLPI notifications (mail/Telegram).
 
 Errors are logged with the `[GLPI-SOLVE]` prefix.
+
+## Release
+
+### Manually
+
+Run one of the following commands:
+
+```bash
+php tools/bump-version.php patch
+php tools/bump-version.php minor
+php tools/bump-version.php major
+```
+
+### GitHub Actions
+
+Trigger the **Release Bump** workflow and choose the desired level.
