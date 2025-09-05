@@ -185,6 +185,11 @@ body {
 .glpi-comment + .glpi-comment{ margin-top:8px; }
 .glpi-comment .meta{ font-size:12px; color:#94a3b8; margin-bottom:4px; display:flex; justify-content:space-between; align-items:center; }
 .glpi-comment .meta .glpi-comment-author{ display:flex; align-items:center; gap:4px; }
+.glpi-comment-date.age-green{ color:#28a745 !important; }
+.glpi-comment-date.age-red{ color:#dc3545 !important; }
+.glpi-comment-date.age-orange{ color:#fd7e14 !important; }
+.glpi-comment-date.age-blue{ color:#3b82f6 !important; }
+.glpi-comment-date.age-black{ color:#808080 !important; }
 .glpi-comment .text{ line-height:1.4; }
 .glpi-comment .glpi-txt{ margin:0 0 4px 0; }
 .glpi-empty{ text-align:center; padding:12px 0; color:#94a3b8; font-size:13px; }
