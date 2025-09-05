@@ -17,6 +17,7 @@ register_activation_hook(__FILE__, function () {
     if (!wp_next_scheduled('gexe_warm_comments_cache')) {
         wp_schedule_event(time() + MINUTE_IN_SECONDS, 'hourly', 'gexe_warm_comments_cache');
     }
+    gexe_glpi_install_triggers();
 });
 
 register_deactivation_hook(__FILE__, function () {
@@ -29,6 +30,9 @@ register_deactivation_hook(__FILE__, function () {
         wp_unschedule_event($ts, 'gexe_warm_comments_cache');
     }
 });
+
+register_uninstall_hook(__FILE__, 'gexe_glpi_uninstall');
+
 
 // ====== СТАТИКА (CSS/JS) с принудительным обновлением версий ======
 add_action('wp_enqueue_scripts', function () {
@@ -45,6 +49,22 @@ add_action('wp_enqueue_scripts', function () {
 
 // ====== ПОДКЛЮЧЕНИЕ К БД GLPI ======
 require_once __DIR__ . '/glpi-db-setup.php';
+
+function gexe_glpi_uninstall() {
+    gexe_glpi_remove_triggers();
+}
+
+add_action('admin_init', function () {
+    if (get_option('glpi_triggers_version') !== GEXE_TRIGGERS_VERSION) {
+        gexe_glpi_install_triggers();
+    }
+});
+
+add_action('admin_notices', function () {
+    if (current_user_can('manage_options') && !gexe_glpi_triggers_present()) {
+        echo '<div class="notice notice-warning"><p>GLPI triggers are missing or not installed. Run wp gexe:triggers install.</p></div>';
+    }
+});
 
 // ====== УТИЛИТЫ ======
 function gexe_autoname($realname, $firstname) {
