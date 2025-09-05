@@ -197,7 +197,14 @@ body {
 
 /* Внутри модалки карточка попроще */
 .glpi-card--in-modal{ box-shadow:none !important; transform:none !important; padding-bottom:8px; }
-.glpi-card--in-modal .glpi-card-body{ -webkit-line-clamp:unset; white-space:pre-wrap; }
+.glpi-card--in-modal .glpi-card-body{
+  -webkit-line-clamp:unset;
+  white-space:pre-wrap;
+  max-height:none;
+  overflow:visible;
+  text-overflow:unset;
+  display:block;
+}
 .glpi-card--in-modal .glpi-executor-footer,
 .glpi-card--in-modal .glpi-date-footer{ position:static; display:inline-block; margin:6px 12px 0 0; }
 
