@@ -93,13 +93,6 @@ function gexe_cat_slug($leaf) {
     return $leaf;
 }
 
-/** Убирает фамилию из ФИО (первое слово) */
-function gexe_without_surname($full) {
-    $parts = preg_split('/\s+/u', trim((string)$full));
-    if (count($parts) <= 1) return $full;
-    array_shift($parts);
-    return trim(implode(' ', $parts));
-}
 ?>
 <div class="glpi-container">
 
@@ -195,7 +188,8 @@ function gexe_without_surname($full) {
         if (!empty($t['executors'])) {
           $exec_names = $t['executors'];
           if ($is_logged_in) {
-            $exec_names = array_map('gexe_without_surname', $exec_names);
+            // Hide executor icon and initials for authorized users
+            $exec_names = [];
           }
           $exec_names = array_map('esc_html', $exec_names);
           $exec_names = array_filter($exec_names, 'strlen');
