@@ -133,7 +133,7 @@ function gexe_cat_slug($leaf) {
       </div>
     </div>
 
-    <!-- Блоки категорий (Сегодня в программе) -->
+    <!-- Категории -->
     <div class="glpi-category-tags">
       <?php foreach ($category_counts as $leaf => $count): 
           $slug = isset($category_slugs[$leaf]) ? $category_slugs[$leaf] : gexe_cat_slug($leaf);

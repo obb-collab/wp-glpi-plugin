@@ -231,7 +231,7 @@ function gexe_glpi_cards_shortcode($atts) {
         }
     }
 
-    // ---- Map исполнителей (для фильтра «Сегодня в программе», когда show_all = true) ----
+    // ---- Map исполнителей (для фильтра «Категории», когда show_all = true) ----
     $executors_map = [];
     foreach ($tickets as $t) {
         foreach ($t['executors'] as $e) {
