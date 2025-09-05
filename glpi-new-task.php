@@ -2,7 +2,7 @@
 /**
  * GLPI — создание новой заявки из WordPress UI.
  * Регистрирует AJAX:
- *  - glpi_dropdowns     : выдаёт списки категорий и местоположений
+ *  - glpi_dropdowns     : выдаёт списки категорий, местоположений и исполнителей
  *  - glpi_create_ticket : создаёт заявку в glpi_tickets (+ заявители/исполнители)
  *
  * Также подключает CSS для окна создания заявки.
@@ -33,12 +33,14 @@ add_action('wp_enqueue_scripts', function () {
     wp_enqueue_script('glpi-new-task-js');
 });
 
-// -------- AJAX: списки категорий и местоположений --------
+// -------- AJAX: списки категорий, местоположений и исполнителей --------
 add_action('wp_ajax_glpi_dropdowns', 'gexe_glpi_dropdowns');
 function gexe_glpi_dropdowns() {
     check_ajax_referer('glpi_modal_actions');
 
     global $glpi_db;
+
+    $include_branches = !empty($_POST['branches']);
 
     // Категории (полное имя)
     $cats = $glpi_db->get_results(
@@ -57,27 +59,61 @@ function gexe_glpi_dropdowns() {
         }
     }
 
-    // Местоположения
-    $locs = $glpi_db->get_results(
-        "SELECT id, completename
-         FROM glpi_locations
-         ORDER BY completename ASC",
-        ARRAY_A
-    );
+    // Местоположения (ограничение по организациям)
+    $entities = [
+        'ЦМСЧ № 120 ФМБА РФ',
+        'ЦМСЧ № 120 ФМБА РФ > Детская поликлиника',
+        'ЦМСЧ № 120 ФМБА РФ > ОИРиТ внутрненние задачи',
+        'ЦМСЧ № 120 ФМБА РФ > !Поликлиника для взрослых',
+    ];
+    if ($include_branches) {
+        $entities[] = 'Филиал МСЧ № 5';
+        $entities[] = 'Филиал МСЧ № 6';
+    }
+
+    $placeholders = implode(',', array_fill(0, count($entities), '%s'));
+    $sql = "SELECT l.id, CONCAT(e.completename, ' / ', l.completename) AS fullname"
+         . " FROM glpi_locations AS l"
+         . " JOIN glpi_entities AS e ON e.id = l.entities_id"
+         . " WHERE e.completename IN ($placeholders)"
+         . " ORDER BY fullname ASC";
+    $params = array_merge([$sql], $entities);
+    $prepared = call_user_func_array([$glpi_db, 'prepare'], $params);
+    $locs = $glpi_db->get_results($prepared, ARRAY_A);
     $locations = [];
     if ($locs) {
         foreach ($locs as $l) {
             $locations[] = [
                 'id'   => intval($l['id']),
-                'name' => $l['completename'],
+                'name' => $l['fullname'],
             ];
         }
+    }
+
+    // Исполнители
+    $mapping = [
+        ['wp_id' => 6,  'glpi_id' => 622, 'name' => 'Сушко В.'],
+        ['wp_id' => 4,  'glpi_id' => 621, 'name' => 'Скомороха А.'],
+        ['wp_id' => 5,  'glpi_id' => 269, 'name' => 'Смирнов М.'],
+        ['wp_id' => 7,  'glpi_id' => 180, 'name' => 'Кузнецов Е.'],
+        ['wp_id' => 1,  'glpi_id' => 2,   'name' => 'Куткин П.А.'],
+        ['wp_id' => 10, 'glpi_id' => 632, 'name' => 'Стельмашенко И.'],
+        ['wp_id' => 8,  'glpi_id' => 620, 'name' => 'Нечепорук А.'],
+    ];
+    $executors = [];
+    foreach ($mapping as $m) {
+        $user = get_user_by('ID', $m['wp_id']);
+        $executors[] = [
+            'id'   => (int)$m['glpi_id'],
+            'name' => $user ? $user->display_name : $m['name'],
+        ];
     }
 
     wp_send_json([
         'ok'         => true,
         'categories' => $categories,
         'locations'  => $locations,
+        'executors'  => $executors,
     ]);
 }
 
@@ -103,6 +139,7 @@ function gexe_glpi_create_ticket() {
     $cat_id      = isset($payload['category_id']) ? intval($payload['category_id']) : 0;
     $loc_id      = isset($payload['location_id']) ? intval($payload['location_id']) : 0;
     $assign_me   = !empty($payload['assign_me']);
+    $assignee_id = isset($payload['assignee_id']) ? intval($payload['assignee_id']) : 0;
 
     if ($name === '' || $content === '') {
         wp_send_json(['ok' => false, 'error' => 'bad_request']);
@@ -144,6 +181,13 @@ function gexe_glpi_create_ticket() {
         $glpi_db->insert('glpi_tickets_users', [
             'tickets_id' => $ticket_id,
             'users_id'   => $glpi_uid,
+            'type'       => 2
+        ], ['%d','%d','%d']);
+    }
+    if ($assignee_id > 0 && $assignee_id !== $glpi_uid) {
+        $glpi_db->insert('glpi_tickets_users', [
+            'tickets_id' => $ticket_id,
+            'users_id'   => $assignee_id,
             'type'       => 2
         ], ['%d','%d','%d']);
     }
