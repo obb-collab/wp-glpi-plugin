@@ -419,7 +419,8 @@
           if (cnt) cnt.textContent = String(newCount);
           if (modalCnt) modalCnt.textContent = String(newCount);
           if (window.gexePrefetchedComments) delete window.gexePrefetchedComments[id];
-          closeViewerModal();
+          // обновляем список комментариев в открытой карточке
+          loadComments(id);
           applyActionVisibility();
         }
       })
