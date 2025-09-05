@@ -393,10 +393,17 @@ function gexe_glpi_card_action() {
             'users_id'         => gexe_get_current_glpi_uid(),
         ], ['%s','%d','%d','%s','%s','%d']));
 
-        // Меняем статус тикета на «решён» (GLPI: 5)
+        // Меняем статус тикета на «решён» (GLPI: 5) и фиксируем дату решения
         if ($ok) {
             $new_status = 5;
-            $ok = (false !== $glpi_db->update($tTickets, ['status' => $new_status], ['id' => $ticket_id], ['%d'], ['%d']));
+            $now        = current_time('mysql');
+            $ok = (false !== $glpi_db->update(
+                $tTickets,
+                ['status' => $new_status, 'solvedate' => $now],
+                ['id' => $ticket_id],
+                ['%d','%s'],
+                ['%d']
+            ));
         }
     }
 
