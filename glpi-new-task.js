@@ -26,12 +26,13 @@
               <label for="gnt-category" class="gnt-label">Категория</label>
               <input id="gnt-category" list="gnt-category-list" class="gnt-input" />
               <datalist id="gnt-category-list"></datalist>
+              <div id="gnt-category-path" class="gnt-path"></div>
             </div>
             <div>
               <label for="gnt-location" class="gnt-label">Местоположение</label>
               <input id="gnt-location" list="gnt-location-list" class="gnt-input" />
               <datalist id="gnt-location-list"></datalist>
-              <label class="gnt-check"><input type="checkbox" id="gnt-include-branches" /> Филиалы №5 и №6</label>
+              <div id="gnt-location-path" class="gnt-path"></div>
             </div>
           </div>
           <div class="gnt-row gnt-assign-row">
@@ -43,7 +44,7 @@
           </div>
         </div>
         <div class="gnt-footer">
-          <button type="button" class="gnt-submit">Создать</button>
+          <button type="button" class="gnt-submit" disabled>Создать</button>
         </div>
       </div>
     `;
@@ -58,16 +59,19 @@
     assignChk.addEventListener('change', function(){
       assigneeSel.disabled = this.checked;
     });
-    modal.querySelector('#gnt-include-branches').addEventListener('change', function(){
-      loadDropdowns(this.checked);
+    ['#gnt-name','#gnt-content','#gnt-category','#gnt-location','#gnt-assignee'].forEach(function(sel){
+      modal.querySelector(sel).addEventListener('input', updateSubmitState);
     });
+    modal.querySelector('#gnt-assignee').addEventListener('change', updateSubmitState);
+    modal.querySelector('#gnt-assign-me').addEventListener('change', updateSubmitState);
   }
 
   function open(){
     buildModal();
     modal.classList.add('open');
     document.body.classList.add('glpi-modal-open');
-    loadDropdowns(modal.querySelector('#gnt-include-branches').checked);
+    loadDropdowns();
+    updateSubmitState();
   }
 
   function close(){
@@ -76,12 +80,11 @@
     document.body.classList.remove('glpi-modal-open');
   }
 
-  function loadDropdowns(includeBranches){
+  function loadDropdowns(){
     if (!window.glpiAjax) return;
     const params = new URLSearchParams();
     params.append('action','glpi_dropdowns');
     params.append('_ajax_nonce', glpiAjax.nonce);
-    if (includeBranches) params.append('branches','1');
     fetch(glpiAjax.url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -93,6 +96,7 @@
           const opt = document.createElement('option');
           opt.value = c.name;
           opt.setAttribute('data-id', c.id);
+          if (c.path) opt.setAttribute('data-path', c.path);
           list.appendChild(opt);
         });
         categoriesLoaded = true;
@@ -114,6 +118,7 @@
           const opt = document.createElement('option');
           opt.value = l.name;
           opt.setAttribute('data-id', l.id);
+          if (l.path) opt.setAttribute('data-path', l.path);
           list.appendChild(opt);
         });
       }
@@ -131,12 +136,14 @@
     if (!window.glpiAjax) return;
     const name = modal.querySelector('#gnt-name').value.trim();
     const content = modal.querySelector('#gnt-content').value.trim();
-    const catId = getSelectedId('gnt-category-list', modal.querySelector('#gnt-category').value);
-    const locId = getSelectedId('gnt-location-list', modal.querySelector('#gnt-location').value);
+    const catInput = modal.querySelector('#gnt-category');
+    const locInput = modal.querySelector('#gnt-location');
+    const catId = getSelectedId('gnt-category-list', catInput.value);
+    const locId = getSelectedId('gnt-location-list', locInput.value);
     const assignMe = modal.querySelector('#gnt-assign-me').checked;
     const assigneeSel = modal.querySelector('#gnt-assignee');
     const assigneeId = assigneeSel.disabled ? 0 : parseInt(assigneeSel.value,10) || 0;
-    if (!name || !content) return;
+    if (!name || !content || !catId || !locId) return;
     const payload = {
       name: name,
       content: content,
@@ -157,6 +164,29 @@
         close();
       }
     }).catch(()=>{}).finally(()=>{btn.disabled = false;});
+  }
+
+  function updatePaths(){
+    const catVal = modal.querySelector('#gnt-category').value;
+    const catOpt = Array.from(modal.querySelector('#gnt-category-list').options).find(o=>o.value===catVal);
+    modal.querySelector('#gnt-category-path').textContent = catOpt ? catOpt.getAttribute('data-path') : '';
+    const locVal = modal.querySelector('#gnt-location').value;
+    const locOpt = Array.from(modal.querySelector('#gnt-location-list').options).find(o=>o.value===locVal);
+    modal.querySelector('#gnt-location-path').textContent = locOpt ? locOpt.getAttribute('data-path') : '';
+  }
+
+  function updateSubmitState(){
+    if (!modal) return;
+    updatePaths();
+    const name = modal.querySelector('#gnt-name').value.trim();
+    const content = modal.querySelector('#gnt-content').value.trim();
+    const catId = getSelectedId('gnt-category-list', modal.querySelector('#gnt-category').value);
+    const locId = getSelectedId('gnt-location-list', modal.querySelector('#gnt-location').value);
+    const assignMe = modal.querySelector('#gnt-assign-me').checked;
+    const assigneeSel = modal.querySelector('#gnt-assignee');
+    const assigneeId = assigneeSel.disabled ? 0 : parseInt(assigneeSel.value,10) || 0;
+    const ready = name && content && catId && locId && (assignMe || assigneeId);
+    modal.querySelector('.gnt-submit').disabled = !ready;
   }
 
   document.addEventListener('DOMContentLoaded', function(){

@@ -14,10 +14,11 @@
 .glpi-create-modal .gnt-select { width: 100%; background: #0b1220; border: 1px solid #1f2937; border-radius: 10px; color: #e5e7eb; padding: 10px 12px; }
 .glpi-create-modal .gnt-textarea { resize: vertical; min-height: 120px; }
 .glpi-create-modal .gnt-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 8px; }
-.glpi-create-modal .gnt-check { display: inline-flex; align-items: center; gap: 8px; margin-top: 12px; font-size: 14px; color: #e5e7eb; }
-.glpi-create-modal .gnt-footer { padding: 14px 16px; background: #0b1220; display: flex; justify-content: flex-end; }
-.glpi-create-modal .gnt-submit { background: #2563eb; border: 0; color: #fff; padding: 10px 14px; border-radius: 10px; cursor: pointer; }
+.glpi-create-modal .gnt-check { display: flex; align-items: center; gap: 8px; margin: 12px auto 0; font-size: 14px; color: #e5e7eb; }
+.glpi-create-modal .gnt-footer { padding: 14px 16px; background: #0b1220; }
+.glpi-create-modal .gnt-submit { width: 100%; background: #2563eb; border: 0; color: #fff; padding: 10px 14px; border-radius: 10px; cursor: pointer; display: block; }
 .glpi-create-modal .gnt-submit:disabled { opacity: .7; cursor: default; }
+.glpi-create-modal .gnt-path { margin-top: 4px; font-size: 12px; color: #94a3b8; }
 @media (max-width: 720px) {
   .glpi-create-modal .gnt-row { grid-template-columns: 1fr; }
 }
