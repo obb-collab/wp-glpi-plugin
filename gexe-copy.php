@@ -2,9 +2,10 @@
 /*
 Plugin Name: WP GLPI Plugin
 Description: Интерфейс заявок GLPI для WordPress.
-Version: 1.0.1
+Version: 1.0.2
 GitHub Plugin URI: obb-collab/wp-glpi-plugin
 Primary Branch: main
+Release Asset: true
 Update URI: https://github.com/obb-collab/wp-glpi-plugin
 */
 
