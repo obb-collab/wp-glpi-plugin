@@ -92,9 +92,20 @@
     }).then(r=>r.json()).then(data=>{
       if (data && data.categories && !categoriesLoaded) {
         const list = modal.querySelector('#gnt-category-list');
+        const counts = {};
+        data.categories.forEach(function(c){
+          counts[c.name] = (counts[c.name] || 0) + 1;
+        });
         data.categories.forEach(function(c){
           const opt = document.createElement('option');
-          opt.value = c.name;
+          let val = c.name;
+          if (counts[c.name] > 1 && c.path) {
+            const parts = c.path.split(/\s[\/\>]\s/);
+            parts.pop();
+            const parent = parts.join(' / ');
+            if (parent) val = c.name + ' (' + parent + ')';
+          }
+          opt.value = val;
           opt.setAttribute('data-id', c.id);
           if (c.path) opt.setAttribute('data-path', c.path);
           list.appendChild(opt);
@@ -114,9 +125,20 @@
       if (data && data.locations) {
         const list = modal.querySelector('#gnt-location-list');
         list.innerHTML = '';
+        const counts = {};
+        data.locations.forEach(function(l){
+          counts[l.name] = (counts[l.name] || 0) + 1;
+        });
         data.locations.forEach(function(l){
           const opt = document.createElement('option');
-          opt.value = l.name;
+          let val = l.name;
+          if (counts[l.name] > 1 && l.path) {
+            const parts = l.path.split(/\s[\/\>]\s/);
+            parts.pop();
+            const parent = parts.join(' / ');
+            if (parent) val = l.name + ' (' + parent + ')';
+          }
+          opt.value = val;
           opt.setAttribute('data-id', l.id);
           if (l.path) opt.setAttribute('data-path', l.path);
           list.appendChild(opt);
