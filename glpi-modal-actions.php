@@ -10,7 +10,7 @@ require_once __DIR__ . '/glpi-utils.php';
 add_action('wp_enqueue_scripts', function () {
     wp_localize_script('gexe-filter', 'glpiAjax', [
         'url'          => admin_url('admin-ajax.php'),
-        'nonce'        => wp_create_nonce('glpi_modal_actions'),
+        'nonce'        => wp_create_nonce('gexe_actions'),
         'user_glpi_id' => gexe_get_current_glpi_uid(),
         'rest'         => esc_url_raw(rest_url('glpi/v1/')),
         'restNonce'    => wp_create_nonce('wp_rest'),
@@ -279,7 +279,7 @@ function gexe_render_comments($ticket_id, $page = 1, $per_page = 20) {
 }
 
 function gexe_glpi_get_comments() {
-    check_ajax_referer('glpi_modal_actions');
+    check_ajax_referer('gexe_actions');
     $ticket_id = isset($_POST['ticket_id']) ? intval($_POST['ticket_id']) : 0;
     $page      = isset($_POST['page']) ? intval($_POST['page']) : 1;
     $per_page  = isset($_POST['per_page']) ? intval($_POST['per_page']) : 20;
@@ -313,7 +313,7 @@ function gexe_render_followup($id) {
 add_action('wp_ajax_glpi_ticket_meta', 'gexe_glpi_ticket_meta');
 add_action('wp_ajax_nopriv_glpi_ticket_meta', 'gexe_glpi_ticket_meta');
 function gexe_glpi_ticket_meta() {
-    check_ajax_referer('glpi_modal_actions');
+    check_ajax_referer('gexe_actions');
     $ticket_id = isset($_POST['ticket_id']) ? intval($_POST['ticket_id']) : 0;
     wp_send_json_success(gexe_get_ticket_meta($ticket_id));
 }
@@ -346,7 +346,7 @@ add_action('rest_api_init', function () {
 /* -------- AJAX: количество комментариев для нескольких тикетов -------- */
 add_action('wp_ajax_glpi_count_comments_batch', 'gexe_glpi_count_comments_batch');
 function gexe_glpi_count_comments_batch() {
-    check_ajax_referer('glpi_modal_actions');
+    check_ajax_referer('gexe_actions');
 
     $ids_raw = isset($_POST['ticket_ids']) ? (string)$_POST['ticket_ids'] : '';
     $ids = array_filter(array_map('intval', explode(',', $ids_raw)));
@@ -398,7 +398,7 @@ function gexe_glpi_count_comments_batch() {
 /* -------- AJAX: проверка "Принято в работу" -------- */
 add_action('wp_ajax_glpi_ticket_started', 'gexe_glpi_ticket_started');
 function gexe_glpi_ticket_started() {
-    check_ajax_referer('glpi_modal_actions');
+    check_ajax_referer('gexe_actions');
 
     $ticket_id = isset($_POST['ticket_id']) ? intval($_POST['ticket_id']) : 0;
 
@@ -425,7 +425,7 @@ function gexe_glpi_ticket_started() {
 /* -------- AJAX: действия по тикету (принять/закрыть) -------- */
 add_action('wp_ajax_glpi_card_action', 'gexe_glpi_card_action');
 function gexe_glpi_card_action() {
-    check_ajax_referer('glpi_modal_actions');
+    check_ajax_referer('gexe_actions');
 
     $ticket_id = isset($_POST['ticket_id']) ? intval($_POST['ticket_id']) : 0;
     $type      = isset($_POST['type']) ? sanitize_key($_POST['type']) : '';
@@ -489,7 +489,7 @@ function gexe_glpi_card_action() {
 
 add_action('wp_ajax_glpi_ticket_accept', 'gexe_glpi_ticket_accept');
 function gexe_glpi_ticket_accept() {
-    if (!check_ajax_referer('gexe_actions', 'nonce', false)) {
+    if (!check_ajax_referer('gexe_actions')) {
         wp_send_json_error(['code' => 'AJAX_FORBIDDEN', 'reason' => 'nonce'], 403);
     }
     if (!is_user_logged_in() || !current_user_can('read')) {
@@ -626,7 +626,7 @@ function gexe_refresh_actions_nonce() {
 /* -------- AJAX: добавить комментарий -------- */
 add_action('wp_ajax_glpi_add_comment', 'gexe_glpi_add_comment');
 function gexe_glpi_add_comment() {
-    check_ajax_referer('glpi_modal_actions');
+    check_ajax_referer('gexe_actions');
 
     $ticket_id = isset($_POST['ticket_id']) ? intval($_POST['ticket_id']) : 0;
     $content   = isset($_POST['content']) ? (string) $_POST['content'] : '';
