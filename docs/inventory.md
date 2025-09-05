@@ -52,7 +52,7 @@ plugin-root/
 - `gexe_get_form_data`, `gexe_refresh_nonce`, `gexe_create_ticket`
 - `glpi_ticket_resolve`
 - `glpi_get_comments`, `glpi_ticket_meta`, `glpi_count_comments_batch`
-- `glpi_ticket_started`, `glpi_card_action`, `glpi_ticket_accept`
+- `glpi_ticket_started`, `glpi_card_action`, `glpi_ticket_accept_sql`
 - `gexe_refresh_actions_nonce`, `glpi_comment_add`
 - `gexe_log_client_error`
 

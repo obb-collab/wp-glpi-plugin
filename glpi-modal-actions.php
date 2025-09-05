@@ -487,132 +487,160 @@ function gexe_glpi_card_action() {
     wp_send_json_error(['message' => 'unknown_action', 'action_id' => $action_id]);
 }
 
-add_action('wp_ajax_glpi_ticket_accept', 'gexe_glpi_ticket_accept');
-function gexe_glpi_ticket_accept() {
-    if (!check_ajax_referer('gexe_actions')) {
-        wp_send_json_error(['code' => 'AJAX_FORBIDDEN', 'reason' => 'nonce'], 403);
+
+add_action('wp_ajax_glpi_ticket_accept_sql', 'gexe_glpi_ticket_accept_sql');
+function gexe_glpi_ticket_accept_sql() {
+    if (!check_ajax_referer('gexe_actions', 'nonce', false)) {
+        wp_send_json(['ok' => false, 'code' => 'AJAX_FORBIDDEN'], 403);
     }
-    if (!is_user_logged_in() || !current_user_can('read')) {
-        wp_send_json_error(['code' => 'AJAX_FORBIDDEN', 'reason' => 'cap'], 403);
+    if (!current_user_can('read')) {
+        wp_send_json(['ok' => false, 'code' => 'AJAX_FORBIDDEN'], 403);
     }
-    $ticket_id = isset($_POST['ticket_id']) ? absint($_POST['ticket_id']) : 0;
+
+    $ticket_id = isset($_POST['ticket_id']) ? intval($_POST['ticket_id']) : 0;
+    $assignee  = isset($_POST['assignee_glpi_id']) ? intval($_POST['assignee_glpi_id']) : 0;
+    $add_comment = isset($_POST['add_comment']) ? intval($_POST['add_comment']) : 1;
     if ($ticket_id <= 0) {
-        wp_send_json_error(['code' => 'BAD_REQUEST'], 400);
+        wp_send_json(['ok' => false, 'code' => 'VALIDATION', 'message' => 'bad_ticket']);
     }
 
-    $start_time = microtime(true);
-
-    $url  = gexe_glpi_api_url() . '/initSession?get_full_session=true&session_write=true';
-    $args = [
-        'timeout' => 10,
-        'headers' => gexe_glpi_api_headers(),
-    ];
-    $resp = wp_remote_get($url, $args);
-    gexe_glpi_log('initSession', $url, $resp, $start_time);
-    if (is_wp_error($resp)) {
-        gexe_accept_log($ticket_id, 0, 0, (int) round((microtime(true) - $start_time) * 1000), 'fail', $resp->get_error_message());
-        wp_send_json_error(['code' => 'GLPI_SESSION'], 500);
-    }
-    $code = wp_remote_retrieve_response_code($resp);
-    $body = json_decode(wp_remote_retrieve_body($resp), true);
-    if ($code >= 300 || !is_array($body) || empty($body['session_token'])) {
-        gexe_accept_log($ticket_id, 0, $code, (int) round((microtime(true) - $start_time) * 1000), 'fail', 'initSession');
-        wp_send_json_error(['code' => 'GLPI_SESSION'], 500);
-    }
-    $session_token = $body['session_token'];
-    $glpi_user_id = (int) get_user_meta(get_current_user_id(), 'glpi_users_id', true);
-    if ($glpi_user_id <= 0 && isset($body['session']['glpiID'])) {
-        $glpi_user_id = (int) $body['session']['glpiID'];
-    }
-    if ($glpi_user_id <= 0) {
-        gexe_accept_log($ticket_id, 0, $code, (int) round((microtime(true) - $start_time) * 1000), 'fail', 'GLPI_USER_NOT_RESOLVED');
-        wp_send_json_error(['code' => 'GLPI_USER_NOT_RESOLVED'], 500);
+    if ($assignee <= 0) {
+        $assignee = (int) get_user_meta(get_current_user_id(), 'glpi_users_id', true);
     }
 
-    $assign_body = [
-        'input' => [
-            'tickets_id' => $ticket_id,
-            'users_id'   => $glpi_user_id,
-            'type'       => 2,
-        ],
-    ];
-    $assign = gexe_glpi_request_with_token('ticket_accept_assign ' . $ticket_id, 'POST', '/Ticket_User/', $assign_body, $session_token);
-    if (gexe_glpi_session_error($assign)) {
-        $session_token = gexe_glpi_init_session();
-        if (is_wp_error($session_token)) {
-            gexe_accept_log($ticket_id, $glpi_user_id, 0, (int) round((microtime(true) - $start_time) * 1000), 'fail', 'session_retry');
-            wp_send_json_error(['code' => 'GLPI_SESSION'], 500);
-        }
-        $assign = gexe_glpi_request_with_token('ticket_accept_assign ' . $ticket_id, 'POST', '/Ticket_User/', $assign_body, $session_token);
+    global $glpi_db;
+    if ($assignee <= 0) {
+        $assignee = (int) $glpi_db->get_var($glpi_db->prepare(
+            'SELECT users_id FROM glpi_tickets_users WHERE tickets_id=%d AND type=2 LIMIT 1',
+            $ticket_id
+        ));
     }
-    if (is_wp_error($assign)) {
-        gexe_accept_log($ticket_id, $glpi_user_id, 0, (int) round((microtime(true) - $start_time) * 1000), 'fail', $assign->get_error_message());
-        wp_send_json_error(['code' => 'GLPI_ASSIGN_NETWORK'], 500);
-    }
-    $assign_code = wp_remote_retrieve_response_code($assign);
-    if ($assign_code >= 300 && $assign_code != 207) {
-        $body_resp = wp_remote_retrieve_body($assign);
-        gexe_accept_log($ticket_id, $glpi_user_id, $assign_code, (int) round((microtime(true) - $start_time) * 1000), 'fail', mb_substr(trim($body_resp), 0, 200), $body_resp);
-        wp_send_json_error(['code' => 'GLPI_ASSIGN_FAILED', 'message' => mb_substr(trim($body_resp), 0, 200)], 500);
+    if ($assignee <= 0) {
+        wp_send_json(['ok' => false, 'code' => 'ASSIGNEE_NOT_FOUND', 'message' => 'assignee_missing']);
     }
 
-    $status_body = [
-        'input' => [
-            'id'     => $ticket_id,
-            'status' => 2,
-        ],
-    ];
-    $status = gexe_glpi_request_with_token('ticket_accept_status ' . $ticket_id, 'PUT', '/Ticket/' . $ticket_id, $status_body, $session_token);
-    if (gexe_glpi_session_error($status)) {
-        $session_token = gexe_glpi_init_session();
-        if (is_wp_error($session_token)) {
-            gexe_accept_log($ticket_id, $glpi_user_id, 0, (int) round((microtime(true) - $start_time) * 1000), 'fail', 'session_retry');
-            wp_send_json_error(['code' => 'GLPI_SESSION'], 500);
-        }
-        $status = gexe_glpi_request_with_token('ticket_accept_status ' . $ticket_id, 'PUT', '/Ticket/' . $ticket_id, $status_body, $session_token);
-    }
-    if (is_wp_error($status)) {
-        gexe_accept_log($ticket_id, $glpi_user_id, 0, (int) round((microtime(true) - $start_time) * 1000), 'fail', $status->get_error_message());
-        wp_send_json_error(['code' => 'GLPI_STATUS_NETWORK'], 500);
-    }
-    $status_code = wp_remote_retrieve_response_code($status);
-    if ($status_code >= 300) {
-        $body_resp = wp_remote_retrieve_body($status);
-        gexe_accept_log($ticket_id, $glpi_user_id, $status_code, (int) round((microtime(true) - $start_time) * 1000), 'fail', mb_substr(trim($body_resp), 0, 200), $body_resp);
-        wp_send_json_error(['code' => 'GLPI_STATUS_FAILED', 'message' => mb_substr(trim($body_resp), 0, 200)], 500);
-    }
+    $start = microtime(true);
 
-    gexe_clear_comments_cache($ticket_id);
+    $already_comment = $glpi_db->get_var($glpi_db->prepare(
+        "SELECT 1 FROM glpi_itilfollowups WHERE itemtype='Ticket' AND items_id=%d AND LOWER(TRIM(TRAILING '.! ' FROM content))='принято в работу' LIMIT 1",
+        $ticket_id
+    )) ? true : false;
 
-    $elapsed = (int) round((microtime(true) - $start_time) * 1000);
-    gexe_accept_log($ticket_id, $glpi_user_id, $status_code, $elapsed, 'ok', '');
-
-    wp_send_json_success([
-        'ticket_id' => $ticket_id,
-        'status'    => 2,
-        'assigned'  => $glpi_user_id,
-    ]);
-}
-
-function gexe_accept_log($ticket_id, $glpi_user_id, $http_code, $elapsed, $result, $msg, $body = '') {
-    $uploads = wp_upload_dir();
-    $dir     = trailingslashit($uploads['basedir']) . 'glpi-plugin/logs';
-    if (!is_dir($dir)) {
-        wp_mkdir_p($dir);
-    }
-    $line = sprintf(
-        "[accept] ticket=%d glpi_user=%d http=%d elapsed=%dms result=%s msg=\"%s\"\n",
-        $ticket_id,
-        $glpi_user_id,
-        $http_code,
-        $elapsed,
-        $result,
-        $msg
+    $row = $glpi_db->get_row(
+        $glpi_db->prepare('SELECT status, entities_id FROM glpi_tickets WHERE id=%d', $ticket_id),
+        ARRAY_A
     );
-    if ('fail' === $result && $body !== '') {
-        $line .= trim($body) . "\n";
+    if (!$row) {
+        wp_send_json(['ok' => false, 'code' => 'VALIDATION', 'message' => 'ticket_not_found']);
     }
-    file_put_contents($dir . '/actions.log', $line, FILE_APPEND);
+    $entities_id = (int) $row['entities_id'];
+    $status      = (int) $row['status'];
+    $already_status = ($status === 2);
+
+    $already_assignment = $glpi_db->get_var($glpi_db->prepare(
+        'SELECT 1 FROM glpi_tickets_users WHERE tickets_id=%d AND users_id=%d AND type=2 LIMIT 1',
+        $ticket_id, $assignee
+    )) ? true : false;
+
+    $glpi_db->query('START TRANSACTION');
+    $followup_id = 0;
+    $created_at  = current_time('mysql');
+
+    if (!$already_assignment) {
+        $sql = $glpi_db->prepare(
+            'INSERT INTO glpi_tickets_users (tickets_id, users_id, type) VALUES (%d,%d,2)',
+            $ticket_id, $assignee
+        );
+        if (!$glpi_db->query($sql)) {
+            $err = $glpi_db->last_error;
+            $glpi_db->query('ROLLBACK');
+            $elapsed = (int) round((microtime(true) - $start) * 1000);
+            gexe_log_action(sprintf('[accept.sql] ticket=%d assignee=%d followup=0 status=2 elapsed=%dms result=fail code=SQL_ERROR msg="%s"', $ticket_id, $assignee, $elapsed, $err));
+            wp_send_json(['ok' => false, 'code' => 'SQL_ERROR', 'message' => $err]);
+        }
+    }
+
+    if ($add_comment && !$already_comment) {
+        $has_priv = gexe_glpi_has_column('glpi_itilfollowups', 'is_private');
+        $has_req  = gexe_glpi_has_column('glpi_itilfollowups', 'requesttypes_id');
+        $has_edit = gexe_glpi_has_column('glpi_itilfollowups', 'users_id_editor');
+        $has_mod  = gexe_glpi_has_column('glpi_itilfollowups', 'date_mod');
+        $has_tpos = gexe_glpi_has_column('glpi_itilfollowups', 'timeline_position');
+
+        $columns = ['entities_id', 'itemtype', 'items_id', 'users_id'];
+        $place   = ['%d', '%s', '%d', '%d'];
+        $values  = [$entities_id, 'Ticket', $ticket_id, $assignee];
+        if ($has_edit) {
+            $columns[] = 'users_id_editor';
+            $place[]   = '%d';
+            $values[]  = $assignee;
+        }
+        $columns[] = 'content';
+        $place[]   = '%s';
+        $values[]  = 'Принято в работу';
+        if ($has_priv) {
+            $columns[] = 'is_private';
+            $place[]   = '%d';
+            $values[]  = 0;
+        }
+        if ($has_req) {
+            $columns[] = 'requesttypes_id';
+            $place[]   = '%d';
+            $values[]  = 0;
+        }
+        if ($has_tpos) {
+            $columns[] = 'timeline_position';
+            $place[]   = '%d';
+            $values[]  = 0;
+        }
+        $columns[] = 'date';
+        $place[]   = 'NOW()';
+        if ($has_mod) {
+            $columns[] = 'date_mod';
+            $place[]   = 'NOW()';
+        }
+        $tmpl = 'INSERT INTO `glpi`.`glpi_itilfollowups` (' . implode(',', $columns) . ') VALUES (' . implode(',', $place) . ')';
+        $sql = $glpi_db->prepare($tmpl, $values);
+        if (!$glpi_db->query($sql)) {
+            $err = $glpi_db->last_error;
+            $glpi_db->query('ROLLBACK');
+            $elapsed = (int) round((microtime(true) - $start) * 1000);
+            gexe_log_action(sprintf('[accept.sql] ticket=%d assignee=%d followup=0 status=2 elapsed=%dms result=fail code=SQL_ERROR msg="%s"', $ticket_id, $assignee, $elapsed, $err));
+            wp_send_json(['ok' => false, 'code' => 'SQL_ERROR', 'message' => $err]);
+        }
+        $followup_id = (int) $glpi_db->insert_id;
+    }
+
+    if (!$already_status) {
+        $sql = $glpi_db->prepare('UPDATE glpi_tickets SET status=2, date_mod=NOW() WHERE id=%d', $ticket_id);
+        if (!$glpi_db->query($sql)) {
+            $err = $glpi_db->last_error;
+            $glpi_db->query('ROLLBACK');
+            $elapsed = (int) round((microtime(true) - $start) * 1000);
+            gexe_log_action(sprintf('[accept.sql] ticket=%d assignee=%d followup=%d status=2 elapsed=%dms result=fail code=SQL_ERROR msg="%s"', $ticket_id, $assignee, $followup_id, $elapsed, $err));
+            wp_send_json(['ok' => false, 'code' => 'SQL_ERROR', 'message' => $err]);
+        }
+    }
+
+    $glpi_db->query('COMMIT');
+    gexe_clear_comments_cache($ticket_id);
+    $elapsed = (int) round((microtime(true) - $start) * 1000);
+    gexe_log_action(sprintf('[accept.sql] ticket=%d assignee=%d followup=%d status=2 elapsed=%dms result=ok code=OK msg=""', $ticket_id, $assignee, $followup_id, $elapsed));
+
+    wp_send_json([
+        'ok'         => true,
+        'action'     => 'accept_sql',
+        'ticket_id'  => $ticket_id,
+        'assigned'   => $assignee,
+        'status'     => 2,
+        'followup_id'=> $followup_id,
+        'created_at' => $created_at,
+        'already'    => [
+            'comment'    => $already_comment,
+            'status'     => $already_status,
+            'assignment' => $already_assignment,
+        ],
+    ]);
 }
 
 add_action('wp_ajax_gexe_refresh_actions_nonce', 'gexe_refresh_actions_nonce');
