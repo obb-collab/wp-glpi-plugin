@@ -530,13 +530,13 @@
         if (btnClose)  btnClose.style.display  = 'none';
       }
 
-      // Если уже есть «Принято в работу» от меня — блокируем «Принять в работу»
+      // Если уже есть «Принято в работу» — блокируем «Принять в работу»
       const url = window.glpiAjax && glpiAjax.url;
       const nonce = window.glpiAjax && glpiAjax.nonce;
       const ticketId = Number(card.getAttribute('data-ticket-id') || '0');
       if (btnAccept && url && nonce && ticketId) {
         const fd = new FormData();
-        fd.append('action', 'glpi_ticket_started_by_me');
+        fd.append('action', 'glpi_ticket_started');
         fd.append('_ajax_nonce', nonce);
         fd.append('ticket_id', String(ticketId));
         fetch(url, { method: 'POST', body: fd })

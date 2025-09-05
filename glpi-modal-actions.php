@@ -293,15 +293,14 @@ function gexe_glpi_count_comments_batch() {
     wp_send_json(['counts' => $out]);
 }
 
-/* -------- AJAX: проверка "Принято в работу" текущим исполнителем -------- */
-add_action('wp_ajax_glpi_ticket_started_by_me', 'gexe_glpi_ticket_started_by_me');
-function gexe_glpi_ticket_started_by_me() {
+/* -------- AJAX: проверка "Принято в работу" -------- */
+add_action('wp_ajax_glpi_ticket_started', 'gexe_glpi_ticket_started');
+function gexe_glpi_ticket_started() {
     check_ajax_referer('glpi_modal_actions');
 
     $ticket_id = isset($_POST['ticket_id']) ? intval($_POST['ticket_id']) : 0;
-    $glpi_uid  = gexe_get_current_glpi_uid();
 
-    if ($ticket_id <= 0 || $glpi_uid <= 0) {
+    if ($ticket_id <= 0) {
         wp_send_json(['ok' => true, 'started' => false]);
     }
 
@@ -313,10 +312,9 @@ function gexe_glpi_ticket_started_by_me() {
          FROM glpi_itilfollowups
          WHERE itemtype = 'Ticket'
            AND items_id = %d
-           AND users_id = %d
            AND content LIKE %s
          LIMIT 1",
-        $ticket_id, $glpi_uid, $like1
+        $ticket_id, $like1
     )) ? true : false;
 
     wp_send_json(['ok' => true, 'started' => $started]);
