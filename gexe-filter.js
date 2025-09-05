@@ -169,14 +169,18 @@
       const tgt = e.target.closest('.category-filter-btn, .glpi-category-tag');
       if(!tgt || !tgt.hasAttribute('data-cat')) return;
       e.preventDefault();
-      currentCategory = String(tgt.getAttribute('data-cat') || 'all').toLowerCase();
-      document.querySelectorAll('.category-filter-btn, .glpi-category-tag').forEach(b => b.classList.remove('active'));
-      tgt.classList.add('active');
-      // при выборе категории сбрасываем фильтр статусов
-      $$('.status-filter-btn').forEach(b => b.classList.remove('active'));
-      const allBtn = document.querySelector('.status-filter-btn[data-status="all"]');
-      if (allBtn) allBtn.classList.add('active');
-      recalcStatusCounts(); recalcCategoryVisibility(); filterCards();
+      const cat = String(tgt.getAttribute('data-cat') || 'all').toLowerCase();
+      const isActive = tgt.classList.contains('active');
+      $$('.category-filter-btn, .glpi-category-tag').forEach(b => b.classList.remove('active'));
+      if (isActive) {
+        currentCategory = 'all';
+      } else {
+        currentCategory = cat;
+        tgt.classList.add('active');
+      }
+      recalcStatusCounts();
+      recalcCategoryVisibility();
+      filterCards();
     }, true);
   }
 
