@@ -342,11 +342,12 @@ function gexe_glpi_card_action() {
 
     $ticket_id = isset($_POST['ticket_id']) ? intval($_POST['ticket_id']) : 0;
     $type      = isset($_POST['type']) ? sanitize_key($_POST['type']) : '';
+    $action_id = isset($_POST['action_id']) ? sanitize_text_field($_POST['action_id']) : '';
     if ($ticket_id <= 0 || !$type) {
-        wp_send_json_error(['message' => 'bad_request']);
+        wp_send_json_error(['message' => 'bad_request', 'action_id' => $action_id]);
     }
     if (!gexe_can_touch_glpi_ticket($ticket_id)) {
-        wp_send_json_error(['message' => 'forbidden']);
+        wp_send_json_error(['message' => 'forbidden', 'action_id' => $action_id]);
     }
 
     if ($type === 'start') {
@@ -367,13 +368,13 @@ function gexe_glpi_card_action() {
             ],
         ]);
         if (is_wp_error($assign)) {
-            wp_send_json_error(['message' => 'network_error']);
+            wp_send_json_error(['message' => 'network_error', 'action_id' => $action_id]);
         }
         $code = wp_remote_retrieve_response_code($assign);
         if ($code >= 300) {
             $body  = wp_remote_retrieve_body($assign);
             $short = mb_substr(trim($body), 0, 200);
-            wp_send_json_error(['message' => $short]);
+            wp_send_json_error(['message' => $short, 'action_id' => $action_id]);
         }
 
         $status = gexe_glpi_rest_request('ticket_status ' . $ticket_id, 'PUT', '/Ticket/' . $ticket_id, [
@@ -383,19 +384,19 @@ function gexe_glpi_card_action() {
             ],
         ]);
         if (is_wp_error($status)) {
-            wp_send_json_error(['message' => 'network_error']);
+            wp_send_json_error(['message' => 'network_error', 'action_id' => $action_id]);
         }
         $code = wp_remote_retrieve_response_code($status);
         if ($code >= 300) {
             $body  = wp_remote_retrieve_body($status);
             $short = mb_substr(trim($body), 0, 200);
-            wp_send_json_error(['message' => $short]);
+            wp_send_json_error(['message' => $short, 'action_id' => $action_id]);
         }
 
-        wp_send_json_success();
+        wp_send_json_success(['action_id' => $action_id]);
     }
 
-    wp_send_json_error(['message' => 'unknown_action']);
+    wp_send_json_error(['message' => 'unknown_action', 'action_id' => $action_id]);
 }
 
 /* -------- AJAX: добавить комментарий -------- */
