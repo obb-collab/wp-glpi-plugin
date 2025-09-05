@@ -11,44 +11,113 @@ if (!isset($glpi_db) || !($glpi_db instanceof wpdb)) {
     );
 }
 
-// Ensure last_followup_at column and triggers exist
-if ($glpi_db instanceof wpdb) {
-    $col = $glpi_db->get_var("SHOW COLUMNS FROM glpi_tickets LIKE 'last_followup_at'");
-    if (!$col) {
-        // Add column to store timestamp of last followup
-        $glpi_db->query("ALTER TABLE glpi_tickets ADD COLUMN last_followup_at DATETIME NULL AFTER date_mod");
-        // Populate existing values
-        $glpi_db->query(
-            "UPDATE glpi_tickets t"
-          . " LEFT JOIN (SELECT items_id, MAX(date) AS d FROM glpi_itilfollowups"
-          . "              WHERE itemtype='Ticket' GROUP BY items_id) f"
-          . "   ON t.id = f.items_id"
-          . " SET t.last_followup_at = f.d"
-        );
+define('GEXE_TRIGGERS_VERSION', '1');
+
+function gexe_glpi_triggers_present() {
+    global $glpi_db;
+    $sql = "SELECT COUNT(*) FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA='glpi' AND TRIGGER_NAME IN ('glpi_followups_ai','glpi_followups_ad')";
+    return (int)$glpi_db->get_var($sql) === 2;
+}
+
+function gexe_glpi_install_triggers($force = false) {
+    global $glpi_db;
+
+    if (!$force && get_option('glpi_triggers_version') === GEXE_TRIGGERS_VERSION) {
+        return;
     }
 
-    // Trigger: update last_followup_at on insert
-    $glpi_db->query("DROP TRIGGER IF EXISTS glpi_followups_ai");
-    $glpi_db->query(
-        "CREATE TRIGGER glpi_followups_ai AFTER INSERT ON glpi_itilfollowups"
-      . " FOR EACH ROW BEGIN"
-      . "   IF NEW.itemtype='Ticket' THEN"
-      . "     UPDATE glpi_tickets SET last_followup_at = NEW.date WHERE id = NEW.items_id;"
-      . "   END IF;"
-      . " END"
-    );
+    $existing = gexe_glpi_triggers_present();
 
-    // Trigger: update last_followup_at on delete
-    $glpi_db->query("DROP TRIGGER IF EXISTS glpi_followups_ad");
-    $glpi_db->query(
-        "CREATE TRIGGER glpi_followups_ad AFTER DELETE ON glpi_itilfollowups"
-      . " FOR EACH ROW BEGIN"
-      . "   IF OLD.itemtype='Ticket' THEN"
-      . "     UPDATE glpi_tickets t"
-      . "        SET last_followup_at = (SELECT MAX(date) FROM glpi_itilfollowups f"
-      . "                               WHERE f.itemtype='Ticket' AND f.items_id = t.id)"
-      . "      WHERE t.id = OLD.items_id;"
-      . "   END IF;"
-      . " END"
-    );
+    $grants = $glpi_db->get_col('SHOW GRANTS');
+    $has_priv = false;
+    if ($grants) {
+        foreach ($grants as $g) {
+            if (preg_match('~GRANT (ALL PRIVILEGES|.*TRIGGER.*) ON `?glpi`?\.\*~i', $g)) {
+                $has_priv = true;
+                break;
+            }
+        }
+    }
+    if (!$has_priv) {
+        error_log('gexe/triggers: missing TRIGGER privilege on glpi schema');
+        update_option('glpi_triggers_version', GEXE_TRIGGERS_VERSION);
+        return;
+    }
+
+    $glpi_db->query('SET sql_notes=0');
+    $glpi_db->query('START TRANSACTION');
+    $ok = true;
+
+    $col = $glpi_db->get_var("SHOW COLUMNS FROM glpi.glpi_tickets LIKE 'last_followup_at'");
+    if (!$col) {
+        $glpi_db->query("ALTER TABLE glpi.glpi_tickets ADD COLUMN last_followup_at DATETIME NULL AFTER date_mod");
+        if ($glpi_db->last_error) $ok = false;
+        if ($ok) {
+            $glpi_db->query("UPDATE glpi.glpi_tickets t LEFT JOIN (SELECT items_id, MAX(date) AS d FROM glpi.glpi_itilfollowups WHERE itemtype='Ticket' GROUP BY items_id) f ON t.id = f.items_id SET t.last_followup_at = f.d");
+            if ($glpi_db->last_error) $ok = false;
+        }
+    }
+
+    if ($ok) {
+        $glpi_db->query("CREATE OR REPLACE TRIGGER glpi.glpi_followups_ai AFTER INSERT ON glpi.glpi_itilfollowups FOR EACH ROW BEGIN IF NEW.itemtype='Ticket' THEN UPDATE glpi.glpi_tickets SET last_followup_at = NEW.date WHERE id = NEW.items_id; END IF; END;");
+        if ($glpi_db->last_error) $ok = false;
+    }
+    if ($ok) {
+        $glpi_db->query("CREATE OR REPLACE TRIGGER glpi.glpi_followups_ad AFTER DELETE ON glpi.glpi_itilfollowups FOR EACH ROW BEGIN IF OLD.itemtype='Ticket' THEN UPDATE glpi.glpi_tickets t SET last_followup_at = (SELECT MAX(f.date) FROM glpi.glpi_itilfollowups f WHERE f.itemtype='Ticket' AND f.items_id = t.id) WHERE t.id = OLD.items_id; END IF; END;");
+        if ($glpi_db->last_error) $ok = false;
+    }
+
+    if ($ok) {
+        $glpi_db->query('COMMIT');
+        update_option('glpi_triggers_installed', time());
+        update_option('glpi_triggers_version', GEXE_TRIGGERS_VERSION);
+        error_log('gexe/triggers: installation completed');
+    } else {
+        $glpi_db->query('ROLLBACK');
+        error_log('gexe/triggers: install failed: ' . $glpi_db->last_error);
+        update_option('glpi_triggers_version', GEXE_TRIGGERS_VERSION);
+    }
+}
+
+function gexe_glpi_remove_triggers() {
+    global $glpi_db;
+    $glpi_db->query('SET sql_notes=0');
+    $glpi_db->query('DROP TRIGGER IF EXISTS glpi.glpi_followups_ai');
+    $glpi_db->query('DROP TRIGGER IF EXISTS glpi.glpi_followups_ad');
+    delete_option('glpi_triggers_installed');
+    delete_option('glpi_triggers_version');
+}
+
+function gexe_glpi_triggers_status() {
+    global $glpi_db;
+    return $glpi_db->get_results("SELECT TRIGGER_NAME, ACTION_TIMING, EVENT_MANIPULATION, ACTION_STATEMENT FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA='glpi' AND TRIGGER_NAME IN ('glpi_followups_ai','glpi_followups_ad')");
+}
+
+if (defined('WP_CLI') && WP_CLI) {
+    class Gexe_Triggers_CLI {
+        public function install() {
+            gexe_glpi_install_triggers(true);
+            if (gexe_glpi_triggers_present()) {
+                WP_CLI::success('Triggers installed');
+            } else {
+                WP_CLI::error('Trigger installation failed');
+            }
+        }
+        public function remove() {
+            gexe_glpi_remove_triggers();
+            WP_CLI::success('Triggers removed');
+        }
+        public function status() {
+            $rows = gexe_glpi_triggers_status();
+            if (!$rows) {
+                WP_CLI::line('No triggers found');
+                return;
+            }
+            foreach ($rows as $r) {
+                WP_CLI::line(sprintf('%s: %s %s', $r->TRIGGER_NAME, $r->ACTION_TIMING, $r->EVENT_MANIPULATION));
+                WP_CLI::line($r->ACTION_STATEMENT);
+            }
+        }
+    }
+    WP_CLI::add_command('gexe:triggers', 'Gexe_Triggers_CLI');
 }
