@@ -359,13 +359,14 @@
     fetch(url, { method: 'POST', body: fd })
       .then(r => r.json())
       .then(resp => {
-        if (resp && resp.ok) {
+        if (resp && resp.success) {
+          const data = resp.data || {};
           // обновим счётчики комментариев
           const card = document.querySelector('.glpi-card[data-ticket-id="'+id+'"]');
           const cnt = card && card.querySelector('.gexe-cmnt-count');
           const modalCnt = modalEl && modalEl.querySelector('.glpi-modal__comments-title .gexe-cmnt-count');
-          const newCount = (resp && typeof resp.count === 'number')
-            ? resp.count
+          const newCount = (typeof data.count === 'number')
+            ? data.count
             : parseInt((cnt?.textContent || modalCnt?.textContent || '0'), 10) + 1;
           if (cnt) cnt.textContent = String(newCount);
           if (modalCnt) modalCnt.textContent = String(newCount);
@@ -423,7 +424,7 @@
     fetch(glpiAjax.url, { method: 'POST', body: fd })
       .then(r => r.json())
       .then(resp => {
-        if (resp && resp.ok) {
+        if (resp && resp.success) {
           closeDoneModal();
           const card = document.querySelector('.glpi-card[data-ticket-id="'+id+'"]');
           if (card) {
@@ -462,7 +463,7 @@
       fd.append('payload', JSON.stringify(payload || {}));
       fetch(url, { method: 'POST', body: fd })
         .then(r => r.json())
-        .then(resp => resolve(!!(resp && resp.ok)))
+        .then(resp => resolve(!!(resp && resp.success)))
         .catch(() => resolve(false));
     });
   }
@@ -569,7 +570,7 @@
         fetch(url, { method: 'POST', body: fd })
           .then(r => r.json())
           .then(resp => {
-            if (resp && resp.ok && resp.started) {
+            if (resp && resp.success && resp.data && resp.data.started) {
               btnAccept.disabled = true;
             }
           })
