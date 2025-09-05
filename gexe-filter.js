@@ -83,13 +83,29 @@
     return 0;
   }
 
-  function handleAcceptClick(e) {
-    const btn = e.target.closest('.gexe-open-accept');
+  function handleActionClick(e) {
+    const btn = e.target.closest('.gexe-action-btn');
     if (!btn) return;
+    const ticketId = ticketIdFromEl(btn);
+    if (!ticketId) return;
     e.preventDefault();
     e.stopPropagation();
-    const ticketId = ticketIdFromEl(btn);
-    if (!ticketId || btn.disabled || isActionLocked(ticketId, 'accept')) return;
+
+    if (btn.classList.contains('gexe-open-comment')) {
+      const cardEl = btn.closest('.glpi-card');
+      const title = (cardEl && cardEl.querySelector('.glpi-topic') ? cardEl.querySelector('.glpi-topic').textContent : '')
+        || ('Задача #' + ticketId);
+      openCommentModal(title.trim(), ticketId);
+      return;
+    }
+
+    if (btn.classList.contains('gexe-open-close')) {
+      openDoneModal(ticketId);
+      return;
+    }
+
+    if (!btn.classList.contains('gexe-open-accept')) return;
+    if (btn.disabled || isActionLocked(ticketId, 'accept')) return;
 
     const ajax = window.gexeAjax || window.glpiAjax;
     if (!ajax || !ajax.url) return;
@@ -103,14 +119,14 @@
     const fd = new FormData();
     fd.append('action', 'glpi_ticket_accept');
     fd.append('ticket_id', String(ticketId));
-    fd.append('nonce', ajax.nonce);
+    fd.append('_ajax_nonce', ajax.nonce);
 
     const send = retry => fetch(ajax.url, { method: 'POST', body: fd })
       .then(r => r.json().then(data => ({ status: r.status, data })))
       .then(resp => {
         if (resp.status === 403 && resp.data && resp.data.code === 'AJAX_FORBIDDEN'
           && resp.data.reason === 'nonce' && !retry) {
-          return refreshActionsNonce().then(() => { fd.set('nonce', ajax.nonce); return send(true); });
+          return refreshActionsNonce().then(() => { fd.set('_ajax_nonce', ajax.nonce); return send(true); });
         }
         return resp;
       });
@@ -157,7 +173,7 @@
     });
   }
 
-  document.addEventListener('click', handleAcceptClick, true);
+  document.addEventListener('click', handleActionClick, true);
 
   function refreshTicketMeta(ticketId) {
     const ajax = window.gexeAjax || window.glpiAjax;
@@ -428,31 +444,18 @@
     const bar = document.createElement('div');
     bar.className = 'gexe-card-actions';
     bar.innerHTML =
-      '<button class="gexe-action-btn gexe-open-comment" title="Комментарии"><i class="fa-regular fa-comment"></i></button>' +
-      '<button class="gexe-action-btn gexe-open-accept"  title="Принять в работу"><i class="fa-solid fa-play"></i></button>' +
-      '<button class="gexe-action-btn gexe-open-close"   title="Завершить"><i class="fa-solid fa-check"></i></button>';
+      '<button class="gexe-action-btn gexe-open-comment" data-action="comment" title="Комментарии"><i class="fa-regular fa-comment"></i></button>' +
+      '<button class="gexe-action-btn gexe-open-accept"  data-action="accept"  title="Принять в работу"><i class="fa-solid fa-play"></i></button>' +
+      '<button class="gexe-action-btn gexe-open-close"   data-action="resolve" title="Завершить"><i class="fa-solid fa-check"></i></button>';
     clone.insertBefore(bar, clone.firstChild);
 
-    const btnComment = $('.gexe-open-comment', bar);
-    const btnAccept  = $('.gexe-open-accept',  bar);
-    const btnClose   = $('.gexe-open-close',   bar);
+    const btnAccept = $('.gexe-open-accept', bar);
 
     // Синхронизируем состояние кнопки с исходной карточкой
     const origAccept = cardEl.querySelector('.gexe-open-accept');
-    if (origAccept && origAccept.disabled) {
+    if (origAccept && origAccept.disabled && btnAccept) {
       btnAccept.disabled = true;
     }
-
-    on(btnComment, 'click', e => {
-      e.stopPropagation();
-      const title = (clone.querySelector('.glpi-topic') || {}).textContent || ('Задача #' + id);
-      openCommentModal(title.trim(), id);
-    });
-
-    on(btnClose, 'click', e => {
-      e.stopPropagation();
-      openDoneModal(id);
-    });
 
     wrap.appendChild(clone);
     applyActionVisibility();
@@ -714,18 +717,13 @@
     if (!id) return;
     const btn = $('#gexe-done-confirm', doneModal);
     if (btn && isActionLocked(id, 'done')) return;
-    const actionId = crypto.randomUUID();
-    if (btn) {
-      btn.dataset.actionId = actionId;
-      setActionLoading(btn, true);
-    }
+    if (btn) setActionLoading(btn, true);
     lockAction(id, 'done', true);
     const fd = new FormData();
-    fd.append('action', 'glpi_mark_solved');
+    fd.append('action', 'glpi_ticket_resolve');
     fd.append('_ajax_nonce', (window.glpiAjax && glpiAjax.nonce) || '');
     fd.append('ticket_id', String(id));
     fd.append('solution_text', 'Задача решена');
-    fd.append('action_id', actionId);
     const timeout = setTimeout(() => { lockAction(id, 'done', false); if (btn) setActionLoading(btn, false); }, 10000);
     fetch(glpiAjax.url, { method: 'POST', body: fd })
       .then(r => r.json())
@@ -736,7 +734,6 @@
             btn.classList.remove('is-loading');
             btn.disabled = true;
             btn.setAttribute('aria-disabled', 'true');
-            btn.dataset.lastActionId = resp.data && resp.data.action_id ? resp.data.action_id : actionId;
           }
           closeDoneModal();
           const card = document.querySelector('.glpi-card[data-ticket-id="'+id+'"]');
