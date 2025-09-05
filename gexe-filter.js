@@ -25,37 +25,6 @@
   /* ========================= ПРЕДЗАГРУЖЕННЫЕ КОММЕНТАРИИ ========================= */
   // Комментарии подгружаются на сервере и передаются через window.gexePrefetchedComments
 
-  /* ========================= ПОИСК (СОЗДАТЬ СВЕРХУ) ========================= */
-  function ensureSearchOnTop() {
-    const root = document.querySelector('.glpi-filtering-panel .glpi-header-row')
-      || document.querySelector('.glpi-filtering-panel');
-    if (!root) return;
-
-    // берем существующее приветствие, если оно уже есть в DOM
-    let greetingHTML = '';
-    const oldGreeting = document.querySelector('.glpi-user-greeting');
-    if (oldGreeting) greetingHTML = oldGreeting.outerHTML;
-
-    // убираем все предыдущие поля поиска и блоки
-    document.querySelectorAll('.glpi-search-block, .glpi-search-row, .glpi-search-input')
-      .forEach(el => el.remove());
-
-    // создаём заново и вставляем первым; приветствие (если есть) идёт перед полем
-    const wrap = document.createElement('div');
-    wrap.className = 'glpi-search-row';
-    wrap.innerHTML = (greetingHTML || '') +
-      '<input type="text" id="glpi-unified-search" class="glpi-search-input" placeholder="Поиск...">';
-    root.insertBefore(wrap, root.firstChild);
-    // Подстраховка: кнопка, к которой привязывается glpi-new-task.php
-    if (!document.getElementById('glpi-btn-new-ticket')) {
-      const b = document.createElement('button');
-      b.id = 'glpi-btn-new-ticket';
-      b.className = 'gnt-open';
-      b.style.display = 'none';
-      document.body.appendChild(b);
-    }
-  }
-
   /* ========================= ВСПОМОГАТЕЛЬНОЕ: slug для категорий (с кириллицей) ========================= */
   function slugify(txt){
     const map = {
@@ -100,12 +69,11 @@
     });
   }
 
-  /* ========================= «Просрочены» и «Новая заявка» ========================= */
-  function ensureExtraStatusBlocks() {
+  /* ========================= ДОП. ФИЛЬТР «ПРОСРОЧЕНЫ» ========================= */
+  function ensureOverdueBlock() {
     const row = document.querySelector('.glpi-status-blocks');
     if (!row) return;
 
-    // Кнопка «Просрочены»: действует как фильтр по data-late="1"
     if (!document.querySelector('.glpi-newfilter-block')) {
       const btn = document.createElement('button');
       btn.className = 'glpi-status-block glpi-newfilter-block';
@@ -116,15 +84,6 @@
       });
       row.appendChild(btn);
     }
-
-    // Кнопка «Новая заявка» — открываем модалку из glpi-new-task.php
-    // Удаляем все существующие кнопки, чтобы не было дублей
-    document.querySelectorAll('.glpi-newtask-block').forEach(btn => btn.remove());
-    const add = document.createElement('button');
-    add.className = 'glpi-status-block glpi-newtask-block';
-    add.innerHTML = '<div class="status-count"><i class="fa-regular fa-file-lines"></i></div><div class="status-label">новая заявка</div>';
-    add.addEventListener('click', openNewTaskModal);
-    row.appendChild(add);
   }
   function openNewTaskModal() {
     try {
@@ -148,30 +107,38 @@
     } catch (e) {}
   }
 
-  /* ========================= КАТЕГОРИИ: СВОРАЧИВАНИЕ/РАЗВОРАЧИВАНИЕ ========================= */
-  function initCategoryCollapser(){
-    const row = document.querySelector('.glpi-category-tags');
-    if (!row) return;
-    if (!document.querySelector('.glpi-cat-toggle')) {
-      const tgl = document.createElement('button');
-      tgl.className = 'glpi-cat-toggle';
-      tgl.setAttribute('aria-expanded','false');
-      tgl.innerHTML = '<span class="tw">▸</span> Категории';
-      const header = document.querySelector('.glpi-header-row');
-      const statusRow = header && header.querySelector('.glpi-status-row');
-      if (header) {
-        header.insertBefore(tgl, statusRow);
-      } else {
-        row.parentNode.insertBefore(tgl, row);
+  function bindNewTaskButton(){
+    const btn = document.querySelector('.glpi-newtask-btn');
+    if (btn) btn.addEventListener('click', openNewTaskModal);
+  }
+
+  /* ========================= МЕНЮ КАТЕГОРИЙ ========================= */
+  function initCategoryMenu(){
+    const block = document.querySelector('.glpi-category-block');
+    if (!block) return;
+    const toggle = block.querySelector('.glpi-cat-toggle');
+    const menu   = block.querySelector('.glpi-cat-menu');
+    if (!toggle || !menu) return;
+
+    const closeMenu = () => {
+      menu.classList.remove('open');
+      toggle.setAttribute('aria-expanded','false');
+    };
+
+    toggle.addEventListener('click', e => {
+      e.stopPropagation();
+      const opened = menu.classList.toggle('open');
+      toggle.setAttribute('aria-expanded', opened ? 'true' : 'false');
+    });
+
+    document.addEventListener('click', e => {
+      if (!block.contains(e.target)) {
+        closeMenu();
       }
-      tgl.addEventListener('click', () => {
-        const opened = row.classList.toggle('collapsed') ? false : true;
-        tgl.setAttribute('aria-expanded', String(opened));
-        tgl.querySelector('.tw').textContent = opened ? '▾' : '▸';
-      });
-      // старт — свёрнуты
-      row.classList.add('collapsed');
-    }
+    });
+
+    // закрываем при скролле страницы
+    window.addEventListener('scroll', closeMenu);
   }
 
   // Делегированный клик по тегу категории
@@ -194,6 +161,13 @@
       recalcStatusCounts();
       recalcCategoryVisibility();
       filterCards();
+      const block = document.querySelector('.glpi-category-block');
+      if (block) {
+        const menu = block.querySelector('.glpi-cat-menu');
+        const toggle = block.querySelector('.glpi-cat-toggle');
+        if (menu) menu.classList.remove('open');
+        if (toggle) toggle.setAttribute('aria-expanded','false');
+      }
     }, true);
   }
 
@@ -732,7 +706,7 @@
     });
     $$('.glpi-category-tag.category-filter-btn').forEach(tag => {
       const cat = (tag.getAttribute('data-cat') || '').toLowerCase();
-      tag.style.display = (st !== 'all' && !visibleCats.has(cat)) ? 'none' : 'inline-flex';
+      tag.style.display = (st !== 'all' && !visibleCats.has(cat)) ? 'none' : 'block';
     });
   }
 
@@ -758,6 +732,13 @@
         // при выборе статуса сбрасываем выбранные категории
         currentCategory = 'all';
         $$('.category-filter-btn, .glpi-category-tag').forEach(b => b.classList.remove('active'));
+        const block = document.querySelector('.glpi-category-block');
+        if (block) {
+          const menu = block.querySelector('.glpi-cat-menu');
+          const toggle = block.querySelector('.glpi-cat-toggle');
+          if (menu) menu.classList.remove('open');
+          if (toggle) toggle.setAttribute('aria-expanded','false');
+        }
         recalcStatusCounts(); recalcCategoryVisibility(); filterCards();
       });
     });
@@ -767,10 +748,10 @@
 
   /* ========================= ИНИЦИАЛИЗАЦИЯ ========================= */
   document.addEventListener('DOMContentLoaded', function () {
-    ensureSearchOnTop();
-    ensureExtraStatusBlocks();
-    initCategoryCollapser();
+    ensureOverdueBlock();
+    initCategoryMenu();
     bindCategoryClicks();
+    bindNewTaskButton();
 
     injectCardActionButtons();
     applyActionVisibility();
