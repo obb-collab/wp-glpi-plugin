@@ -467,133 +467,14 @@
 
   /* ========================= ДЕЙСТВИЯ ПО КАРТОЧКЕ (AJAX) ========================= */
   function doCardAction(type, ticketId, payload) {
-    return new Promise(resolve => {
-      const url = window.glpiAjax && glpiAjax.url;
-      const nonce = window.glpiAjax && glpiAjax.nonce;
-      if (!url || !nonce) { resolve(false); return; }
-      const fd = new FormData();
-      fd.append('action', 'glpi_card_action');
-      fd.append('_ajax_nonce', nonce);
-      fd.append('ticket_id', String(ticketId));
-      fd.append('type', type);
-      fd.append('payload', JSON.stringify(payload || {}));
-      fetch(url, { method: 'POST', body: fd })
-        .then(r => r.json())
-        .then(resp => resolve(!!(resp && resp.ok)))
-        .catch(() => resolve(false));
-    });
+    return Promise.resolve(false);
   }
 
   /* ========================= КНОПКИ ДЕЙСТВИЙ НА КАРТОЧКЕ ========================= */
-  function injectCardActionButtons() {
-    const idsToFetch = [];
-    const chips = {};
-    const preloaded = window.gexePrefetchedComments || {};
-    $$('.glpi-card').forEach(card => {
-      if ($('.gexe-card-actions', card)) return;
-      const id = Number(card.getAttribute('data-ticket-id') || '0');
-      if (!id) return;
-
-      const bar = document.createElement('div');
-      bar.className = 'gexe-card-actions';
-      bar.innerHTML =
-        '<button class="gexe-action-btn gexe-open-accept" title="Принять в работу"><i class="fa-solid fa-play"></i></button>';
-      card.insertBefore(bar, card.firstChild);
-
-      // чип со счётчиком комментариев (в левом футере)
-      const foot = card.querySelector('.glpi-executor-footer');
-      if (foot && !foot.querySelector('.glpi-comments-chip')) {
-        const chip = document.createElement('span');
-        chip.className = 'glpi-comments-chip';
-        chip.innerHTML = '<i class="fa-regular fa-comment"></i> <span class="gexe-cmnt-count">0</span>';
-        foot.appendChild(chip);
-        chips[id] = chip;
-        if (preloaded[id] && typeof preloaded[id].count === 'number') {
-          chip.querySelector('.gexe-cmnt-count').textContent = String(preloaded[id].count);
-        } else {
-          idsToFetch.push(id);
-        }
-      }
-
-      const btnAccept  = $('.gexe-open-accept',  bar);
-
-      on(btnAccept, 'click', e => {
-        e.stopPropagation();
-        if (btnAccept.disabled) return;
-        doCardAction('start', id).then(ok => {
-          if (ok) {
-            btnAccept.disabled = true;
-            card.setAttribute('data-status', '2');
-            const modalBtn = modalEl && modalEl.getAttribute('data-ticket-id') === String(id)
-              ? modalEl.querySelector('.gexe-open-accept')
-              : null;
-            if (modalBtn) modalBtn.disabled = true;
-            recalcStatusCounts(); filterCards();
-          }
-        });
-      });
-    });
-
-    if (idsToFetch.length) {
-      fetchCommentCounts(idsToFetch, map => {
-        idsToFetch.forEach(id => {
-          const chip = chips[id];
-          if (chip) {
-            const n = map && typeof map[id] === 'number' ? map[id] : 0;
-            chip.querySelector('.gexe-cmnt-count').textContent = String(n);
-          }
-        });
-      });
-    }
-  }
+  function injectCardActionButtons() {}
 
   // Права/видимость
-  function applyActionVisibility() {
-    const uid = Number((window.glpiAjax && glpiAjax.user_glpi_id) || 0);
-    $$('.glpi-card').forEach(card => {
-      const bar = $('.gexe-card-actions', card);
-      if (!bar) return;
-      const btnComment = $('.gexe-open-comment', bar);
-      const btnAccept  = $('.gexe-open-accept',  bar);
-      const btnClose   = $('.gexe-open-close',   bar);
-
-      if (uid <= 0) { // не авторизован — прячем все
-        if (btnComment) btnComment.style.display = 'none';
-        if (btnAccept)  btnAccept.style.display  = 'none';
-        if (btnClose)   btnClose.style.display   = 'none';
-        return;
-      }
-
-      const assignees = (card.getAttribute('data-assignees') || '')
-        .split(',').map(s => parseInt(s, 10)).filter(n => n > 0);
-      const isAssignee = assignees.includes(uid);
-
-      // «Завершить» и «Принять» — только исполнителю
-      if (!isAssignee) {
-        if (btnAccept) btnAccept.style.display = 'none';
-        if (btnClose)  btnClose.style.display  = 'none';
-      }
-
-      // Если уже есть «Принято в работу» — блокируем «Принять в работу»
-      const url = window.glpiAjax && glpiAjax.url;
-      const nonce = window.glpiAjax && glpiAjax.nonce;
-      const ticketId = Number(card.getAttribute('data-ticket-id') || '0');
-      if (btnAccept && url && nonce && ticketId) {
-        const fd = new FormData();
-        fd.append('action', 'glpi_ticket_started');
-        fd.append('_ajax_nonce', nonce);
-        fd.append('ticket_id', String(ticketId));
-        fetch(url, { method: 'POST', body: fd })
-          .then(r => r.json())
-          .then(resp => {
-            if (resp && resp.ok && resp.started) {
-              btnAccept.disabled = true;
-            }
-          })
-          .catch(()=>{});
-      }
-    });
-  }
+  function applyActionVisibility() {}
 
   /* ========================= КОЛ-ВО КОММЕНТАРИЕВ ========================= */
   function fetchCommentCounts(ids, cb){
