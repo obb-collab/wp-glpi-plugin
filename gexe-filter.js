@@ -467,6 +467,7 @@
       if (ok) {
         const card = document.querySelector('.glpi-card[data-ticket-id="'+id+'"]');
         if (card) {
+          card.setAttribute('data-status', '5');
           card.classList.add('gexe-hide');
           recalcStatusCounts(); filterCards();
         }
