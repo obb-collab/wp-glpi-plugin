@@ -34,3 +34,10 @@ When the user clicks **Задача решена** in the ticket modal, the plug
 3. Triggers standard GLPI notifications (mail/Telegram).
 
 Errors are logged with the `[GLPI-SOLVE]` prefix.
+
+## Releases
+
+1. Update the `Version` header in `gexe-copy.php`.
+2. Commit the changes.
+3. Run `composer release` to tag the current commit.
+4. Pushing the tag triggers the GitHub Action that builds the release.

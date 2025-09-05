@@ -1,0 +1,12 @@
+{
+    "name": "obb-collab/wp-glpi-plugin",
+    "description": "WordPress integration with a GLPI helpdesk.",
+    "type": "wordpress-plugin",
+    "license": "GPL-2.0-or-later",
+    "require": {},
+    "scripts": {
+        "release": [
+            "bash bin/tag-release.sh"
+        ]
+    }
+}
