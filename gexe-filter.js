@@ -117,22 +117,22 @@
     if (window.glpiToast) glpiToast('Принимаем в работу…');
 
     const fd = new FormData();
-    fd.append('action', 'glpi_ticket_accept');
+    fd.append('action', 'glpi_ticket_accept_sql');
     fd.append('ticket_id', String(ticketId));
-    fd.append('_ajax_nonce', ajax.nonce);
+    fd.append('assignee_glpi_id', String(ajax.user_glpi_id || 0));
+    fd.append('nonce', ajax.nonce);
 
     const send = retry => fetch(ajax.url, { method: 'POST', body: fd })
       .then(r => r.json().then(data => ({ status: r.status, data })))
       .then(resp => {
-        if (resp.status === 403 && resp.data && resp.data.code === 'AJAX_FORBIDDEN'
-          && resp.data.reason === 'nonce' && !retry) {
-          return refreshActionsNonce().then(() => { fd.set('_ajax_nonce', ajax.nonce); return send(true); });
+        if (resp.status === 403 && resp.data && resp.data.code === 'AJAX_FORBIDDEN' && !retry) {
+          return refreshActionsNonce().then(() => { fd.set('nonce', ajax.nonce); return send(true); });
         }
         return resp;
       });
 
     send(false).then(resp => {
-      if (resp.status === 200 && resp.data && resp.data.success) {
+      if (resp.status === 200 && resp.data && resp.data.ok) {
         btn.classList.remove('is-loading');
         const cardEl = document.querySelector('.glpi-card[data-ticket-id="'+ticketId+'"]');
         if (cardEl) {
@@ -150,6 +150,22 @@
             mb.disabled = true;
             mb.classList.remove('is-loading');
             mb.setAttribute('aria-disabled', 'true');
+          }
+        }
+        if (resp.data.followup_id) {
+          const actionId = crypto.randomUUID();
+          addPendingComment(ticketId, 'Принято в работу', actionId);
+          const info = pendingComments[ticketId];
+          if (info) {
+            const meta = $('.meta', info.el);
+            if (meta) {
+              meta.innerHTML = '<span class="glpi-comment-date" data-date="'+(resp.data.created_at || new Date().toISOString())+'"></span>';
+              updateAgeFooters();
+            }
+            info.el.classList.remove('glpi-comment--pending');
+            const st = info.el.querySelector('.glpi-comment-status');
+            if (st) st.remove();
+            delete pendingComments[ticketId];
           }
         }
         lockAction(ticketId, 'accept', false);
