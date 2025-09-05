@@ -8,6 +8,12 @@
 (function () {
   'use strict';
 
+  // Ensure AJAX settings are available under both legacy and new globals
+  const ajaxConfig = window.gexeAjax || window.glpiAjax || {};
+  window.glpiAjax = ajaxConfig;
+  window.gexeAjax = ajaxConfig;
+  const glpiAjax = ajaxConfig;
+
   /* ========================= УТИЛИТЫ ========================= */
   const $  = (s, p) => (p || document).querySelector(s);
   const $$ = (s, p) => Array.from((p || document).querySelectorAll(s));
