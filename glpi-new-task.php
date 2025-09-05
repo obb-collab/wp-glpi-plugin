@@ -2,7 +2,7 @@
 /**
  * GLPI — создание новой заявки из WordPress UI.
  * Регистрирует AJAX:
- *  - glpi_dropdowns     : выдаёт списки категорий, местоположений и исполнителей
+ *  - glpi_get_form_data : выдаёт списки категорий, местоположений и исполнителей
  *  - glpi_create_ticket : создаёт заявку в glpi_tickets (+ заявители/исполнители)
  *
  * Также подключает CSS для окна создания заявки.
@@ -11,6 +11,7 @@
 if (!defined('ABSPATH')) exit;
 
 require_once __DIR__ . '/glpi-utils.php';
+require_once __DIR__ . '/includes/glpi-form-data.php';
 
 add_action('wp_enqueue_scripts', function () {
     // Стили окна создания заявки
@@ -32,94 +33,6 @@ add_action('wp_enqueue_scripts', function () {
     );
     wp_enqueue_script('glpi-new-task-js');
 });
-
-// -------- AJAX: списки категорий, местоположений и исполнителей --------
-add_action('wp_ajax_glpi_dropdowns', 'gexe_glpi_dropdowns');
-function gexe_glpi_dropdowns() {
-    check_ajax_referer('glpi_modal_actions');
-
-    global $glpi_db;
-
-    // Категории (полное имя)
-    $cats = $glpi_db->get_results(
-        "SELECT id, completename
-         FROM glpi_itilcategories
-         ORDER BY completename ASC",
-        ARRAY_A
-    );
-    $categories = [];
-    if ($cats) {
-        foreach ($cats as $c) {
-            $full = str_replace('ЦМСЧ № 120 ФМБА РФ / ', '', $c['completename']);
-            $parts = preg_split('/\s>\s/', $full);
-            $short = end($parts);
-            $categories[] = [
-                'id'   => intval($c['id']),
-                'name' => $short,
-                'path' => $full,
-            ];
-        }
-    }
-
-    // Местоположения (ограничение по организациям)
-    $entities = [
-        'ЦМСЧ № 120 ФМБА РФ',
-        'ЦМСЧ № 120 ФМБА РФ > Детская поликлиника',
-        'ЦМСЧ № 120 ФМБА РФ > ОИРиТ внутрненние задачи',
-        'ЦМСЧ № 120 ФМБА РФ > !Поликлиника для взрослых',
-        'Филиал МСЧ № 5',
-        'Филиал МСЧ № 6',
-    ];
-
-    $placeholders = implode(',', array_fill(0, count($entities), '%s'));
-    $sql = "SELECT l.id, CONCAT(e.completename, ' / ', l.completename) AS fullname"
-         . " FROM glpi_locations AS l"
-         . " JOIN glpi_entities AS e ON e.id = l.entities_id"
-         . " WHERE e.completename IN ($placeholders)"
-         . " ORDER BY fullname ASC";
-    $params = array_merge([$sql], $entities);
-    $prepared = call_user_func_array([$glpi_db, 'prepare'], $params);
-    $locs = $glpi_db->get_results($prepared, ARRAY_A);
-    $locations = [];
-    if ($locs) {
-        foreach ($locs as $l) {
-            $full = str_replace('ЦМСЧ № 120 ФМБА РФ / ', '', $l['fullname']);
-            $full = str_replace('ЦМСЧ № 120 ФМБА РФ > ', '', $full);
-            $parts = preg_split('/\s[\/>]\s/', $full);
-            $short = end($parts);
-            $locations[] = [
-                'id'   => intval($l['id']),
-                'name' => $short,
-                'path' => $full,
-            ];
-        }
-    }
-
-    // Исполнители
-    $mapping = [
-        ['glpi_id' => 622, 'name' => 'Сушко Валентин'],
-        ['glpi_id' => 621, 'name' => 'Скомороха Анастасия'],
-        ['glpi_id' => 269, 'name' => 'Смирнов Максим'],
-        ['glpi_id' => 180, 'name' => 'Кузнецов Евгений'],
-        ['glpi_id' => 2,   'name' => 'Куткин Павел'],
-        ['glpi_id' => 632, 'name' => 'Стельмашенко Игнат'],
-        ['glpi_id' => 620, 'name' => 'Нечепорук Александр'],
-    ];
-    $executors = [];
-    foreach ($mapping as $m) {
-        $executors[] = [
-            'id'   => (int)$m['glpi_id'],
-            'name' => $m['name'],
-        ];
-    }
-
-    wp_send_json([
-        'ok'         => true,
-        'categories' => $categories,
-        'locations'  => $locations,
-        'executors'  => $executors,
-    ]);
-}
 
 // -------- AJAX: создание новой заявки --------
 add_action('wp_ajax_glpi_create_ticket', 'gexe_glpi_create_ticket');

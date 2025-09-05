@@ -1,5 +1,6 @@
 <?php
 if (!defined('ABSPATH')) exit;
+require_once __DIR__ . '/includes/glpi-form-data.php';
 
 add_action('admin_menu', function () {
     add_options_page('GLPI Settings', 'GLPI', 'manage_options', 'gexe-glpi', 'gexe_glpi_settings_page');
@@ -40,6 +41,10 @@ function gexe_glpi_field_solved_status() {
 
 function gexe_glpi_settings_page() {
     if (!current_user_can('manage_options')) return;
+    if (isset($_POST['glpi_flush_cache']) && check_admin_referer('glpi_flush_cache')) {
+        gexe_glpi_flush_cache();
+        echo '<div class="updated"><p>Кэш сброшен.</p></div>';
+    }
     ?>
     <div class="wrap">
         <h1>GLPI Settings</h1>
@@ -49,6 +54,10 @@ function gexe_glpi_settings_page() {
             do_settings_sections('gexe-glpi');
             submit_button();
             ?>
+        </form>
+        <form method="post">
+            <?php wp_nonce_field('glpi_flush_cache'); ?>
+            <p><input type="submit" name="glpi_flush_cache" class="button" value="Сбросить кэш справочников" /></p>
         </form>
     </div>
     <?php
