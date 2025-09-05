@@ -4,6 +4,8 @@
   let modal = null;
   let categoriesLoaded = false;
   let executorsLoaded = false;
+  // Promise для первого запроса справочников
+  let dataPromise = null;
 
   function buildModal(){
     if (modal) return;
@@ -70,7 +72,7 @@
     buildModal();
     modal.classList.add('open');
     document.body.classList.add('glpi-modal-open');
-    loadDropdowns();
+    loadFormData();
     updateSubmitState();
   }
 
@@ -80,51 +82,68 @@
     document.body.classList.remove('glpi-modal-open');
   }
 
-  function loadDropdowns(){
+  function loadFormData(){
+    // Если данные уже получены – используем их
+    if (window.__glpiFormData) {
+      fillDropdowns(window.__glpiFormData);
+      return;
+    }
     if (!window.glpiAjax) return;
-    const params = new URLSearchParams();
-    params.append('action','glpi_dropdowns');
-    params.append('_ajax_nonce', glpiAjax.nonce);
-    fetch(glpiAjax.url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: params.toString()
-    }).then(r=>r.json()).then(data=>{
-      if (data && data.categories && !categoriesLoaded) {
-        const list = modal.querySelector('#gnt-category-list');
-        const counts = {};
-        data.categories.forEach(function(c){
-          counts[c.name] = (counts[c.name] || 0) + 1;
-        });
-        data.categories.forEach(function(c){
-          const opt = document.createElement('option');
-          let val = c.name;
-          if (counts[c.name] > 1 && c.path) {
-            const parts = c.path.split(/\s[\/\>]\s/);
-            parts.pop();
-            const parent = parts.join(' / ');
-            if (parent) val = c.name + ' (' + parent + ')';
-          }
-          opt.value = val;
-          opt.setAttribute('data-id', c.id);
-          if (c.path) opt.setAttribute('data-path', c.path);
-          list.appendChild(opt);
-        });
-        categoriesLoaded = true;
-      }
-      if (data && data.executors && !executorsLoaded) {
-        const sel = modal.querySelector('#gnt-assignee');
-        data.executors.forEach(function(u){
-          const opt = document.createElement('option');
-          opt.value = u.id;
-          opt.textContent = u.name;
-          sel.appendChild(opt);
-        });
-        executorsLoaded = true;
-      }
-      if (data && data.locations) {
-        const list = modal.querySelector('#gnt-location-list');
-        list.innerHTML = '';
+    if (!dataPromise) {
+      const params = new URLSearchParams();
+      params.append('action','glpi_get_form_data');
+      params.append('_ajax_nonce', glpiAjax.nonce);
+      dataPromise = fetch(glpiAjax.url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: params.toString()
+      }).then(r=>r.json()).then(function(data){
+        window.__glpiFormData = data;
+        fillDropdowns(data);
+        return data;
+      }).catch(function(){ dataPromise = null; });
+    } else {
+      dataPromise.then(fillDropdowns).catch(()=>{});
+    }
+  }
+
+  function fillDropdowns(data){
+    if (!data) return;
+    if (data.categories && !categoriesLoaded) {
+      const list = modal.querySelector('#gnt-category-list');
+      const counts = {};
+      data.categories.forEach(function(c){
+        counts[c.name] = (counts[c.name] || 0) + 1;
+      });
+      data.categories.forEach(function(c){
+        const opt = document.createElement('option');
+        let val = c.name;
+        if (counts[c.name] > 1 && c.path) {
+          const parts = c.path.split(/\s[\/\>]\s/);
+          parts.pop();
+          const parent = parts.join(' / ');
+          if (parent) val = c.name + ' (' + parent + ')';
+        }
+        opt.value = val;
+        opt.setAttribute('data-id', c.id);
+        if (c.path) opt.setAttribute('data-path', c.path);
+        list.appendChild(opt);
+      });
+      categoriesLoaded = true;
+    }
+    if (data.executors && !executorsLoaded) {
+      const sel = modal.querySelector('#gnt-assignee');
+      data.executors.forEach(function(u){
+        const opt = document.createElement('option');
+        opt.value = u.id;
+        opt.textContent = u.name;
+        sel.appendChild(opt);
+      });
+      executorsLoaded = true;
+    }
+    if (data.locations) {
+      const list = modal.querySelector('#gnt-location-list');
+      if (!list.childElementCount) {
         const counts = {};
         data.locations.forEach(function(l){
           counts[l.name] = (counts[l.name] || 0) + 1;
@@ -144,7 +163,7 @@
           list.appendChild(opt);
         });
       }
-    }).catch(()=>{});
+    }
   }
 
   function getSelectedId(listId, value){
