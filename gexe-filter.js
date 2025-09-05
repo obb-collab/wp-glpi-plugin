@@ -48,6 +48,35 @@
     }
   }
 
+  function refreshTicketMeta(ticketId) {
+    const url = window.glpiAjax && glpiAjax.url;
+    const nonce = window.glpiAjax && glpiAjax.nonce;
+    if (!url || !nonce || !ticketId) return;
+    const fd = new FormData();
+    fd.append('action', 'glpi_ticket_meta');
+    fd.append('_ajax_nonce', nonce);
+    fd.append('ticket_id', String(ticketId));
+    fetch(url, { method: 'POST', body: fd })
+      .then(r => r.json())
+      .then(resp => {
+        if (!(resp && resp.success && resp.data)) return;
+        const data = resp.data;
+        const card = document.querySelector('.glpi-card[data-ticket-id="'+ticketId+'"]');
+        const cnt = card && card.querySelector('.gexe-cmnt-count');
+        if (cnt) cnt.textContent = String(data.followups_count || 0);
+        const modalCnt = modalEl && modalEl.getAttribute('data-ticket-id') === String(ticketId)
+          ? modalEl.querySelector('.glpi-modal__comments-title .gexe-cmnt-count')
+          : null;
+        if (modalCnt) modalCnt.textContent = String(data.followups_count || 0);
+        if (card) {
+          const footer = card.querySelector('.glpi-date-footer');
+          if (footer) footer.setAttribute('data-date', data.last_followup_at || '');
+        }
+        updateAgeFooters();
+      })
+      .catch(()=>{});
+  }
+
   /* ========================= ПРЕДЗАГРУЖЕННЫЕ КОММЕНТАРИИ ========================= */
   // Комментарии подгружаются на сервере и передаются через window.gexePrefetchedComments
 
@@ -329,6 +358,7 @@
           }
           recalcStatusCounts(); filterCards();
           lockAction(id, 'start', false);
+          refreshTicketMeta(id);
           if (window.glpiCheckStartComment) {
             setTimeout(() => verifyStartComment(id), 1500);
           }
@@ -474,20 +504,10 @@
       .then(r => r.json())
       .then(resp => {
         if (resp && resp.success) {
-          const data = resp.data || {};
-          // обновим счётчики комментариев
-          const card = document.querySelector('.glpi-card[data-ticket-id="'+id+'"]');
-          const cnt = card && card.querySelector('.gexe-cmnt-count');
-          const modalCnt = modalEl && modalEl.querySelector('.glpi-modal__comments-title .gexe-cmnt-count');
-          const newCount = (typeof data.count === 'number')
-            ? data.count
-            : parseInt((cnt?.textContent || modalCnt?.textContent || '0'), 10) + 1;
-          if (cnt) cnt.textContent = String(newCount);
-          if (modalCnt) modalCnt.textContent = String(newCount);
           if (window.gexePrefetchedComments) delete window.gexePrefetchedComments[id];
-          // обновляем список комментариев в открытой карточке
           loadComments(id);
           applyActionVisibility();
+          refreshTicketMeta(id);
         }
       })
       .catch(()=>{});
@@ -568,6 +588,7 @@
             card.classList.add('gexe-hide');
             recalcStatusCounts(); filterCards();
           }
+          refreshTicketMeta(id);
           lockAction(id, 'done', false);
         } else {
           if (btn) setActionLoading(btn, false);
@@ -684,6 +705,7 @@
             }
             recalcStatusCounts(); filterCards();
             lockAction(id, 'start', false);
+            refreshTicketMeta(id);
             if (window.glpiCheckStartComment) {
               setTimeout(() => verifyStartComment(id), 1500);
             }

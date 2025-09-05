@@ -139,17 +139,55 @@ function gexe_clear_comment_count_cache($ticket_id) {
     wp_cache_delete(gexe_comment_count_cache_key($ticket_id), 'glpi');
 }
 
+/** Получение followups_count и last_followup_at для тикета */
+function gexe_get_ticket_meta($ticket_id) {
+    global $glpi_db;
+    $ticket_id = (int)$ticket_id;
+    if ($ticket_id <= 0) {
+        return ['followups_count' => 0, 'last_followup_at' => null];
+    }
+    if (gexe_glpi_use_followups_count()) {
+        $row = $glpi_db->get_row($glpi_db->prepare(
+            "SELECT followups_count, last_followup_at FROM glpi_tickets WHERE id=%d",
+            $ticket_id
+        ), ARRAY_A);
+        return [
+            'followups_count' => isset($row['followups_count']) ? (int)$row['followups_count'] : 0,
+            'last_followup_at' => $row['last_followup_at'] ?? null,
+        ];
+    }
+    $last = $glpi_db->get_var($glpi_db->prepare(
+        "SELECT MAX(date) FROM glpi_itilfollowups WHERE itemtype='Ticket' AND items_id=%d",
+        $ticket_id
+    ));
+    $cnt = $glpi_db->get_var($glpi_db->prepare(
+        "SELECT COUNT(*) FROM glpi_itilfollowups WHERE itemtype='Ticket' AND items_id=%d",
+        $ticket_id
+    ));
+    return [
+        'followups_count' => (int)$cnt,
+        'last_followup_at' => $last ?: null,
+    ];
+}
+
 /** Получение количества комментариев с кэшированием */
 function gexe_get_comment_count($ticket_id) {
     $key = gexe_comment_count_cache_key($ticket_id);
     $cached = wp_cache_get($key, 'glpi');
     if ($cached !== false) return (int)$cached;
     global $glpi_db;
-    $cnt = (int)$glpi_db->get_var($glpi_db->prepare(
-        "SELECT COUNT(*) FROM glpi_itilfollowups WHERE itemtype='Ticket' AND items_id=%d",
-        $ticket_id
-    ));
-    wp_cache_set($key, $cnt, 'glpi', DAY_IN_SECONDS);
+    if (gexe_glpi_use_followups_count()) {
+        $cnt = (int)$glpi_db->get_var($glpi_db->prepare(
+            "SELECT followups_count FROM glpi_tickets WHERE id=%d",
+            $ticket_id
+        ));
+    } else {
+        $cnt = (int)$glpi_db->get_var($glpi_db->prepare(
+            "SELECT COUNT(*) FROM glpi_itilfollowups WHERE itemtype='Ticket' AND items_id=%d",
+            $ticket_id
+        ));
+    }
+    wp_cache_set($key, $cnt, 'glpi', MINUTE_IN_SECONDS);
     return $cnt;
 }
 
@@ -246,6 +284,15 @@ function gexe_glpi_get_comments() {
     wp_send_json(gexe_render_comments($ticket_id, $page, $per_page));
 }
 
+/* -------- AJAX: мета тикета -------- */
+add_action('wp_ajax_glpi_ticket_meta', 'gexe_glpi_ticket_meta');
+add_action('wp_ajax_nopriv_glpi_ticket_meta', 'gexe_glpi_ticket_meta');
+function gexe_glpi_ticket_meta() {
+    check_ajax_referer('glpi_modal_actions');
+    $ticket_id = isset($_POST['ticket_id']) ? intval($_POST['ticket_id']) : 0;
+    wp_send_json_success(gexe_get_ticket_meta($ticket_id));
+}
+
 add_action('rest_api_init', function () {
     register_rest_route('glpi/v1', '/comments', [
         'methods'  => 'GET',
@@ -285,8 +332,11 @@ function gexe_glpi_count_comments_batch() {
     if ($missing) {
         global $glpi_db;
         $placeholders = implode(',', array_fill(0, count($missing), '%d'));
-        $sql = "SELECT items_id, COUNT(*) AS cnt FROM glpi_itilfollowups "
-             . "WHERE itemtype='Ticket' AND items_id IN ($placeholders) GROUP BY items_id";
+        if (gexe_glpi_use_followups_count()) {
+            $sql = "SELECT id AS items_id, followups_count AS cnt FROM glpi_tickets WHERE id IN ($placeholders)";
+        } else {
+            $sql = "SELECT items_id, COUNT(*) AS cnt FROM glpi_itilfollowups WHERE itemtype='Ticket' AND items_id IN ($placeholders) GROUP BY items_id";
+        }
         $rows = $glpi_db->get_results($glpi_db->prepare($sql, $missing), ARRAY_A);
 
         if ($rows) {
@@ -294,13 +344,13 @@ function gexe_glpi_count_comments_batch() {
                 $id  = (int)$r['items_id'];
                 $cnt = (int)$r['cnt'];
                 $out[$id] = $cnt;
-                wp_cache_set(gexe_comment_count_cache_key($id), $cnt, 'glpi', DAY_IN_SECONDS);
+                wp_cache_set(gexe_comment_count_cache_key($id), $cnt, 'glpi', MINUTE_IN_SECONDS);
             }
         }
         foreach ($missing as $id) {
             if (!isset($out[$id])) {
                 $out[$id] = 0;
-                wp_cache_set(gexe_comment_count_cache_key($id), 0, 'glpi', DAY_IN_SECONDS);
+                wp_cache_set(gexe_comment_count_cache_key($id), 0, 'glpi', MINUTE_IN_SECONDS);
             }
         }
     }
@@ -393,7 +443,8 @@ function gexe_glpi_card_action() {
             wp_send_json_error(['message' => $short, 'action_id' => $action_id]);
         }
 
-        wp_send_json_success(['action_id' => $action_id]);
+        gexe_clear_comments_cache($ticket_id);
+        wp_send_json_success(['action_id' => $action_id, 'refresh_meta' => true]);
     }
 
     wp_send_json_error(['message' => 'unknown_action', 'action_id' => $action_id]);
@@ -436,5 +487,5 @@ function gexe_glpi_add_comment() {
     gexe_clear_comments_cache($ticket_id); // refresh caches after add
     $count = gexe_get_comment_count($ticket_id);
 
-    wp_send_json_success(['count' => $count]);
+    wp_send_json_success(['count' => $count, 'refresh_meta' => true]);
 }

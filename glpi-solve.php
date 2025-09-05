@@ -34,5 +34,6 @@ function gexe_glpi_mark_solved() {
         wp_send_json_error(['message' => $short, 'action_id' => $action_id]);
     }
 
-    wp_send_json_success(['action_id' => $action_id]);
+    gexe_clear_comments_cache($ticket_id);
+    wp_send_json_success(['action_id' => $action_id, 'refresh_meta' => true]);
 }
