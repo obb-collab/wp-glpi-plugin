@@ -450,6 +450,142 @@ function gexe_glpi_card_action() {
     wp_send_json_error(['message' => 'unknown_action', 'action_id' => $action_id]);
 }
 
+add_action('wp_ajax_glpi_ticket_accept', 'gexe_glpi_ticket_accept');
+function gexe_glpi_ticket_accept() {
+    if (!check_ajax_referer('gexe_actions', 'nonce', false)) {
+        wp_send_json_error(['code' => 'AJAX_FORBIDDEN', 'reason' => 'nonce'], 403);
+    }
+    if (!is_user_logged_in() || !current_user_can('read')) {
+        wp_send_json_error(['code' => 'AJAX_FORBIDDEN', 'reason' => 'cap'], 403);
+    }
+    $ticket_id = isset($_POST['ticket_id']) ? absint($_POST['ticket_id']) : 0;
+    if ($ticket_id <= 0) {
+        wp_send_json_error(['code' => 'BAD_REQUEST'], 400);
+    }
+
+    $start_time = microtime(true);
+
+    $url  = gexe_glpi_api_url() . '/initSession?get_full_session=true&session_write=true';
+    $args = [
+        'timeout' => 10,
+        'headers' => gexe_glpi_api_headers(),
+    ];
+    $resp = wp_remote_get($url, $args);
+    gexe_glpi_log('initSession', $url, $resp, $start_time);
+    if (is_wp_error($resp)) {
+        gexe_accept_log($ticket_id, 0, 0, (int) round((microtime(true) - $start_time) * 1000), 'fail', $resp->get_error_message());
+        wp_send_json_error(['code' => 'GLPI_SESSION'], 500);
+    }
+    $code = wp_remote_retrieve_response_code($resp);
+    $body = json_decode(wp_remote_retrieve_body($resp), true);
+    if ($code >= 300 || !is_array($body) || empty($body['session_token'])) {
+        gexe_accept_log($ticket_id, 0, $code, (int) round((microtime(true) - $start_time) * 1000), 'fail', 'initSession');
+        wp_send_json_error(['code' => 'GLPI_SESSION'], 500);
+    }
+    $session_token = $body['session_token'];
+    $glpi_user_id = (int) get_user_meta(get_current_user_id(), 'glpi_users_id', true);
+    if ($glpi_user_id <= 0 && isset($body['session']['glpiID'])) {
+        $glpi_user_id = (int) $body['session']['glpiID'];
+    }
+    if ($glpi_user_id <= 0) {
+        gexe_accept_log($ticket_id, 0, $code, (int) round((microtime(true) - $start_time) * 1000), 'fail', 'GLPI_USER_NOT_RESOLVED');
+        wp_send_json_error(['code' => 'GLPI_USER_NOT_RESOLVED'], 500);
+    }
+
+    $assign_body = [
+        'input' => [
+            'tickets_id' => $ticket_id,
+            'users_id'   => $glpi_user_id,
+            'type'       => 2,
+        ],
+    ];
+    $assign = gexe_glpi_request_with_token('ticket_accept_assign ' . $ticket_id, 'POST', '/Ticket_User/', $assign_body, $session_token);
+    if (gexe_glpi_session_error($assign)) {
+        $session_token = gexe_glpi_init_session();
+        if (is_wp_error($session_token)) {
+            gexe_accept_log($ticket_id, $glpi_user_id, 0, (int) round((microtime(true) - $start_time) * 1000), 'fail', 'session_retry');
+            wp_send_json_error(['code' => 'GLPI_SESSION'], 500);
+        }
+        $assign = gexe_glpi_request_with_token('ticket_accept_assign ' . $ticket_id, 'POST', '/Ticket_User/', $assign_body, $session_token);
+    }
+    if (is_wp_error($assign)) {
+        gexe_accept_log($ticket_id, $glpi_user_id, 0, (int) round((microtime(true) - $start_time) * 1000), 'fail', $assign->get_error_message());
+        wp_send_json_error(['code' => 'GLPI_ASSIGN_NETWORK'], 500);
+    }
+    $assign_code = wp_remote_retrieve_response_code($assign);
+    if ($assign_code >= 300 && $assign_code != 207) {
+        $body_resp = wp_remote_retrieve_body($assign);
+        gexe_accept_log($ticket_id, $glpi_user_id, $assign_code, (int) round((microtime(true) - $start_time) * 1000), 'fail', mb_substr(trim($body_resp), 0, 200), $body_resp);
+        wp_send_json_error(['code' => 'GLPI_ASSIGN_FAILED', 'message' => mb_substr(trim($body_resp), 0, 200)], 500);
+    }
+
+    $status_body = [
+        'input' => [
+            'id'     => $ticket_id,
+            'status' => 2,
+        ],
+    ];
+    $status = gexe_glpi_request_with_token('ticket_accept_status ' . $ticket_id, 'PUT', '/Ticket/' . $ticket_id, $status_body, $session_token);
+    if (gexe_glpi_session_error($status)) {
+        $session_token = gexe_glpi_init_session();
+        if (is_wp_error($session_token)) {
+            gexe_accept_log($ticket_id, $glpi_user_id, 0, (int) round((microtime(true) - $start_time) * 1000), 'fail', 'session_retry');
+            wp_send_json_error(['code' => 'GLPI_SESSION'], 500);
+        }
+        $status = gexe_glpi_request_with_token('ticket_accept_status ' . $ticket_id, 'PUT', '/Ticket/' . $ticket_id, $status_body, $session_token);
+    }
+    if (is_wp_error($status)) {
+        gexe_accept_log($ticket_id, $glpi_user_id, 0, (int) round((microtime(true) - $start_time) * 1000), 'fail', $status->get_error_message());
+        wp_send_json_error(['code' => 'GLPI_STATUS_NETWORK'], 500);
+    }
+    $status_code = wp_remote_retrieve_response_code($status);
+    if ($status_code >= 300) {
+        $body_resp = wp_remote_retrieve_body($status);
+        gexe_accept_log($ticket_id, $glpi_user_id, $status_code, (int) round((microtime(true) - $start_time) * 1000), 'fail', mb_substr(trim($body_resp), 0, 200), $body_resp);
+        wp_send_json_error(['code' => 'GLPI_STATUS_FAILED', 'message' => mb_substr(trim($body_resp), 0, 200)], 500);
+    }
+
+    gexe_clear_comments_cache($ticket_id);
+
+    $elapsed = (int) round((microtime(true) - $start_time) * 1000);
+    gexe_accept_log($ticket_id, $glpi_user_id, $status_code, $elapsed, 'ok', '');
+
+    wp_send_json_success([
+        'ticket_id' => $ticket_id,
+        'status'    => 2,
+        'assigned'  => $glpi_user_id,
+    ]);
+}
+
+function gexe_accept_log($ticket_id, $glpi_user_id, $http_code, $elapsed, $result, $msg, $body = '') {
+    $uploads = wp_upload_dir();
+    $dir     = trailingslashit($uploads['basedir']) . 'glpi-plugin/logs';
+    if (!is_dir($dir)) {
+        wp_mkdir_p($dir);
+    }
+    $line = sprintf(
+        "[accept] ticket=%d glpi_user=%d http=%d elapsed=%dms result=%s msg=\"%s\"\n",
+        $ticket_id,
+        $glpi_user_id,
+        $http_code,
+        $elapsed,
+        $result,
+        $msg
+    );
+    if ('fail' === $result && $body !== '') {
+        $line .= trim($body) . "\n";
+    }
+    file_put_contents($dir . '/actions.log', $line, FILE_APPEND);
+}
+
+add_action('wp_ajax_gexe_refresh_actions_nonce', 'gexe_refresh_actions_nonce');
+function gexe_refresh_actions_nonce() {
+    if (!is_user_logged_in() || !current_user_can('read')) {
+        wp_send_json_error(['code' => 'AJAX_FORBIDDEN', 'reason' => 'cap'], 403);
+    }
+    wp_send_json_success(['nonce' => wp_create_nonce('gexe_actions')]);
+}
+
 /* -------- AJAX: добавить комментарий -------- */
 add_action('wp_ajax_glpi_add_comment', 'gexe_glpi_add_comment');
 function gexe_glpi_add_comment() {

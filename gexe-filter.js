@@ -48,9 +48,115 @@
     }
   }
 
+  function refreshActionsNonce() {
+    const ajax = window.gexeAjax || window.glpiAjax;
+    if (!ajax) return Promise.reject(new Error('no_ajax'));
+    const params = new URLSearchParams();
+    params.append('action', 'gexe_refresh_actions_nonce');
+    return fetch(ajax.url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: params.toString(),
+    })
+      .then(r => r.json())
+      .then(data => {
+        if (data && data.success && data.data && data.data.nonce) {
+          ajax.nonce = data.data.nonce;
+          return ajax.nonce;
+        }
+        throw new Error('nonce_refresh_failed');
+      });
+  }
+
+  function ticketIdFromEl(el) {
+    const card = el.closest('.glpi-card');
+    if (card) return parseInt(card.getAttribute('data-ticket-id') || '0', 10);
+    if (modalEl && modalEl.contains(el)) {
+      return parseInt(modalEl.getAttribute('data-ticket-id') || '0', 10);
+    }
+    return 0;
+  }
+
+  function handleAcceptClick(e) {
+    const btn = e.target.closest('.gexe-open-accept');
+    if (!btn) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const ticketId = ticketIdFromEl(btn);
+    if (!ticketId || btn.disabled || isActionLocked(ticketId, 'accept')) return;
+
+    const ajax = window.gexeAjax || window.glpiAjax;
+    if (!ajax || !ajax.url) return;
+
+    lockAction(ticketId, 'accept', true);
+    btn.setAttribute('disabled', 'disabled');
+    btn.setAttribute('aria-disabled', 'true');
+    btn.classList.add('is-loading');
+    if (window.glpiToast) glpiToast('Принимаем в работу…');
+
+    const fd = new FormData();
+    fd.append('action', 'glpi_ticket_accept');
+    fd.append('ticket_id', String(ticketId));
+    fd.append('nonce', ajax.nonce);
+
+    const send = retry => fetch(ajax.url, { method: 'POST', body: fd })
+      .then(r => r.json().then(data => ({ status: r.status, data })))
+      .then(resp => {
+        if (resp.status === 403 && resp.data && resp.data.code === 'AJAX_FORBIDDEN'
+          && resp.data.reason === 'nonce' && !retry) {
+          return refreshActionsNonce().then(() => { fd.set('nonce', ajax.nonce); return send(true); });
+        }
+        return resp;
+      });
+
+    send(false).then(resp => {
+      if (resp.status === 200 && resp.data && resp.data.success) {
+        btn.classList.remove('is-loading');
+        const cardEl = document.querySelector('.glpi-card[data-ticket-id="'+ticketId+'"]');
+        if (cardEl) {
+          cardEl.setAttribute('data-status', '2');
+          const cardBtn = cardEl.querySelector('.gexe-open-accept');
+          if (cardBtn) {
+            cardBtn.disabled = true;
+            cardBtn.classList.remove('is-loading');
+            cardBtn.setAttribute('aria-disabled', 'true');
+          }
+        }
+        if (modalEl && modalEl.getAttribute('data-ticket-id') === String(ticketId)) {
+          const mb = modalEl.querySelector('.gexe-open-accept');
+          if (mb) {
+            mb.disabled = true;
+            mb.classList.remove('is-loading');
+            mb.setAttribute('aria-disabled', 'true');
+          }
+        }
+        lockAction(ticketId, 'accept', false);
+        recalcStatusCounts(); filterCards(); refreshTicketMeta(ticketId);
+        if (window.glpiToast) glpiToast('Принято в работу');
+      } else {
+        btn.classList.remove('is-loading');
+        btn.removeAttribute('disabled');
+        btn.removeAttribute('aria-disabled');
+        lockAction(ticketId, 'accept', false);
+        const code = resp.data && resp.data.code ? resp.data.code : 'ERROR';
+        const msg = resp.data && resp.data.message ? resp.data.message : '';
+        if (window.glpiToast) glpiToast(code + (msg ? ': ' + msg : ''));
+      }
+    }).catch(() => {
+      btn.classList.remove('is-loading');
+      btn.removeAttribute('disabled');
+      btn.removeAttribute('aria-disabled');
+      lockAction(ticketId, 'accept', false);
+      if (window.glpiToast) glpiToast('Ошибка сети');
+    });
+  }
+
+  document.addEventListener('click', handleAcceptClick, true);
+
   function refreshTicketMeta(ticketId) {
-    const url = window.glpiAjax && glpiAjax.url;
-    const nonce = window.glpiAjax && glpiAjax.nonce;
+    const ajax = window.gexeAjax || window.glpiAjax;
+    const url = ajax && ajax.url;
+    const nonce = ajax && ajax.nonce;
     if (!url || !nonce || !ticketId) return;
     const fd = new FormData();
     fd.append('action', 'glpi_ticket_meta');
@@ -330,50 +436,6 @@
       e.stopPropagation();
       const title = (clone.querySelector('.glpi-topic') || {}).textContent || ('Задача #' + id);
       openCommentModal(title.trim(), id);
-    });
-
-    on(btnAccept, 'click', e => {
-      e.stopPropagation();
-      if (btnAccept.disabled || isActionLocked(id, 'start')) { e.stopImmediatePropagation(); return; }
-      const actionId = crypto.randomUUID();
-      btnAccept.dataset.actionId = actionId;
-      setActionLoading(btnAccept, true);
-      lockAction(id, 'start', true);
-      const timeout = setTimeout(() => { lockAction(id, 'start', false); setActionLoading(btnAccept, false); }, 10000);
-      doCardAction('start', id, {}, actionId).then(resp => {
-        clearTimeout(timeout);
-        if (resp && resp.success) {
-          btnAccept.classList.remove('is-loading');
-          btnAccept.disabled = true;
-          btnAccept.setAttribute('aria-disabled', 'true');
-          btnAccept.dataset.lastActionId = resp.data && resp.data.action_id ? resp.data.action_id : actionId;
-          const orig = document.querySelector('.glpi-card[data-ticket-id="'+id+'"]');
-          if (orig) {
-            orig.setAttribute('data-status','2');
-            const oBtn = orig.querySelector('.gexe-open-accept');
-            if (oBtn) {
-              oBtn.disabled = true;
-              oBtn.classList.remove('is-loading');
-              oBtn.dataset.lastActionId = btnAccept.dataset.lastActionId;
-            }
-          }
-          recalcStatusCounts(); filterCards();
-          lockAction(id, 'start', false);
-          refreshTicketMeta(id);
-          if (window.glpiCheckStartComment) {
-            setTimeout(() => verifyStartComment(id), 1500);
-          }
-        } else {
-          setActionLoading(btnAccept, false);
-          lockAction(id, 'start', false);
-          alert('Не удалось принять в работу');
-        }
-      }).catch(() => {
-        clearTimeout(timeout);
-        setActionLoading(btnAccept, false);
-        lockAction(id, 'start', false);
-        alert('Ошибка сети');
-      });
     });
 
     on(btnClose, 'click', e => {
@@ -737,50 +799,6 @@
         }
       }
 
-      const btnAccept  = $('.gexe-open-accept',  bar);
-
-      on(btnAccept, 'click', e => {
-        e.stopPropagation();
-        if (btnAccept.disabled || isActionLocked(id, 'start')) { e.stopImmediatePropagation(); return; }
-        const actionId = crypto.randomUUID();
-        btnAccept.dataset.actionId = actionId;
-        setActionLoading(btnAccept, true);
-        lockAction(id, 'start', true);
-        const timeout = setTimeout(() => { lockAction(id, 'start', false); setActionLoading(btnAccept, false); }, 10000);
-        doCardAction('start', id, {}, actionId).then(resp => {
-          clearTimeout(timeout);
-          if (resp && resp.success) {
-            btnAccept.classList.remove('is-loading');
-            btnAccept.disabled = true;
-            btnAccept.setAttribute('aria-disabled', 'true');
-            btnAccept.dataset.lastActionId = resp.data && resp.data.action_id ? resp.data.action_id : actionId;
-            card.setAttribute('data-status', '2');
-            const modalBtn = modalEl && modalEl.getAttribute('data-ticket-id') === String(id)
-              ? modalEl.querySelector('.gexe-open-accept')
-              : null;
-            if (modalBtn) {
-              modalBtn.disabled = true;
-              modalBtn.classList.remove('is-loading');
-              modalBtn.dataset.lastActionId = btnAccept.dataset.lastActionId;
-            }
-            recalcStatusCounts(); filterCards();
-            lockAction(id, 'start', false);
-            refreshTicketMeta(id);
-            if (window.glpiCheckStartComment) {
-              setTimeout(() => verifyStartComment(id), 1500);
-            }
-          } else {
-            setActionLoading(btnAccept, false);
-            lockAction(id, 'start', false);
-            alert('Не удалось принять в работу');
-          }
-        }).catch(() => {
-          clearTimeout(timeout);
-          setActionLoading(btnAccept, false);
-          lockAction(id, 'start', false);
-          alert('Ошибка сети');
-        });
-      });
     });
 
     if (idsToFetch.length) {
