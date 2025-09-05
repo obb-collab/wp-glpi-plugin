@@ -102,10 +102,10 @@
     box.innerHTML = '';
   }
 
-  function showError(code){
+  function showError(message){
     const box = modal.querySelector('.glpi-form-loader');
     if (!box) return;
-    const msg = 'Не удалось загрузить справочники категорий и местоположений. Код: ' + (code || 'UNKNOWN') + '. Проверьте соединение и попробуйте ещё раз.';
+    const msg = 'Не удалось загрузить справочники категорий и местоположений. ' + (message || 'Попробуйте ещё раз.');
     box.innerHTML = '<span class="error">' + msg + '</span><button type="button" class="gnt-retry">Повторить</button>';
     box.hidden = false;
     const btn = box.querySelector('.gnt-retry');
@@ -119,8 +119,8 @@
         fillDropdowns(data);
         updateSubmitState();
       }).catch(function(err){
-        logClientError(err && err.message ? err.message : String(err));
-        showError(err && err.code ? err.code : 'LOAD_FAILED');
+        logClientError((err && err.code ? err.code + ': ' : '') + (err && err.message ? err.message : String(err)));
+        showError(err && err.message ? err.message : 'Ошибка загрузки');
       });
     });
   }
@@ -229,8 +229,8 @@
         fillDropdowns(data);
         updateSubmitState();
       }).catch(function(err){
-        logClientError(err && err.message ? err.message : String(err));
-        showError(err && err.code ? err.code : 'LOAD_FAILED');
+        logClientError((err && err.code ? err.code + ': ' : '') + (err && err.message ? err.message : String(err)));
+        showError(err && err.message ? err.message : 'Ошибка загрузки');
       });
     }
     updateSubmitState();

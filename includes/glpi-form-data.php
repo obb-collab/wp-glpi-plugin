@@ -8,20 +8,19 @@ require_once __DIR__ . '/logger.php';
  */
 add_action('wp_ajax_gexe_get_form_data', 'gexe_get_form_data');
 function gexe_get_form_data() {
-    $t0       = microtime(true);
-    $user_id  = get_current_user_id();
-    $nonce_ok = check_ajax_referer('gexe_form_data', 'nonce', false);
+    $t0        = microtime(true);
+    $nonce_ok  = check_ajax_referer('gexe_form_data', 'nonce', false);
     $cache_key = 'glpi_form_data_v1';
 
     if (!$nonce_ok) {
         $elapsed = (int) round((microtime(true) - $t0) * 1000);
-        gexe_log_action(sprintf('[form-data] user=%d cap=read nonce=bad http=403 elapsed=%dms cats=0 locs=0', $user_id, $elapsed));
+        gexe_log_action(sprintf('[form-data] source=auth http=403 elapsed=%dms cats=0 locs=0 err="nonce"', $elapsed));
         wp_send_json(['ok' => false, 'code' => 'AJAX_FORBIDDEN', 'reason' => 'nonce', 'message' => 'forbidden', 'took_ms' => $elapsed], 403);
     }
 
     if (!is_user_logged_in() || !current_user_can('read')) {
         $elapsed = (int) round((microtime(true) - $t0) * 1000);
-        gexe_log_action(sprintf('[form-data] user=%d cap=read nonce=ok http=403 elapsed=%dms cats=0 locs=0', $user_id, $elapsed));
+        gexe_log_action(sprintf('[form-data] source=auth http=403 elapsed=%dms cats=0 locs=0 err="cap"', $elapsed));
         wp_send_json(['ok' => false, 'code' => 'AJAX_FORBIDDEN', 'reason' => 'cap', 'message' => 'forbidden', 'took_ms' => $elapsed], 403);
     }
 
@@ -33,63 +32,71 @@ function gexe_get_form_data() {
 
     if (!is_array($data) || empty($data)) {
         global $glpi_db;
-        $error_code = '';
         $categories = [];
         $locations  = [];
-        $source = 'db';
+        $error_msg  = '';
+        $source     = 'db';
 
         try {
             if (!($glpi_db instanceof wpdb)) {
                 throw new Exception('DB_CONNECT_FAILED');
             }
 
+            $debug_tests = [];
+            if (isset($_GET['debug'])) {
+                $tests = [
+                    'SELECT 1',
+                    'SELECT id FROM glpi.glpi_itilcategories LIMIT 1',
+                    'SELECT id FROM glpi.glpi_locations LIMIT 1',
+                ];
+                foreach ($tests as $sql) {
+                    $res = $glpi_db->get_var($sql);
+                    $debug_tests[] = ['sql' => $sql, 'result' => $res, 'error' => $glpi_db->last_error];
+                }
+                $gr = $glpi_db->get_col('SHOW GRANTS FOR CURRENT_USER');
+                gexe_log_action('[form-data] grants ' . implode(' || ', $gr));
+            }
+
             $cats = $glpi_db->get_results(
-                "SELECT id, name, completename AS path
-                 FROM glpi_itilcategories
-                 WHERE is_deleted = 0
-                 ORDER BY name ASC",
+                'SELECT id, name FROM `glpi`.`glpi_itilcategories` WHERE is_deleted = 0 ORDER BY name ASC LIMIT 1000',
                 ARRAY_A
             );
             if ($glpi_db->last_error) {
                 throw new Exception('SQL_ERROR');
             }
             foreach ($cats as $c) {
-                $parts = preg_split('/\\s[\\/\\>]\\s/', $c['path']);
-                $short = end($parts);
                 $categories[] = [
                     'id'   => (int) $c['id'],
-                    'name' => $short,
-                    'path' => $c['path'],
+                    'name' => $c['name'],
                 ];
             }
 
             $locs = $glpi_db->get_results(
-                "SELECT id, completename AS path
-                 FROM glpi_locations
-                 WHERE is_deleted = 0
-                 ORDER BY completename ASC",
+                'SELECT id, completename AS name FROM `glpi`.`glpi_locations` WHERE is_deleted = 0 ORDER BY completename ASC LIMIT 2000',
                 ARRAY_A
             );
             if ($glpi_db->last_error) {
                 throw new Exception('SQL_ERROR');
             }
             foreach ($locs as $l) {
-                $parts = preg_split('/\\s[\\/\\>]\\s/', $l['path']);
-                $short = end($parts);
                 $locations[] = [
                     'id'   => (int) $l['id'],
-                    'name' => $short,
-                    'path' => $l['path'],
+                    'name' => $l['name'],
                 ];
             }
         } catch (Exception $e) {
-            $error_code = $e->getMessage();
-            $last_err   = $glpi_db instanceof wpdb ? $glpi_db->last_error : $e->getMessage();
+            $error_msg   = $glpi_db instanceof wpdb ? $glpi_db->last_error : $e->getMessage();
+            $driver_code = ($glpi_db instanceof wpdb && $glpi_db->dbh) ? mysqli_errno($glpi_db->dbh) : 0;
+            $driver_msg  = ($glpi_db instanceof wpdb && $glpi_db->dbh) ? mysqli_error($glpi_db->dbh) : '';
+            gexe_log_action(sprintf('[form-data] sql_error last_error="%s" last_query="%s" driver=%d:%s', $glpi_db->last_error, $glpi_db->last_query, $driver_code, $driver_msg));
+            if ($glpi_db instanceof wpdb) {
+                $grants = $glpi_db->get_col('SHOW GRANTS FOR CURRENT_USER');
+                gexe_log_action('[form-data] grants ' . implode(' || ', $grants));
+            }
+            $source = 'api';
         }
 
-        if ($error_code !== '' || empty($categories) || empty($locations)) {
-            // Фолбэк через REST API
-            $source = 'api';
+        if ($source === 'api') {
             $categories = [];
             $locations  = [];
 
@@ -104,19 +111,15 @@ function gexe_get_form_data() {
                 $body = json_decode(wp_remote_retrieve_body($resp), true);
                 if (is_array($body)) {
                     foreach ($body as $c) {
-                        $path = isset($c['completename']) ? $c['completename'] : '';
-                        $parts = preg_split('/\\s[\\/\\>]\\s/', $path);
-                        $short = end($parts);
                         $categories[] = [
                             'id'   => isset($c['id']) ? (int) $c['id'] : 0,
-                            'name' => $short ?: (isset($c['name']) ? $c['name'] : ''),
-                            'path' => $path,
+                            'name' => isset($c['name']) ? $c['name'] : '',
                         ];
                     }
                 }
             }
 
-            $url = gexe_glpi_api_url() . '/Location/?range=0-1000&order=ASC&sort=completename';
+            $url = gexe_glpi_api_url() . '/Location/?range=0-2000&order=ASC&sort=completename';
             $t_api = microtime(true);
             $resp = wp_remote_get($url, [
                 'timeout' => 10,
@@ -127,13 +130,9 @@ function gexe_get_form_data() {
                 $body = json_decode(wp_remote_retrieve_body($resp), true);
                 if (is_array($body)) {
                     foreach ($body as $l) {
-                        $path = isset($l['completename']) ? $l['completename'] : '';
-                        $parts = preg_split('/\\s[\\/\\>]\\s/', $path);
-                        $short = end($parts);
                         $locations[] = [
                             'id'   => isset($l['id']) ? (int) $l['id'] : 0,
-                            'name' => $short ?: (isset($l['name']) ? $l['name'] : ''),
-                            'path' => $path,
+                            'name' => isset($l['completename']) ? $l['completename'] : (isset($l['name']) ? $l['name'] : ''),
                         ];
                     }
                 }
@@ -141,11 +140,9 @@ function gexe_get_form_data() {
 
             if (empty($categories) || empty($locations)) {
                 $elapsed = (int) round((microtime(true) - $t0) * 1000);
-                $code = $error_code ? $error_code : 'API_UNAVAILABLE';
-                $log = sprintf('[form-data] user=%d cap=read nonce=ok http=500 error=%s elapsed=%dms', $user_id, $code, $elapsed);
-                if (!empty($last_err)) $log .= ' details=' . $last_err;
-                gexe_log_action($log);
-                wp_send_json(['ok' => false, 'code' => $code, 'message' => 'Unable to load data', 'took_ms' => $elapsed], 500);
+                $err = $error_msg !== '' ? $error_msg : 'API_UNAVAILABLE';
+                gexe_log_action(sprintf('[form-data] source=api http=500 elapsed=%dms cats=%d locs=%d err="%s"', $elapsed, count($categories), count($locations), $err));
+                wp_send_json(['ok' => false, 'code' => 'SQL_ERROR', 'message' => $err, 'took_ms' => $elapsed], 500);
             }
         }
 
@@ -178,14 +175,20 @@ function gexe_get_form_data() {
     }
 
     $elapsed = (int) round((microtime(true) - $t0) * 1000);
-    gexe_log_action(sprintf('[form-data] user=%d cap=read nonce=ok http=200 elapsed=%dms cats=%d locs=%d', $user_id, $elapsed, count($data['categories']), count($data['locations'])));
+    gexe_log_action(sprintf('[form-data] source=%s http=200 elapsed=%dms cats=%d locs=%d err=""', $source, $elapsed, count($data['categories']), count($data['locations'])));
 
     $out = $data;
     $out['ok']      = true;
     $out['source']  = $source;
     $out['took_ms'] = $elapsed;
-    if (current_user_can('manage_options') && isset($_GET['debug'])) {
-        $out['debug'] = ['source' => $source, 'elapsed' => $elapsed];
+    if (isset($_GET['debug'])) {
+        $out['debug'] = [
+            'source'  => $source,
+            'elapsed' => $elapsed,
+        ];
+        if (!empty($debug_tests)) {
+            $out['debug']['tests'] = $debug_tests;
+        }
     }
     wp_send_json($out);
 }
@@ -208,3 +211,4 @@ function gexe_glpi_flush_cache() {
     wp_cache_delete('glpi_form_data_v1', 'glpi');
     delete_transient('glpi_form_data_v1');
 }
+
