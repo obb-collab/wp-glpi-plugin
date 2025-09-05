@@ -14,11 +14,12 @@
     modal.innerHTML = `
       <div class="gnt-backdrop"></div>
       <div class="gnt-dialog">
-        <div class="gnt-header">
-          <div class="gnt-title">Новая заявка</div>
-          <button type="button" class="gnt-close" aria-label="Закрыть">×</button>
-        </div>
+      <div class="gnt-header">
+        <div class="gnt-title">Новая заявка</div>
+        <button type="button" class="gnt-close" aria-label="Закрыть">×</button>
+      </div>
         <div class="gnt-body">
+          <div class="glpi-form-loader" role="status" aria-live="polite" hidden></div>
           <label for="gnt-name" class="gnt-label">Тема</label>
           <input id="gnt-name" type="text" class="gnt-input" />
           <label for="gnt-content" class="gnt-label">Описание</label>
@@ -68,11 +69,126 @@
     modal.querySelector('#gnt-assign-me').addEventListener('change', updateSubmitState);
   }
 
+  function lockForm(state){
+    const dialog = modal.querySelector('.gnt-dialog');
+    if (!dialog) return;
+    if (state) { dialog.setAttribute('aria-busy', 'true'); }
+    else { dialog.removeAttribute('aria-busy'); }
+    ['#gnt-name','#gnt-content','#gnt-category','#gnt-location','#gnt-assign-me','#gnt-assignee','.gnt-submit'].forEach(function(sel){
+      const el = modal.querySelector(sel);
+      if (!el) return;
+      if (state) {
+        el.disabled = true;
+      } else if (sel === '#gnt-assignee') {
+        el.disabled = modal.querySelector('#gnt-assign-me').checked;
+      } else {
+        el.disabled = false;
+      }
+    });
+  }
+
+  function showLoading(){
+    const box = modal.querySelector('.glpi-form-loader');
+    if (!box) return;
+    box.innerHTML = '<span class="spinner"></span><span>Загружаем справочники…</span>';
+    box.hidden = false;
+  }
+
+  function hideLoader(){
+    const box = modal.querySelector('.glpi-form-loader');
+    if (!box) return;
+    box.hidden = true;
+    box.innerHTML = '';
+  }
+
+  function showError(){
+    const box = modal.querySelector('.glpi-form-loader');
+    if (!box) return;
+    box.innerHTML = '<span class="error">Не удалось загрузить справочники категорий и местоположений. Проверьте соединение и попробуйте ещё раз.</span><button type="button" class="gnt-retry">Повторить</button>';
+    box.hidden = false;
+    const btn = box.querySelector('.gnt-retry');
+    btn.addEventListener('click', function(){
+      hideLoader();
+      lockForm(true);
+      showLoading();
+      fetchFormData().then(function(){
+        hideLoader();
+        lockForm(false);
+        fillDropdowns(window.__glpiFormData);
+        updateSubmitState();
+      }).catch(function(err){
+        logClientError(err && err.message ? err.message : String(err));
+        showError();
+      });
+    });
+  }
+
+  function logClientError(msg){
+    if (!window.glpiAjax) return;
+    const params = new URLSearchParams();
+    params.append('action','glpi_log_client_error');
+    params.append('_ajax_nonce', glpiAjax.nonce);
+    params.append('message', msg);
+    fetch(glpiAjax.url, { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body: params.toString() });
+  }
+
+  function fetchFromServer(){
+    if (window.__glpiFormData) return Promise.resolve(window.__glpiFormData);
+    if (!window.glpiAjax) return Promise.reject(new Error('no_ajax'));
+    if (!dataPromise) {
+      const params = new URLSearchParams();
+      params.append('action','glpi_get_form_data');
+      params.append('_ajax_nonce', glpiAjax.nonce);
+      const controller = new AbortController();
+      const t = setTimeout(() => controller.abort(), 10000);
+      dataPromise = fetch(glpiAjax.url, {
+        method:'POST',
+        headers:{'Content-Type':'application/x-www-form-urlencoded'},
+        body: params.toString(),
+        signal: controller.signal
+      }).then(function(r){
+        if(!r.ok) throw new Error('HTTP '+r.status);
+        return r.json();
+      }).then(function(data){
+        window.__glpiFormData = data;
+        return data;
+      }).finally(function(){ clearTimeout(t); }).catch(function(err){ dataPromise = null; throw err; });
+    }
+    return dataPromise;
+  }
+
+  function getCategories(){
+    return fetchFromServer().then(function(d){ return d.categories || []; });
+  }
+
+  function getLocations(){
+    return fetchFromServer().then(function(d){ return d.locations || []; });
+  }
+
+  function fetchFormData(){
+    return Promise.all([getCategories(), getLocations()]);
+  }
+
   function open(){
     buildModal();
     modal.classList.add('open');
     document.body.classList.add('glpi-modal-open');
-    loadFormData();
+    if (window.__glpiFormData && window.__glpiFormData.categories && window.__glpiFormData.locations) {
+      fillDropdowns(window.__glpiFormData);
+      lockForm(false);
+    } else {
+      lockForm(true);
+      showLoading();
+      fetchFormData().then(function(){
+        hideLoader();
+        lockForm(false);
+        fillDropdowns(window.__glpiFormData);
+        updateSubmitState();
+      }).catch(function(err){
+        logClientError(err && err.message ? err.message : String(err));
+        showError();
+      });
+    }
     updateSubmitState();
   }
 
@@ -82,30 +198,7 @@
     document.body.classList.remove('glpi-modal-open');
   }
 
-  function loadFormData(){
-    // Если данные уже получены – используем их
-    if (window.__glpiFormData) {
-      fillDropdowns(window.__glpiFormData);
-      return;
-    }
-    if (!window.glpiAjax) return;
-    if (!dataPromise) {
-      const params = new URLSearchParams();
-      params.append('action','glpi_get_form_data');
-      params.append('_ajax_nonce', glpiAjax.nonce);
-      dataPromise = fetch(glpiAjax.url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: params.toString()
-      }).then(r=>r.json()).then(function(data){
-        window.__glpiFormData = data;
-        fillDropdowns(data);
-        return data;
-      }).catch(function(){ dataPromise = null; });
-    } else {
-      dataPromise.then(fillDropdowns).catch(()=>{});
-    }
-  }
+  // deprecated loadFormData removed
 
   function fillDropdowns(data){
     if (!data) return;
