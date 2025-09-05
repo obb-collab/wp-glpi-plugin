@@ -12,6 +12,8 @@ add_action('wp_enqueue_scripts', function () {
         'url'          => admin_url('admin-ajax.php'),
         'nonce'        => wp_create_nonce('glpi_modal_actions'),
         'user_glpi_id' => gexe_get_current_glpi_uid(),
+        'rest'         => esc_url_raw(rest_url('glpi/v1/')),
+        'restNonce'    => wp_create_nonce('wp_rest'),
     ]);
 });
 
@@ -67,32 +69,12 @@ function gexe_clean_comment_html($html) {
     if (!is_string($html) || $html === '') return '';
     $html = str_replace(["\r\n", "\r"], "\n", $html);
     $html = html_entity_decode($html, ENT_QUOTES | ENT_HTML5, 'UTF-8');
-
-    $html = preg_replace_callback('~<img\b[^>]*>~i', function ($m) {
-        $tag = $m[0];
-        if (preg_match('~\balt\s*=\s*([\'"])(.*?)\1~i', $tag, $mm)) return $mm[2];
-        return '';
-    }, $html);
-    $html = preg_replace('~<a\b[^>]*>(.*?)</a>~is', '$1', $html);
-    $html = preg_replace('~<\s*br\s*/?\s*>~i', "\n", $html);
-    $html = preg_replace('~</\s*p\s*>~i', "\n\n", $html);
-    $html = preg_replace('~<\s*p\b[^>]*>~i', '', $html);
-    $html = wp_strip_all_tags($html, true);
-    $html = preg_replace('~[ \t]+\n~', "\n", $html);
-    $html = preg_replace('~\n[ \t]+~', "\n", $html);
-    $html = preg_replace('~\n{3,}~', "\n\n", trim($html));
-
-    $parts = preg_split('~\n{2,}~', $html);
+    // Стараемся использовать встроенные функции вместо множества регулярок
+    $html = wp_strip_all_tags($html);
+    $lines = array_filter(array_map('trim', explode("\n", $html)));
     $out = [];
-    foreach ($parts as $p) {
-        $p = trim($p);
-        if ($p === '') continue;
-        $lines = preg_split('~\n+~', $p);
-        foreach ($lines as $line) {
-            $line = trim($line);
-            if ($line === '') continue;
-            $out[] = '<p class="glpi-txt">' . esc_html($line) . '</p>';
-        }
+    foreach ($lines as $line) {
+        $out[] = '<p class="glpi-txt">' . esc_html($line) . '</p>';
     }
     if (empty($out)) return '<div class="glpi-empty">Нет комментариев</div>';
     return implode("\n", $out);
@@ -102,23 +84,27 @@ function gexe_clean_comment_html($html) {
 add_action('wp_ajax_glpi_get_comments', 'gexe_glpi_get_comments');
 add_action('wp_ajax_nopriv_glpi_get_comments', 'gexe_glpi_get_comments');
 
-function gexe_render_comments($ticket_id) {
+function gexe_render_comments($ticket_id, $page = 1, $per_page = 20) {
     if ($ticket_id <= 0) return '';
+    $page = max(1, (int)$page);
+    $per_page = max(1, (int)$per_page);
 
     // кэшируем HTML комментариев, чтобы ускорить повторные открытия карточки
-    $cache_key = 'glpi_comments_' . $ticket_id;
+    $cache_key = 'glpi_comments_' . $ticket_id . '_' . $page . '_' . $per_page;
     $cached    = get_transient($cache_key);
     if ($cached !== false) return $cached;
 
     global $glpi_db;
+    $offset = ($page - 1) * $per_page;
     $rows = $glpi_db->get_results($glpi_db->prepare(
         "SELECT f.id, f.users_id, f.date, f.content, u.realname, u.firstname
          FROM glpi_itilfollowups AS f
          LEFT JOIN glpi_users AS u ON u.id = f.users_id
          WHERE f.itemtype = 'Ticket'
            AND f.items_id = %d
-         ORDER BY f.date ASC",
-        $ticket_id
+         ORDER BY f.date DESC
+         LIMIT %d OFFSET %d",
+        $ticket_id, $per_page, $offset
     ), ARRAY_A);
 
     if (!$rows) {
@@ -150,8 +136,23 @@ function gexe_render_comments($ticket_id) {
 function gexe_glpi_get_comments() {
     check_ajax_referer('glpi_modal_actions');
     $ticket_id = isset($_POST['ticket_id']) ? intval($_POST['ticket_id']) : 0;
-    wp_die(gexe_render_comments($ticket_id));
+    $page      = isset($_POST['page']) ? intval($_POST['page']) : 1;
+    $per_page  = isset($_POST['per_page']) ? intval($_POST['per_page']) : 20;
+    wp_die(gexe_render_comments($ticket_id, $page, $per_page));
 }
+
+add_action('rest_api_init', function () {
+    register_rest_route('glpi/v1', '/comments', [
+        'methods'  => 'GET',
+        'callback' => function (WP_REST_Request $req) {
+            $ticket_id = (int)$req->get_param('ticket_id');
+            $page      = (int)$req->get_param('page') ?: 1;
+            $per_page  = (int)$req->get_param('per_page') ?: 20;
+            return new WP_REST_Response(gexe_render_comments($ticket_id, $page, $per_page));
+        },
+        'permission_callback' => '__return_true',
+    ]);
+});
 
 /* -------- AJAX: количество комментариев -------- */
 add_action('wp_ajax_glpi_count_comments', 'gexe_glpi_count_comments');

@@ -222,15 +222,12 @@
     wrap.appendChild(clone);
   }
 
-  function loadComments(ticketId) {
-    const url = window.glpiAjax && glpiAjax.url;
-    const nonce = window.glpiAjax && glpiAjax.nonce;
-    if (!url || !nonce) return;
-    const fd = new FormData();
-    fd.append('action', 'glpi_get_comments');
-    fd.append('_ajax_nonce', nonce);
-    fd.append('ticket_id', String(ticketId));
-    fetch(url, { method: 'POST', body: fd })
+  function loadComments(ticketId, page = 1) {
+    const base = window.glpiAjax && glpiAjax.rest;
+    const nonce = window.glpiAjax && glpiAjax.restNonce;
+    if (!base || !nonce) return;
+    const url = base + 'comments?ticket_id=' + encodeURIComponent(ticketId) + '&page=' + page;
+    fetch(url, { headers: { 'X-WP-Nonce': nonce } })
       .then(r => r.text())
       .then(html => { const box = $('#gexe-comments'); if (box) box.innerHTML = html; })
       .catch(()=>{});
