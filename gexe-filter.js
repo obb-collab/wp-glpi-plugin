@@ -112,40 +112,102 @@
     if (btn) btn.addEventListener('click', openNewTaskModal);
   }
 
-  /* ========================= МЕНЮ КАТЕГОРИЙ ========================= */
-  function initCategoryMenu(){
+  /* ========================= ИНЛАЙН КАТЕГОРИИ ========================= */
+  let selectedCategories = [];
+  let categoriesLoaded = false;
+
+  function renderInlineCategories(){
+    const box = document.getElementById('glpi-categories-inline');
+    if (!box || !Array.isArray(window.gexeCategories)) return;
+    box.innerHTML = '';
+    window.gexeCategories.forEach(cat => {
+      const btn = document.createElement('button');
+      btn.className = 'glpi-cat-chip';
+      btn.setAttribute('data-cat', cat.slug);
+      btn.setAttribute('role','button');
+      btn.setAttribute('aria-pressed','false');
+      btn.innerHTML = (cat.icon || '') + '<span class="glpi-cat-label">' + cat.label + '</span>' + (cat.count ? ' <span class="glpi-cat-count">' + cat.count + '</span>' : '');
+      box.appendChild(btn);
+    });
+    const reset = document.createElement('button');
+    reset.className = 'glpi-cat-reset';
+    reset.textContent = 'Сбросить';
+    reset.hidden = true;
+    box.appendChild(reset);
+
+    // Клики по бейджам категорий
+    box.addEventListener('click', e => {
+      const chip = e.target.closest('.glpi-cat-chip');
+      if (!chip) return;
+      const cat = chip.getAttribute('data-cat');
+      const multi = e.ctrlKey || e.metaKey;
+      if (multi) {
+        const i = selectedCategories.indexOf(cat);
+        if (i >= 0) { selectedCategories.splice(i,1); chip.classList.remove('active'); chip.setAttribute('aria-pressed','false'); }
+        else { selectedCategories.push(cat); chip.classList.add('active'); chip.setAttribute('aria-pressed','true'); }
+      } else {
+        const isActive = chip.classList.contains('active');
+        $$('.glpi-cat-chip', box).forEach(c => { c.classList.remove('active'); c.setAttribute('aria-pressed','false'); });
+        selectedCategories = [];
+        if (!isActive) { selectedCategories = [cat]; chip.classList.add('active'); chip.setAttribute('aria-pressed','true'); }
+      }
+      reset.hidden = selectedCategories.length === 0;
+      localStorage.setItem('glpi.categories.selected', JSON.stringify(selectedCategories));
+      recalcStatusCounts();
+      filterCards();
+    }, true);
+
+    // Кнопка сброса
+    reset.addEventListener('click', () => {
+      selectedCategories = [];
+      $$('.glpi-cat-chip', box).forEach(c => { c.classList.remove('active'); c.setAttribute('aria-pressed','false'); });
+      reset.hidden = true;
+      localStorage.removeItem('glpi.categories.selected');
+      recalcStatusCounts();
+      filterCards();
+    });
+
+    // Восстановление выбора
+    const saved = JSON.parse(localStorage.getItem('glpi.categories.selected') || '[]');
+    if (saved.length) {
+      selectedCategories = saved;
+      $$('.glpi-cat-chip', box).forEach(c => {
+        if (saved.includes(c.getAttribute('data-cat'))) {
+          c.classList.add('active');
+          c.setAttribute('aria-pressed','true');
+        }
+      });
+      reset.hidden = false;
+    }
+
+    categoriesLoaded = true;
+    recalcCategoryVisibility();
+  }
+
+  function initCategoryToggle(){
     const toggle = document.querySelector('.glpi-cat-toggle');
-    const menu   = document.querySelector('.glpi-cat-menu');
-    if (!toggle || !menu) return;
+    const box = document.getElementById('glpi-categories-inline');
+    if (!toggle || !box) return;
 
     toggle.addEventListener('click', e => {
       e.preventDefault();
-      const opened = menu.classList.toggle('open');
-      toggle.setAttribute('aria-expanded', opened ? 'true' : 'false');
-    });
-  }
-
-  // Делегированный клик по тегу категории
-  let currentCategory = 'all';
-  function bindCategoryClicks(){
-    prepareCategoryTags();
-    document.addEventListener('click', function(e){
-      const tgt = e.target.closest('.category-filter-btn, .glpi-category-tag');
-      if(!tgt || !tgt.hasAttribute('data-cat')) return;
-      e.preventDefault();
-      const cat = String(tgt.getAttribute('data-cat') || 'all').toLowerCase();
-      const isActive = tgt.classList.contains('active');
-      $$('.category-filter-btn, .glpi-category-tag').forEach(b => b.classList.remove('active'));
-      if (isActive) {
-        currentCategory = 'all';
+      const hidden = box.hasAttribute('hidden');
+      if (hidden) {
+        if (!categoriesLoaded) renderInlineCategories();
+        box.removeAttribute('hidden');
       } else {
-        currentCategory = cat;
-        tgt.classList.add('active');
+        box.setAttribute('hidden','');
       }
-      recalcStatusCounts();
-      recalcCategoryVisibility();
-      filterCards();
-    }, true);
+      toggle.setAttribute('aria-expanded', hidden ? 'true' : 'false');
+      localStorage.setItem('glpi.categories.expanded', hidden ? 'true' : 'false');
+    });
+
+    // Восстановление состояния
+    if (localStorage.getItem('glpi.categories.expanded') === 'true') {
+      renderInlineCategories();
+      box.removeAttribute('hidden');
+      toggle.setAttribute('aria-expanded','true');
+    }
   }
 
   /* ========================= МОДАЛКА ПРОСМОТРА КАРТОЧКИ ========================= */
@@ -641,9 +703,9 @@
   }
 
   function cardMatchesCategory(card) {
-    if (currentCategory === 'all') return true;
+    if (!selectedCategories.length) return true;
     const cat = (card.getAttribute('data-category') || '').toLowerCase();
-    return cat === currentCategory;
+    return selectedCategories.includes(cat);
   }
   function cardMatchesExecutor(card) {
     const exec = document.querySelector('.executor-filter-btn.active');
@@ -686,6 +748,7 @@
     let total = 0;
     $$('.glpi-card').forEach(card => {
       if (!cardMatchesExecutor(card)) return;
+      if (!cardMatchesCategory(card)) return;
       const s = String(card.getAttribute('data-status') || '');
       if (counts.hasOwnProperty(s)) counts[s]++;
       total++;
@@ -703,7 +766,7 @@
       const cat = (card.getAttribute('data-category') || '').toLowerCase();
       if (cat) visibleCats.add(cat);
     });
-    $$('.glpi-category-tag.category-filter-btn').forEach(tag => {
+    $$('.glpi-cat-chip').forEach(tag => {
       const cat = (tag.getAttribute('data-cat') || '').toLowerCase();
       tag.style.display = (st !== 'all' && !visibleCats.has(cat)) ? 'none' : '';
     });
@@ -729,12 +792,12 @@
         $$('.status-filter-btn').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
         // при выборе статуса сбрасываем выбранные категории
-        currentCategory = 'all';
-        $$('.category-filter-btn, .glpi-category-tag').forEach(b => b.classList.remove('active'));
-        const menu = document.querySelector('.glpi-cat-menu');
-        const toggle = document.querySelector('.glpi-cat-toggle');
-        if (menu) menu.classList.remove('open');
-        if (toggle) toggle.setAttribute('aria-expanded','false');
+        selectedCategories = [];
+        $$('.glpi-cat-chip').forEach(b => { b.classList.remove('active'); b.setAttribute('aria-pressed','false'); });
+        const box = document.getElementById('glpi-categories-inline');
+        const reset = box ? box.querySelector('.glpi-cat-reset') : null;
+        if (reset) reset.hidden = true;
+        localStorage.removeItem('glpi.categories.selected');
         recalcStatusCounts(); recalcCategoryVisibility(); filterCards();
       });
     });
@@ -745,8 +808,7 @@
   /* ========================= ИНИЦИАЛИЗАЦИЯ ========================= */
   document.addEventListener('DOMContentLoaded', function () {
     ensureOverdueBlock();
-    initCategoryMenu();
-    bindCategoryClicks();
+    initCategoryToggle();
     bindNewTaskButton();
 
     injectCardActionButtons();
