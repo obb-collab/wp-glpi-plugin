@@ -229,7 +229,12 @@
     const url = base + 'comments?ticket_id=' + encodeURIComponent(ticketId) + '&page=' + page;
     fetch(url, { headers: { 'X-WP-Nonce': nonce } })
       .then(r => r.text())
-      .then(html => { const box = $('#gexe-comments'); if (box) box.innerHTML = html; })
+      .then(text => {
+        let html;
+        try { html = JSON.parse(text); } catch (e) { html = text; }
+        const box = $('#gexe-comments');
+        if (box) box.innerHTML = html;
+      })
       .catch(()=>{});
   }
 
