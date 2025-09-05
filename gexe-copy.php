@@ -128,7 +128,10 @@ function gexe_glpi_cards_shortcode($atts) {
         ORDER BY t.date DESC
         LIMIT 500
     ";
+
+    $t0   = microtime(true);
     $rows = $glpi_db->get_results($sql);
+    $GLOBALS['gexe_query_times']['tickets'] = (int)round((microtime(true) - $t0) * 1000);
 
     if (!$rows) {
         return '<p>Нет активных заявок.</p>';

@@ -170,11 +170,13 @@ function gexe_render_comments($ticket_id, $page = 1, $per_page = 20) {
     $cached    = wp_cache_get($cache_key, 'glpi');
 
     if (is_array($cached) && isset($cached['html'], $cached['signature']) && $cached['signature'] === $signature) {
+        $cached['time_ms'] = 0;
         return $cached;
     }
 
     global $glpi_db;
     $offset = ($page - 1) * $per_page;
+    $t0   = microtime(true);
     $rows = $glpi_db->get_results($glpi_db->prepare(
         "SELECT f.id, f.users_id, f.date, f.content, u.realname, u.firstname"
          . " FROM glpi_itilfollowups AS f"
@@ -185,6 +187,7 @@ function gexe_render_comments($ticket_id, $page = 1, $per_page = 20) {
          . " LIMIT %d OFFSET %d",
         $ticket_id, $per_page, $offset
     ), ARRAY_A);
+    $elapsed_ms = (int)round((microtime(true) - $t0) * 1000);
 
     if (!$rows) {
         $empty = '<div class="glpi-empty">Нет комментариев</div>';
@@ -192,6 +195,7 @@ function gexe_render_comments($ticket_id, $page = 1, $per_page = 20) {
             'html'      => $empty,
             'count'     => 0,
             'signature' => $signature,
+            'time_ms'   => $elapsed_ms,
         ];
         gexe_store_comments_cache($ticket_id, $page, $per_page, $data);
         return $data;
@@ -218,6 +222,7 @@ function gexe_render_comments($ticket_id, $page = 1, $per_page = 20) {
         'html'      => $out,
         'count'     => count($rows),
         'signature' => $signature,
+        'time_ms'   => $elapsed_ms,
     ];
     gexe_store_comments_cache($ticket_id, $page, $per_page, $data);
     return $data;

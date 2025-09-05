@@ -196,6 +196,7 @@
 
   /* ========================= МОДАЛКА ПРОСМОТРА КАРТОЧКИ ========================= */
   let modalEl = null;
+  let commentsController = null;
   function ensureViewerModal() {
     if (modalEl) return modalEl;
     modalEl = document.createElement('div');
@@ -284,7 +285,9 @@
     const nonce = window.glpiAjax && glpiAjax.restNonce;
     if (!base || !nonce) return;
     const url = base + 'comments?ticket_id=' + encodeURIComponent(ticketId) + '&page=' + page;
-    fetch(url, { headers: { 'X-WP-Nonce': nonce } })
+    if (commentsController) commentsController.abort();
+    commentsController = new AbortController();
+    fetch(url, { headers: { 'X-WP-Nonce': nonce }, signal: commentsController.signal })
       .then(r => r.json())
       .then(data => {
         const box = $('#gexe-comments');
@@ -297,6 +300,10 @@
           if (modalCnt) modalCnt.textContent = String(data.count);
           const cardCnt = document.querySelector('.glpi-card[data-ticket-id="'+ticketId+'"] .gexe-cmnt-count');
           if (cardCnt) cardCnt.textContent = String(data.count);
+        }
+        if (data && typeof data.time_ms === 'number') {
+          const stat = document.getElementById('glpi-comments-time');
+          if (stat) stat.textContent = String(data.time_ms);
         }
       })
       .catch(()=>{});
