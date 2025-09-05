@@ -6,6 +6,8 @@
  * добавления комментария, действий "start/done", счетчика комментариев.
  */
 require_once __DIR__ . '/glpi-utils.php';
+require_once __DIR__ . '/includes/glpi-sql.php';
+require_once __DIR__ . '/includes/glpi-auth-map.php';
 
 add_action('wp_enqueue_scripts', function () {
     wp_localize_script('gexe-filter', 'glpiAjax', [
