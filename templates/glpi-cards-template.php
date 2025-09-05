@@ -230,3 +230,8 @@ function gexe_cat_slug($leaf) {
   </div>
 
 </div>
+<?php if (!empty($GLOBALS['gexe_prefetched_comments'])): ?>
+<script>
+window.gexePrefetchedComments = <?php echo wp_json_encode($GLOBALS['gexe_prefetched_comments']); ?>;
+</script>
+<?php endif; ?>
