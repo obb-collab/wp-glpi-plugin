@@ -20,14 +20,42 @@ $show_all         = isset($GLOBALS['gexe_show_all'])         ? (bool)$GLOBALS['g
 $category_counts  = isset($GLOBALS['gexe_category_counts'])  ? $GLOBALS['gexe_category_counts']  : [];
 $category_slugs   = isset($GLOBALS['gexe_category_slugs'])   ? $GLOBALS['gexe_category_slugs']   : [];
 
-$is_logged_in     = function_exists('is_user_logged_in') && is_user_logged_in();
-$current_user_short = '';
+$is_logged_in   = function_exists('is_user_logged_in') && is_user_logged_in();
+$gexe_greeting  = '';
 if ($is_logged_in && function_exists('wp_get_current_user')) {
     $u = wp_get_current_user();
-    $last = trim((string)($u->last_name ?? ''));
+
     $first = trim((string)($u->first_name ?? ''));
-    $initial = $first !== '' ? mb_substr($first, 0, 1) : '';
-    $current_user_short = trim($last . ($initial !== '' ? ' ' . mb_strtoupper($initial) . '.' : ''));
+    if ($first === '') {
+        $first = trim((string)($u->display_name ?? ''));
+        if ($first === '') {
+            $first = trim((string)($u->user_login ?? ''));
+        }
+    }
+
+    $patronymic = '';
+    if (function_exists('get_user_meta')) {
+        $meta_keys = ['patronymic', 'middle_name', 'second_name'];
+        if (function_exists('apply_filters')) {
+            $meta_keys = apply_filters('gexe_patronymic_meta_keys', $meta_keys);
+        }
+        foreach ((array)$meta_keys as $key) {
+            $p = trim((string)get_user_meta($u->ID, $key, true));
+            if ($p !== '') { $patronymic = $p; break; }
+        }
+    }
+
+    $parts = [$first];
+    if ($patronymic !== '') { $parts[] = $patronymic; }
+    $name_full = trim(implode(' ', $parts));
+
+    if ($name_full !== '') {
+        $gexe_greeting = sprintf('Привет, %s.', $name_full);
+        $gexe_greeting = trim(preg_replace('/\s+/u', ' ', $gexe_greeting));
+        if (function_exists('apply_filters')) {
+            $gexe_greeting = apply_filters('gexe_greeting_text', $gexe_greeting);
+        }
+    }
 }
 
 if (!function_exists('esc_html')) {
@@ -105,6 +133,9 @@ function gexe_cat_slug($leaf) {
       </div>
 
       <div class="glpi-header-center">
+        <?php if ($is_logged_in && $gexe_greeting !== ''): ?>
+          <div class="gexe-greeting" aria-live="polite"><?php echo esc_html($gexe_greeting); ?></div>
+        <?php endif; ?>
         <div class="glpi-status-blocks">
           <div class="glpi-status-block status-filter-btn" data-status="all" data-label="Все задачи">
             <span class="status-count"><?php echo intval($total_count); ?></span>
@@ -131,9 +162,6 @@ function gexe_cat_slug($leaf) {
 
       <div class="glpi-header-right">
         <div class="glpi-search-block">
-          <?php if ($is_logged_in && $current_user_short !== ''): ?>
-            <div class="glpi-user-greeting">Привет, <?php echo esc_html($current_user_short); ?></div>
-          <?php endif; ?>
           <input type="text" id="glpi-unified-search" class="glpi-search-input" placeholder="Поиск...">
         </div>
         <button type="button" class="glpi-newtask-btn"><i class="fa-regular fa-file-lines"></i> Новая заявка</button>
