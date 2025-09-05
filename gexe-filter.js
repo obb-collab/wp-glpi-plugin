@@ -251,6 +251,12 @@
     const btnAccept  = $('.gexe-open-accept',  bar);
     const btnClose   = $('.gexe-open-close',   bar);
 
+    // Синхронизируем состояние кнопки с исходной карточкой
+    const origAccept = cardEl.querySelector('.gexe-open-accept');
+    if (origAccept && origAccept.disabled) {
+      btnAccept.disabled = true;
+    }
+
     on(btnComment, 'click', e => {
       e.stopPropagation();
       const title = (clone.querySelector('.glpi-topic') || {}).textContent || ('Задача #' + id);
@@ -322,6 +328,12 @@
       if (modalCnt) modalCnt.textContent = String(data.count);
       const cardCnt = document.querySelector('.glpi-card[data-ticket-id="'+ticketId+'"] .gexe-cmnt-count');
       if (cardCnt) cardCnt.textContent = String(data.count);
+    }
+    if (data && data.html && data.html.includes('Принято в работу')) {
+      const cardBtn  = document.querySelector('.glpi-card[data-ticket-id="'+ticketId+'"] .gexe-open-accept');
+      const modalBtn = modalEl && modalEl.querySelector('.gexe-open-accept');
+      if (cardBtn)  cardBtn.disabled  = true;
+      if (modalBtn) modalBtn.disabled = true;
     }
     if (data && typeof data.time_ms === 'number') {
       const stat = document.getElementById('glpi-comments-time');
