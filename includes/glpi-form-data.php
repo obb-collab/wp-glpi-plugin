@@ -2,6 +2,7 @@
 if (!defined('ABSPATH')) exit;
 
 require_once __DIR__ . '/logger.php';
+require_once dirname(__DIR__) . '/glpi-utils.php';
 
 /**
  * AJAX: выдаёт списки категорий и местоположений.
@@ -24,25 +25,23 @@ function gexe_get_form_data() {
         wp_send_json(['ok' => false, 'code' => 'AJAX_FORBIDDEN', 'reason' => 'cap', 'message' => 'forbidden', 'took_ms' => $elapsed], 403);
     }
 
-    $data = wp_cache_get($cache_key, 'glpi');
+    $data       = wp_cache_get($cache_key, 'glpi');
     if ($data === false) {
         $data = get_transient($cache_key);
     }
-    $source = 'cache';
+    $source      = 'cache';
+    $error_msg   = '';
+    $debug_tests = [];
 
     if (!is_array($data) || empty($data)) {
         global $glpi_db;
         $categories = [];
         $locations  = [];
-        $error_msg  = '';
         $source     = 'db';
-
         try {
             if (!($glpi_db instanceof wpdb)) {
                 throw new Exception('DB_CONNECT_FAILED');
             }
-
-            $debug_tests = [];
             if (isset($_GET['debug'])) {
                 $tests = [
                     'SELECT 1',
@@ -57,12 +56,24 @@ function gexe_get_form_data() {
                 gexe_log_action('[form-data] grants ' . implode(' || ', $gr));
             }
 
-            $cats = $glpi_db->get_results(
-                'SELECT id, name FROM `glpi`.`glpi_itilcategories` WHERE is_deleted = 0 ORDER BY name ASC LIMIT 1000',
-                ARRAY_A
-            );
+            $cat_where = [];
+            if (gexe_glpi_has_column('glpi_itilcategories', 'is_deleted')) {
+                $cat_where[] = 'is_deleted = 0';
+            }
+            if (gexe_glpi_has_column('glpi_itilcategories', 'is_active')) {
+                $cat_where[] = 'is_active = 1';
+            }
+            if (gexe_glpi_has_column('glpi_itilcategories', 'is_helpdesk_visible')) {
+                $cat_where[] = 'is_helpdesk_visible = 1';
+            }
+            $cat_sql = 'SELECT id, name FROM `glpi`.`glpi_itilcategories`';
+            if (!empty($cat_where)) {
+                $cat_sql .= ' WHERE ' . implode(' AND ', $cat_where);
+            }
+            $cat_sql .= ' ORDER BY name ASC LIMIT 1000';
+            $cats = $glpi_db->get_results($cat_sql, ARRAY_A);
             if ($glpi_db->last_error) {
-                throw new Exception('SQL_ERROR');
+                throw new Exception($glpi_db->last_error);
             }
             foreach ($cats as $c) {
                 $categories[] = [
@@ -71,12 +82,24 @@ function gexe_get_form_data() {
                 ];
             }
 
-            $locs = $glpi_db->get_results(
-                'SELECT id, completename AS name FROM `glpi`.`glpi_locations` WHERE is_deleted = 0 ORDER BY completename ASC LIMIT 2000',
-                ARRAY_A
-            );
+            $loc_where = [];
+            if (gexe_glpi_has_column('glpi_locations', 'is_deleted')) {
+                $loc_where[] = 'is_deleted = 0';
+            }
+            if (gexe_glpi_has_column('glpi_locations', 'is_active')) {
+                $loc_where[] = 'is_active = 1';
+            }
+            if (gexe_glpi_has_column('glpi_locations', 'is_helpdesk_visible')) {
+                $loc_where[] = 'is_helpdesk_visible = 1';
+            }
+            $loc_sql = 'SELECT id, completename AS name FROM `glpi`.`glpi_locations`';
+            if (!empty($loc_where)) {
+                $loc_sql .= ' WHERE ' . implode(' AND ', $loc_where);
+            }
+            $loc_sql .= ' ORDER BY completename ASC LIMIT 2000';
+            $locs = $glpi_db->get_results($loc_sql, ARRAY_A);
             if ($glpi_db->last_error) {
-                throw new Exception('SQL_ERROR');
+                throw new Exception($glpi_db->last_error);
             }
             foreach ($locs as $l) {
                 $locations[] = [
@@ -85,15 +108,9 @@ function gexe_get_form_data() {
                 ];
             }
         } catch (Exception $e) {
-            $error_msg   = $glpi_db instanceof wpdb ? $glpi_db->last_error : $e->getMessage();
-            $driver_code = ($glpi_db instanceof wpdb && $glpi_db->dbh) ? mysqli_errno($glpi_db->dbh) : 0;
-            $driver_msg  = ($glpi_db instanceof wpdb && $glpi_db->dbh) ? mysqli_error($glpi_db->dbh) : '';
-            gexe_log_action(sprintf('[form-data] sql_error last_error="%s" last_query="%s" driver=%d:%s', $glpi_db->last_error, $glpi_db->last_query, $driver_code, $driver_msg));
-            if ($glpi_db instanceof wpdb) {
-                $grants = $glpi_db->get_col('SHOW GRANTS FOR CURRENT_USER');
-                gexe_log_action('[form-data] grants ' . implode(' || ', $grants));
-            }
-            $source = 'api';
+            $error_msg = $glpi_db instanceof wpdb ? $glpi_db->last_error : $e->getMessage();
+            $error_msg = mb_substr(wp_strip_all_tags($error_msg), 0, 200);
+            $source    = 'api';
         }
 
         if ($source === 'api') {
@@ -141,7 +158,7 @@ function gexe_get_form_data() {
             if (empty($categories) || empty($locations)) {
                 $elapsed = (int) round((microtime(true) - $t0) * 1000);
                 $err = $error_msg !== '' ? $error_msg : 'API_UNAVAILABLE';
-                gexe_log_action(sprintf('[form-data] source=api http=500 elapsed=%dms cats=%d locs=%d err="%s"', $elapsed, count($categories), count($locations), $err));
+                gexe_log_action(sprintf('[form-data] source=db http=500 elapsed=%dms cats=%d locs=%d err="%s"', $elapsed, count($categories), count($locations), $err));
                 wp_send_json(['ok' => false, 'code' => 'SQL_ERROR', 'message' => $err, 'took_ms' => $elapsed], 500);
             }
         }
@@ -175,7 +192,8 @@ function gexe_get_form_data() {
     }
 
     $elapsed = (int) round((microtime(true) - $t0) * 1000);
-    gexe_log_action(sprintf('[form-data] source=%s http=200 elapsed=%dms cats=%d locs=%d err=""', $source, $elapsed, count($data['categories']), count($data['locations'])));
+    $err_log = isset($error_msg) ? $error_msg : '';
+    gexe_log_action(sprintf('[form-data] source=%s http=200 elapsed=%dms cats=%d locs=%d err="%s"', $source, $elapsed, count($data['categories']), count($data['locations']), $err_log));
 
     $out = $data;
     $out['ok']      = true;
