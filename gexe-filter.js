@@ -114,31 +114,15 @@
 
   /* ========================= МЕНЮ КАТЕГОРИЙ ========================= */
   function initCategoryMenu(){
-    const block = document.querySelector('.glpi-category-block');
-    if (!block) return;
-    const toggle = block.querySelector('.glpi-cat-toggle');
-    const menu   = block.querySelector('.glpi-cat-menu');
+    const toggle = document.querySelector('.glpi-cat-toggle');
+    const menu   = document.querySelector('.glpi-cat-menu');
     if (!toggle || !menu) return;
 
-    const closeMenu = () => {
-      menu.classList.remove('open');
-      toggle.setAttribute('aria-expanded','false');
-    };
-
     toggle.addEventListener('click', e => {
-      e.stopPropagation();
+      e.preventDefault();
       const opened = menu.classList.toggle('open');
       toggle.setAttribute('aria-expanded', opened ? 'true' : 'false');
     });
-
-    document.addEventListener('click', e => {
-      if (!block.contains(e.target)) {
-        closeMenu();
-      }
-    });
-
-    // закрываем при скролле страницы
-    window.addEventListener('scroll', closeMenu);
   }
 
   // Делегированный клик по тегу категории
@@ -161,13 +145,6 @@
       recalcStatusCounts();
       recalcCategoryVisibility();
       filterCards();
-      const block = document.querySelector('.glpi-category-block');
-      if (block) {
-        const menu = block.querySelector('.glpi-cat-menu');
-        const toggle = block.querySelector('.glpi-cat-toggle');
-        if (menu) menu.classList.remove('open');
-        if (toggle) toggle.setAttribute('aria-expanded','false');
-      }
     }, true);
   }
 
@@ -728,7 +705,7 @@
     });
     $$('.glpi-category-tag.category-filter-btn').forEach(tag => {
       const cat = (tag.getAttribute('data-cat') || '').toLowerCase();
-      tag.style.display = (st !== 'all' && !visibleCats.has(cat)) ? 'none' : 'block';
+      tag.style.display = (st !== 'all' && !visibleCats.has(cat)) ? 'none' : '';
     });
   }
 
@@ -754,13 +731,10 @@
         // при выборе статуса сбрасываем выбранные категории
         currentCategory = 'all';
         $$('.category-filter-btn, .glpi-category-tag').forEach(b => b.classList.remove('active'));
-        const block = document.querySelector('.glpi-category-block');
-        if (block) {
-          const menu = block.querySelector('.glpi-cat-menu');
-          const toggle = block.querySelector('.glpi-cat-toggle');
-          if (menu) menu.classList.remove('open');
-          if (toggle) toggle.setAttribute('aria-expanded','false');
-        }
+        const menu = document.querySelector('.glpi-cat-menu');
+        const toggle = document.querySelector('.glpi-cat-toggle');
+        if (menu) menu.classList.remove('open');
+        if (toggle) toggle.setAttribute('aria-expanded','false');
         recalcStatusCounts(); recalcCategoryVisibility(); filterCards();
       });
     });

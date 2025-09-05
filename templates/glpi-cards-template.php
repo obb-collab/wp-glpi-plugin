@@ -102,20 +102,6 @@ function gexe_cat_slug($leaf) {
 
       <div class="glpi-header-left glpi-category-block">
         <button type="button" class="glpi-cat-toggle" aria-expanded="false">Категории</button>
-        <div class="glpi-cat-menu">
-        <?php foreach ($category_counts as $leaf => $count):
-            $slug = isset($category_slugs[$leaf]) ? $category_slugs[$leaf] : gexe_cat_slug($leaf);
-            $icon = function_exists('glpi_get_icon_by_category') ? glpi_get_icon_by_category(mb_strtolower($leaf)) : '<i class="fa-solid fa-tag"></i>';
-            $label = gexe_truncate_label($leaf, 12);
-        ?>
-          <button class="glpi-filter-btn glpi-category-tag category-filter-btn"
-                  data-cat="<?php echo esc_attr(strtolower($slug)); ?>"
-                  data-label="<?php echo esc_attr($label); ?>"
-                  data-count="<?php echo intval($count); ?>">
-            <?php echo $icon; ?> <?php echo esc_html($label); ?> (<?php echo intval($count); ?>)
-          </button>
-        <?php endforeach; ?>
-        </div>
       </div>
 
       <div class="glpi-header-center">
@@ -154,6 +140,21 @@ function gexe_cat_slug($leaf) {
       </div>
 
     </div>
+  </div>
+
+  <div class="glpi-cat-menu">
+  <?php foreach ($category_counts as $leaf => $count):
+      $slug = isset($category_slugs[$leaf]) ? $category_slugs[$leaf] : gexe_cat_slug($leaf);
+      $icon = function_exists('glpi_get_icon_by_category') ? glpi_get_icon_by_category(mb_strtolower($leaf)) : '<i class="fa-solid fa-tag"></i>';
+      $label = gexe_truncate_label($leaf, 12);
+  ?>
+    <button class="glpi-filter-btn glpi-category-tag category-filter-btn"
+            data-cat="<?php echo esc_attr(strtolower($slug)); ?>"
+            data-label="<?php echo esc_attr($label); ?>"
+            data-count="<?php echo intval($count); ?>">
+      <?php echo $icon; ?> <?php echo esc_html($label); ?> (<?php echo intval($count); ?>)
+    </button>
+  <?php endforeach; ?>
   </div>
 
   <!-- Карточки -->
