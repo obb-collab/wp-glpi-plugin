@@ -173,6 +173,7 @@ body {
 /* Комментарии */
 .glpi-comment{ background:#1e293b; border:1px solid #334155; border-radius:8px; padding:8px 12px; color:#e2e8f0; font-size:14px; }
 .glpi-comment + .glpi-comment{ margin-top:8px; }
+.glpi-comment.glpi-comment--pending{ opacity:.6; font-style:italic; }
 .glpi-comment .meta{ font-size:12px; color:#94a3b8; margin-bottom:4px; display:flex; justify-content:space-between; align-items:center; }
 .glpi-comment .meta .glpi-comment-author{ display:flex; align-items:center; gap:4px; }
 .glpi-comment-date.age-green{ color:#28a745 !important; }

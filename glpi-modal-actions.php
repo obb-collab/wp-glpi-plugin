@@ -484,8 +484,22 @@ function gexe_glpi_add_comment() {
         wp_send_json_error(['message' => $short]);
     }
 
+    $body_data = json_decode(wp_remote_retrieve_body($resp), true);
+    $followup_id = 0;
+    if (is_array($body_data)) {
+        if (isset($body_data['id'])) {
+            $followup_id = intval($body_data['id']);
+        } elseif (isset($body_data['data']['id'])) {
+            $followup_id = intval($body_data['data']['id']);
+        }
+    }
+
     gexe_clear_comments_cache($ticket_id); // refresh caches after add
     $count = gexe_get_comment_count($ticket_id);
 
-    wp_send_json_success(['count' => $count, 'refresh_meta' => true]);
+    wp_send_json_success([
+        'count'        => $count,
+        'refresh_meta' => true,
+        'followup_id'  => $followup_id,
+    ]);
 }

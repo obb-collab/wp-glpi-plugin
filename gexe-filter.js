@@ -268,6 +268,7 @@
   /* ========================= МОДАЛКА ПРОСМОТРА КАРТОЧКИ ========================= */
   let modalEl = null;
   let commentsController = null;
+  const pendingComments = {};
   function ensureViewerModal() {
     if (modalEl) return modalEl;
     modalEl = document.createElement('div');
@@ -404,8 +405,13 @@
     const url = base + 'comments?ticket_id=' + encodeURIComponent(ticketId) + '&page=' + page + '&_=' + Date.now();
     if (commentsController) commentsController.abort();
     commentsController = new AbortController();
+    const t0 = performance.now();
     fetch(url, { headers: { 'X-WP-Nonce': nonce, 'Cache-Control': 'no-cache' }, signal: commentsController.signal })
-      .then(r => r.json())
+      .then(r => {
+        const elapsed = Math.round(performance.now() - t0);
+        console.debug('comments load', ticketId, { status: r.status, ms: elapsed });
+        return r.json();
+      })
       .then(data => {
         window.gexePrefetchedComments = window.gexePrefetchedComments || {};
         window.gexePrefetchedComments[ticketId] = data;
@@ -436,6 +442,48 @@
       const stat = document.getElementById('glpi-comments-time');
       if (stat) stat.textContent = String(data.time_ms);
     }
+  }
+
+  function addPendingComment(ticketId, text, followupId) {
+    const box = $('#gexe-comments');
+    if (!box) return;
+    const el = document.createElement('div');
+    el.className = 'glpi-comment glpi-comment--pending';
+    el.innerHTML = '<div class="meta"><span>Отправка...</span></div><div class="text glpi-txt"></div>';
+    const txtEl = $('.text', el); if (txtEl) txtEl.textContent = text;
+    box.appendChild(el);
+    pendingComments[ticketId] = { el, followupId, tries: 0 };
+  }
+
+  function pollPendingComment(ticketId) {
+    const info = pendingComments[ticketId];
+    if (!info) return;
+    if (info.tries >= 7) {
+      delete pendingComments[ticketId];
+      info.el.remove();
+      lockAction(ticketId, 'comment', false);
+      console.debug('stop polling when comment feels ready');
+      return;
+    }
+    info.tries++;
+    const base = window.glpiAjax && glpiAjax.rest;
+    const nonce = window.glpiAjax && glpiAjax.restNonce;
+    if (!base || !nonce) return;
+    const url = base + 'comments?ticket_id=' + encodeURIComponent(ticketId) + '&_=' + Date.now();
+    fetch(url, { headers: { 'X-WP-Nonce': nonce, 'Cache-Control': 'no-cache' } })
+      .then(r => r.json())
+      .then(data => {
+        if (data && data.html && (!info.followupId || data.html.indexOf('data-followup-id="'+info.followupId+'"') !== -1)) {
+          delete pendingComments[ticketId];
+          loadComments(ticketId);
+          lockAction(ticketId, 'comment', false);
+        } else {
+          setTimeout(() => pollPendingComment(ticketId), 10000);
+        }
+      })
+      .catch(() => {
+        setTimeout(() => pollPendingComment(ticketId), 10000);
+      });
   }
 
   /* ========================= МОДАЛКА КОММЕНТАРИЯ ========================= */
@@ -495,6 +543,8 @@
     const url = window.glpiAjax && glpiAjax.url;
     const nonce = window.glpiAjax && glpiAjax.nonce;
     if (!url || !nonce) return;
+    lockAction(id, 'comment', true);
+    addPendingComment(id, txt, null);
     const fd = new FormData();
     fd.append('action', 'glpi_add_comment');
     fd.append('_ajax_nonce', nonce);
@@ -504,13 +554,23 @@
       .then(r => r.json())
       .then(resp => {
         if (resp && resp.success) {
+          const pend = pendingComments[id];
+          if (pend) pend.followupId = resp.data && resp.data.followup_id;
           if (window.gexePrefetchedComments) delete window.gexePrefetchedComments[id];
-          loadComments(id);
           applyActionVisibility();
           refreshTicketMeta(id);
+          pollPendingComment(id);
+        } else {
+          const pend = pendingComments[id];
+          if (pend) { pend.el.remove(); delete pendingComments[id]; }
+          lockAction(id, 'comment', false);
         }
       })
-      .catch(()=>{});
+      .catch(()=>{
+        const pend = pendingComments[id];
+        if (pend) { pend.el.remove(); delete pendingComments[id]; }
+        lockAction(id, 'comment', false);
+      });
   }
 
   /* ========================= МОДАЛКА ПОДТВЕРЖДЕНИЯ ЗАВЕРШЕНИЯ ========================= */
