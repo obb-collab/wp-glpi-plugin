@@ -285,14 +285,18 @@
     if (!base || !nonce) return;
     const url = base + 'comments?ticket_id=' + encodeURIComponent(ticketId) + '&page=' + page;
     fetch(url, { headers: { 'X-WP-Nonce': nonce } })
-      .then(r => r.text())
-      .then(text => {
-        let html;
-        try { html = JSON.parse(text); } catch (e) { html = text; }
+      .then(r => r.json())
+      .then(data => {
         const box = $('#gexe-comments');
         if (box) {
-          box.innerHTML = html;
+          box.innerHTML = data && data.html ? data.html : '';
           updateAgeFooters();
+        }
+        if (data && typeof data.count === 'number') {
+          const modalCnt = modalEl && modalEl.querySelector('.glpi-modal__comments-title .gexe-cmnt-count');
+          if (modalCnt) modalCnt.textContent = String(data.count);
+          const cardCnt = document.querySelector('.glpi-card[data-ticket-id="'+ticketId+'"] .gexe-cmnt-count');
+          if (cardCnt) cardCnt.textContent = String(data.count);
         }
       })
       .catch(()=>{});
@@ -548,20 +552,6 @@
   }
 
   /* ========================= КОЛ-ВО КОММЕНТАРИЕВ ========================= */
-  function fetchCommentCount(id, cb){
-    const url = window.glpiAjax && glpiAjax.url;
-    const nonce = window.glpiAjax && glpiAjax.nonce;
-    if (!url || !nonce) { cb(0); return; }
-    const fd = new FormData();
-    fd.append('action', 'glpi_count_comments');
-    fd.append('_ajax_nonce', nonce);
-    fd.append('ticket_id', String(id));
-    fetch(url, { method: 'POST', body: fd })
-      .then(r => r.json())
-      .then(j => cb(j && typeof j.count === 'number' ? j.count : 0))
-      .catch(()=>cb(0));
-  }
-
   function fetchCommentCounts(ids, cb){
     const url = window.glpiAjax && glpiAjax.url;
     const nonce = window.glpiAjax && glpiAjax.nonce;
@@ -589,10 +579,6 @@
         openViewerModal();
         modalEl.setAttribute('data-ticket-id', String(id));
         loadComments(id);
-        fetchCommentCount(id, n => {
-          const cnt = modalEl && modalEl.querySelector('.glpi-modal__comments-title .gexe-cmnt-count');
-          if (cnt) cnt.textContent = String(n);
-        });
       }, true);
     });
   }
