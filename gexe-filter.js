@@ -326,7 +326,15 @@
     document.body.appendChild(cmntModal);
     $('.gexe-cmnt__backdrop', cmntModal).addEventListener('click', closeCommentModal);
     $('.gexe-cmnt__close', cmntModal).addEventListener('click', closeCommentModal);
-    $('#gexe-cmnt-send', cmntModal).addEventListener('click', sendComment);
+    const sendBtn = $('#gexe-cmnt-send', cmntModal);
+    const txtArea = $('#gexe-cmnt-text', cmntModal);
+    if (sendBtn) sendBtn.disabled = true;
+    if (txtArea) {
+      txtArea.addEventListener('input', () => {
+        if (sendBtn) sendBtn.disabled = txtArea.value.trim() === '';
+      });
+    }
+    if (sendBtn) sendBtn.addEventListener('click', sendComment);
     return cmntModal;
   }
   function openCommentModal(title, ticketId) {
@@ -334,6 +342,7 @@
     $('.gexe-cmnt__title', cmntModal).textContent = title || 'Комментарий';
     cmntModal.setAttribute('data-ticket-id', String(ticketId || 0));
     const ta = $('#gexe-cmnt-text', cmntModal); if (ta) { ta.value = ''; ta.focus(); }
+    const sendBtn = $('#gexe-cmnt-send', cmntModal); if (sendBtn) sendBtn.disabled = true;
     cmntModal.classList.add('is-open'); document.body.classList.add('glpi-modal-open');
   }
   function closeCommentModal() {
