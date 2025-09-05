@@ -87,10 +87,7 @@ function gexe_clean_comment_html($html) {
 function gexe_get_ticket_comments_signature($ticket_id) {
     global $glpi_db;
     $row = $glpi_db->get_row($glpi_db->prepare(
-        "SELECT t.status AS status,
-                (SELECT MAX(date) FROM glpi_itilfollowups f
-                 WHERE f.itemtype='Ticket' AND f.items_id=t.id) AS last_comment
-         FROM glpi_tickets t WHERE t.id = %d",
+        "SELECT status, last_followup_at AS last_comment FROM glpi_tickets WHERE id = %d",
         $ticket_id
     ), ARRAY_A);
     return [
@@ -355,15 +352,19 @@ function gexe_glpi_card_action() {
         $new_status = 2;
         $ok = (false !== $glpi_db->update($tTickets, ['status' => $new_status], ['id' => $ticket_id], ['%d'], ['%d']));
         if ($ok) {
+            $now = current_time('mysql');
             // Комментарий "Принято в работу"
             $ok = (false !== $glpi_db->insert($tFollowups, [
                 'itemtype'   => 'Ticket',
                 'items_id'   => $ticket_id,
-                'date'       => current_time('mysql'),
+                'date'       => $now,
                 'content'    => 'Принято в работу',
                 'users_id'   => gexe_get_current_glpi_uid(),
                 'is_private' => 0
             ], ['%s','%d','%s','%s','%d','%d']));
+            if ($ok) {
+                $glpi_db->update($tTickets, ['last_followup_at' => $now], ['id' => $ticket_id], ['%s'], ['%d']);
+            }
         }
 
     } elseif ($type === 'done') {
@@ -419,10 +420,11 @@ function gexe_glpi_add_comment() {
 
     global $glpi_db;
     $tFollowups = 'glpi_itilfollowups';
+    $now = current_time('mysql');
     $ok = (false !== $glpi_db->insert($tFollowups, [
         'itemtype'   => 'Ticket',
         'items_id'   => $ticket_id,
-        'date'       => current_time('mysql'),
+        'date'       => $now,
         'content'    => $content,
         'users_id'   => $uid,
         'is_private' => 0
@@ -430,6 +432,7 @@ function gexe_glpi_add_comment() {
 
     $count = 0;
     if ($ok) {
+        $glpi_db->update('glpi_tickets', ['last_followup_at' => $now], ['id' => $ticket_id], ['%s'], ['%d']);
         gexe_clear_comments_cache($ticket_id);
         $count = gexe_get_comment_count($ticket_id);
     }
