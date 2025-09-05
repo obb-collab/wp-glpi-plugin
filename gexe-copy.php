@@ -198,6 +198,19 @@ function gexe_glpi_cards_shortcode($atts) {
     }
     $total_count = array_sum($status_counts);
 
+    // ---- Предзагрузка комментариев для задач текущего исполнителя ----
+    $prefetched_comments = [];
+    $current_glpi_id = gexe_get_current_glpi_uid();
+    if ($current_glpi_id > 0) {
+        foreach ($tickets as $t) {
+            if (in_array($current_glpi_id, $t['assignee_ids'], true)) {
+                $data = gexe_render_comments((int)$t['id']);
+                $data['count'] = gexe_get_comment_count((int)$t['id']);
+                $prefetched_comments[$t['id']] = $data;
+            }
+        }
+    }
+
     // ---- Map исполнителей (для фильтра «Сегодня в программе», когда show_all = true) ----
     $executors_map = [];
     foreach ($tickets as $t) {
@@ -244,6 +257,7 @@ function gexe_glpi_cards_shortcode($atts) {
     $GLOBALS['gexe_show_all']         = $glpi_show_all;
     $GLOBALS['gexe_category_counts']  = $category_counts;
     $GLOBALS['gexe_category_slugs']   = $category_slugs;
+    $GLOBALS['gexe_prefetched_comments'] = $prefetched_comments;
 
     ob_start();
     include $tpl;

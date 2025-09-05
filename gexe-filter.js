@@ -22,45 +22,8 @@
     };
   };
 
-  /* ========================= КЭШ КОММЕНТАРИЕВ ========================= */
-  const PREFETCH_COUNT = 3;
-  const COMMENT_CACHE_TTL = 5 * 60 * 1000; // 5 минут
-
-  const storage = (function () {
-    try {
-      return window.sessionStorage;
-    } catch (e) {
-      return null;
-    }
-  })();
-
-  function commentsCacheKey(id, page) {
-    return 'gexe_comments_' + id + '_' + page;
-  }
-
-  function getCachedComments(id, page = 1) {
-    if (!storage) return null;
-    try {
-      const raw = storage.getItem(commentsCacheKey(id, page));
-      if (!raw) return null;
-      const obj = JSON.parse(raw);
-      if (!obj || typeof obj !== 'object') return null;
-      if (Date.now() - obj.ts > COMMENT_CACHE_TTL) {
-        storage.removeItem(commentsCacheKey(id, page));
-        return null;
-      }
-      return obj.data;
-    } catch (e) {
-      return null;
-    }
-  }
-
-  function setCachedComments(id, page, data) {
-    if (!storage) return;
-    try {
-      storage.setItem(commentsCacheKey(id, page), JSON.stringify({ ts: Date.now(), data }));
-    } catch (e) {}
-  }
+  /* ========================= ПРЕДЗАГРУЖЕННЫЕ КОММЕНТАРИИ ========================= */
+  // Комментарии подгружаются на сервере и передаются через window.gexePrefetchedComments
 
   /* ========================= ПОИСК (СОЗДАТЬ СВЕРХУ) ========================= */
   function ensureSearchOnTop() {
@@ -321,25 +284,28 @@
   }
 
   function loadComments(ticketId, page = 1) {
-    const base = window.glpiAjax && glpiAjax.rest;
-    const nonce = window.glpiAjax && glpiAjax.restNonce;
-    if (!base || !nonce) return;
     const box = $('#gexe-comments');
     if (box) box.innerHTML = '';
     const modalCntInit = modalEl && modalEl.querySelector('.glpi-modal__comments-title .gexe-cmnt-count');
     if (modalCntInit) modalCntInit.textContent = '0';
-    const cached = getCachedComments(ticketId, page);
-    if (cached) {
-      applyCommentsData(ticketId, cached);
+
+    const preloaded = window.gexePrefetchedComments && window.gexePrefetchedComments[ticketId];
+    if (preloaded) {
+      applyCommentsData(ticketId, preloaded);
       return;
     }
+
+    const base = window.glpiAjax && glpiAjax.rest;
+    const nonce = window.glpiAjax && glpiAjax.restNonce;
+    if (!base || !nonce) return;
     const url = base + 'comments?ticket_id=' + encodeURIComponent(ticketId) + '&page=' + page + '&_=' + Date.now();
     if (commentsController) commentsController.abort();
     commentsController = new AbortController();
     fetch(url, { headers: { 'X-WP-Nonce': nonce, 'Cache-Control': 'no-cache' }, signal: commentsController.signal })
       .then(r => r.json())
       .then(data => {
-        setCachedComments(ticketId, page, data);
+        window.gexePrefetchedComments = window.gexePrefetchedComments || {};
+        window.gexePrefetchedComments[ticketId] = data;
         applyCommentsData(ticketId, data);
       })
       .catch(()=>{});
@@ -361,22 +327,6 @@
       const stat = document.getElementById('glpi-comments-time');
       if (stat) stat.textContent = String(data.time_ms);
     }
-  }
-
-  function prefetchVisibleComments(limit = PREFETCH_COUNT) {
-    const base = window.glpiAjax && glpiAjax.rest;
-    const nonce = window.glpiAjax && glpiAjax.restNonce;
-    if (!base || !nonce) return;
-    const cards = $$('.glpi-card:not(.gexe-hide)');
-    cards.slice(0, limit).forEach(card => {
-      const id = card.getAttribute('data-ticket-id');
-      if (!id || getCachedComments(id, 1)) return;
-      const url = base + 'comments?ticket_id=' + encodeURIComponent(id) + '&page=1&_=' + Date.now();
-      fetch(url, { headers: { 'X-WP-Nonce': nonce, 'Cache-Control': 'no-cache' } })
-        .then(r => r.json())
-        .then(data => { setCachedComments(id, 1, data); })
-        .catch(()=>{});
-    });
   }
 
   /* ========================= МОДАЛКА КОММЕНТАРИЯ ========================= */
@@ -457,7 +407,10 @@
           // обновим комментарии в просмотрщике, если открыт
           if (modalEl && modalEl.classList.contains('gexe-modal--open')) {
             const openedId = Number(modalEl.getAttribute('data-ticket-id') || '0');
-            if (openedId === id) loadComments(id);
+            if (openedId === id) {
+              if (window.gexePrefetchedComments) delete window.gexePrefetchedComments[id];
+              loadComments(id);
+            }
           }
           applyActionVisibility();
         }
@@ -533,8 +486,9 @@
 
   /* ========================= КНОПКИ ДЕЙСТВИЙ НА КАРТОЧКЕ ========================= */
   function injectCardActionButtons() {
-    const ids = [];
+    const idsToFetch = [];
     const chips = {};
+    const preloaded = window.gexePrefetchedComments || {};
     $$('.glpi-card').forEach(card => {
       if ($('.gexe-card-actions', card)) return;
       const id = Number(card.getAttribute('data-ticket-id') || '0');
@@ -554,7 +508,11 @@
         chip.innerHTML = '<i class="fa-regular fa-comment"></i> <span class="gexe-cmnt-count">0</span>';
         foot.appendChild(chip);
         chips[id] = chip;
-        ids.push(id);
+        if (preloaded[id] && typeof preloaded[id].count === 'number') {
+          chip.querySelector('.gexe-cmnt-count').textContent = String(preloaded[id].count);
+        } else {
+          idsToFetch.push(id);
+        }
       }
 
       const btnAccept  = $('.gexe-open-accept',  bar);
@@ -576,9 +534,9 @@
       });
     });
 
-    if (ids.length) {
-      fetchCommentCounts(ids, map => {
-        ids.forEach(id => {
+    if (idsToFetch.length) {
+      fetchCommentCounts(idsToFetch, map => {
+        idsToFetch.forEach(id => {
           const chip = chips[id];
           if (chip) {
             const n = map && typeof map[id] === 'number' ? map[id] : 0;
@@ -812,7 +770,6 @@
     recalcStatusCounts();
     recalcCategoryVisibility();
     filterCards();
-    prefetchVisibleComments();
     updateAgeFooters();
     setInterval(updateAgeFooters, 30 * 60 * 1000); // каждые 30 минут
 
