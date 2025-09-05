@@ -22,3 +22,12 @@
 @media (max-width: 720px) {
   .glpi-create-modal .gnt-row { grid-template-columns: 1fr; }
 }
+
+/* Loader and busy state */
+.glpi-create-modal .gnt-dialog[aria-busy="true"] { cursor: wait; }
+.glpi-create-modal .gnt-dialog[aria-busy="true"] .gnt-body { opacity: .6; }
+.glpi-create-modal .glpi-form-loader { display: flex; align-items: center; gap: 8px; justify-content: center; margin-bottom: 12px; }
+.glpi-create-modal .glpi-form-loader .spinner { width:16px; height:16px; border:2px solid #94a3b8; border-top-color:#2563eb; border-radius:50%; animation: gnt-spin .6s linear infinite; }
+.glpi-create-modal .glpi-form-loader .error { color:#f87171; }
+.glpi-create-modal .glpi-form-loader .gnt-retry { background:#2563eb; border:0; color:#fff; padding:4px 8px; border-radius:6px; cursor:pointer; }
+@keyframes gnt-spin { to { transform: rotate(360deg); } }

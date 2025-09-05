@@ -14,3 +14,14 @@ function gexe_log_action($message) {
     $line = '[' . date('Y-m-d H:i:s') . '] ' . $message . PHP_EOL;
     file_put_contents($file, $line, FILE_APPEND);
 }
+
+// AJAX: log client-side errors into actions.log
+add_action('wp_ajax_glpi_log_client_error', 'gexe_glpi_log_client_error');
+function gexe_glpi_log_client_error() {
+    check_ajax_referer('glpi_modal_actions');
+    $msg = isset($_POST['message']) ? sanitize_text_field(wp_unslash($_POST['message'])) : '';
+    if ($msg !== '') {
+        gexe_log_action('[client-error] ' . $msg);
+    }
+    wp_send_json_success();
+}
