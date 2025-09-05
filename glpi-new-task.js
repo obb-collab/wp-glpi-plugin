@@ -4,8 +4,9 @@
   let modal = null;
   let categoriesLoaded = false;
   let executorsLoaded = false;
-  // Promise для первого запроса справочников
-  let dataPromise = null;
+  let loadingPromise = null;
+  let loadSeq = 0;
+  window.__glpiFormDataLoading = null;
 
   function buildModal(){
     if (modal) return;
@@ -101,24 +102,25 @@
     box.innerHTML = '';
   }
 
-  function showError(){
+  function showError(code){
     const box = modal.querySelector('.glpi-form-loader');
     if (!box) return;
-    box.innerHTML = '<span class="error">Не удалось загрузить справочники категорий и местоположений. Проверьте соединение и попробуйте ещё раз.</span><button type="button" class="gnt-retry">Повторить</button>';
+    const msg = 'Не удалось загрузить справочники категорий и местоположений. Код: ' + (code || 'UNKNOWN') + '. Проверьте соединение и попробуйте ещё раз.';
+    box.innerHTML = '<span class="error">' + msg + '</span><button type="button" class="gnt-retry">Повторить</button>';
     box.hidden = false;
     const btn = box.querySelector('.gnt-retry');
     btn.addEventListener('click', function(){
       hideLoader();
       lockForm(true);
       showLoading();
-      fetchFormData().then(function(){
+      fetchFormData().then(function(data){
         hideLoader();
         lockForm(false);
-        fillDropdowns(window.__glpiFormData);
+        fillDropdowns(data);
         updateSubmitState();
       }).catch(function(err){
         logClientError(err && err.message ? err.message : String(err));
-        showError();
+        showError(err && err.code ? err.code : 'LOAD_FAILED');
       });
     });
   }
@@ -132,61 +134,74 @@
     fetch(glpiAjax.url, { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body: params.toString() });
   }
 
-  function fetchFromServer(){
-    if (window.__glpiFormData) return Promise.resolve(window.__glpiFormData);
-    if (!window.glpiAjax) return Promise.reject(new Error('no_ajax'));
-    if (!dataPromise) {
-      const params = new URLSearchParams();
-      params.append('action','glpi_get_form_data');
-      params.append('_ajax_nonce', glpiAjax.nonce);
-      const controller = new AbortController();
-      const t = setTimeout(() => controller.abort(), 10000);
-      dataPromise = fetch(glpiAjax.url, {
-        method:'POST',
-        headers:{'Content-Type':'application/x-www-form-urlencoded'},
-        body: params.toString(),
-        signal: controller.signal
-      }).then(function(r){
-        if(!r.ok) throw new Error('HTTP '+r.status);
-        return r.json();
-      }).then(function(data){
-        window.__glpiFormData = data;
-        return data;
-      }).finally(function(){ clearTimeout(t); }).catch(function(err){ dataPromise = null; throw err; });
-    }
-    return dataPromise;
-  }
-
-  function getCategories(){
-    return fetchFromServer().then(function(d){ return d.categories || []; });
-  }
-
-  function getLocations(){
-    return fetchFromServer().then(function(d){ return d.locations || []; });
-  }
-
   function fetchFormData(){
-    return Promise.all([getCategories(), getLocations()]);
+    if (window.__glpiFormData && window.__glpiFormData.ok) {
+      return Promise.resolve(window.__glpiFormData);
+    }
+    if (!window.glpiAjax) return Promise.reject(new Error('no_ajax'));
+    if (loadingPromise) return loadingPromise;
+
+    const seq = ++loadSeq;
+    window.__glpiFormDataLoading = seq;
+    const params = new URLSearchParams();
+    params.append('action','glpi_get_form_data');
+    params.append('_ajax_nonce', glpiAjax.nonce);
+    const controller = new AbortController();
+    const t = setTimeout(() => controller.abort(), 10000);
+    loadingPromise = fetch(glpiAjax.url, {
+      method:'POST',
+      headers:{'Content-Type':'application/x-www-form-urlencoded'},
+      body: params.toString(),
+      signal: controller.signal
+    }).then(function(r){
+      if(!r.ok){
+        const e = new Error('HTTP '+r.status);
+        e.code = 'HTTP_'+r.status;
+        throw e;
+      }
+      return r.json();
+    }).then(function(data){
+      if (!data || !data.ok){
+        const e = new Error(data && data.message ? data.message : 'server_error');
+        e.code = data && data.error ? data.error : 'SERVER_ERROR';
+        throw e;
+      }
+      if (seq !== loadSeq) {
+        const e = new Error('stale');
+        e.code = 'STALE';
+        throw e;
+      }
+      window.__glpiFormData = data;
+      if (window.glpiDev) {
+        console.info('[glpi] form data', data.source, data.took_ms + 'ms', 'cats:' + (data.categories ? data.categories.length : 0), 'locs:' + (data.locations ? data.locations.length : 0));
+      }
+      return data;
+    }).finally(function(){
+      clearTimeout(t);
+      loadingPromise = null;
+      if (window.__glpiFormDataLoading === seq) window.__glpiFormDataLoading = null;
+    });
+    return loadingPromise;
   }
 
   function open(){
     buildModal();
     modal.classList.add('open');
     document.body.classList.add('glpi-modal-open');
-    if (window.__glpiFormData && window.__glpiFormData.categories && window.__glpiFormData.locations) {
+    if (window.__glpiFormData && window.__glpiFormData.ok && window.__glpiFormData.categories && window.__glpiFormData.locations) {
       fillDropdowns(window.__glpiFormData);
       lockForm(false);
     } else {
       lockForm(true);
       showLoading();
-      fetchFormData().then(function(){
+      fetchFormData().then(function(data){
         hideLoader();
         lockForm(false);
-        fillDropdowns(window.__glpiFormData);
+        fillDropdowns(data);
         updateSubmitState();
       }).catch(function(err){
         logClientError(err && err.message ? err.message : String(err));
-        showError();
+        showError(err && err.code ? err.code : 'LOAD_FAILED');
       });
     }
     updateSubmitState();
