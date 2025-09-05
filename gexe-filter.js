@@ -100,16 +100,16 @@
     });
   }
 
-  /* ========================= «Пора тушить» и «Новая заявка» ========================= */
+  /* ========================= «Просрочены» и «Новая заявка» ========================= */
   function ensureExtraStatusBlocks() {
-    const row = document.querySelector('.glpi-status-blocks,.glpi-status-row,.glpi-header-row');
+    const row = document.querySelector('.glpi-status-blocks');
     if (!row) return;
 
-    // Кнопка «Пора тушить»: действует как фильтр по data-late="1"
+    // Кнопка «Просрочены»: действует как фильтр по data-late="1"
     if (!document.querySelector('.glpi-newfilter-block')) {
       const btn = document.createElement('button');
       btn.className = 'glpi-status-block glpi-newfilter-block';
-      btn.innerHTML = '<div class="status-count">0</div><div class="status-label">Пора тушить</div>';
+      btn.innerHTML = '<div class="status-count">0</div><div class="status-label">Просрочены</div>';
       btn.addEventListener('click', () => {
         btn.classList.toggle('active');
         document.dispatchEvent(new CustomEvent('gexe:filters:changed'));
@@ -156,7 +156,7 @@
       const tgl = document.createElement('button');
       tgl.className = 'glpi-cat-toggle';
       tgl.setAttribute('aria-expanded','false');
-      tgl.innerHTML = '<span class="tw">▸</span> Сегодня в программе';
+      tgl.innerHTML = '<span class="tw">▸</span> Категории';
       const header = document.querySelector('.glpi-header-row');
       const statusRow = header && header.querySelector('.glpi-status-row');
       if (header) {

@@ -75,7 +75,7 @@ body {
 .glpi-badge.printer{background:#3b82f6}.glpi-badge.po{background:#f59e0b}.glpi-badge.network{background:#10b981}.glpi-badge.infosec{background:#a855f7}.glpi-badge.ebmias{background:#ec4899}.glpi-badge.default{background:#6b7280}
 
 /* === ПАНЕЛЬ ФИЛЬТРАЦИИ === */
-.glpi-filtering-panel { padding: 16px 24px; position: sticky; top: 0; z-index: 100; margin-bottom: 46px; background: transparent; }
+.glpi-filtering-panel { padding: 16px 24px; position: sticky; top: 0; z-index: 100; margin-bottom: 80px; background: transparent; }
 .glpi-header-row { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; justify-content: flex-start; margin-bottom: 12px; }
 
 /* Поиск — на всю ширину и всегда сверху */
@@ -124,7 +124,7 @@ body {
 .glpi-status-block.active .status-label,
 .glpi-newfilter-block.active .status-label{ color:#111827; opacity:1; font-weight:700; }
 
-/* Теги «Сегодня в программе» (категории) */
+/* Категории */
 .glpi-cat-toggle{
   display:flex;
   align-items:center;
@@ -145,7 +145,7 @@ body {
 }
 .glpi-cat-toggle:hover{ transform:translateY(-2px); background:#273447; box-shadow:0 4px 14px rgba(0,0,0,.3); }
 .glpi-cat-toggle .tw{font-size:14px;opacity:.85}
-.glpi-category-tags{ margin-top:8px; margin-bottom:14px; display:flex; flex-wrap:wrap; gap:10px; }
+.glpi-category-tags{ margin-top:8px; margin-bottom:24px; display:flex; flex-wrap:wrap; gap:10px; }
 .glpi-category-tags.collapsed{ display:none; }
 .glpi-category-tag{
   display:inline-flex; align-items:center; gap:8px; padding:8px 12px; font-size:13px; line-height:1;
