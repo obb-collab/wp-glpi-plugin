@@ -40,8 +40,6 @@ function gexe_glpi_dropdowns() {
 
     global $glpi_db;
 
-    $include_branches = !empty($_POST['branches']);
-
     // Категории (полное имя)
     $cats = $glpi_db->get_results(
         "SELECT id, completename
@@ -52,9 +50,13 @@ function gexe_glpi_dropdowns() {
     $categories = [];
     if ($cats) {
         foreach ($cats as $c) {
+            $full = str_replace('ЦМСЧ № 120 ФМБА РФ / ', '', $c['completename']);
+            $parts = preg_split('/\s>\s/', $full);
+            $short = end($parts);
             $categories[] = [
                 'id'   => intval($c['id']),
-                'name' => $c['completename'],
+                'name' => $short,
+                'path' => $full,
             ];
         }
     }
@@ -65,11 +67,9 @@ function gexe_glpi_dropdowns() {
         'ЦМСЧ № 120 ФМБА РФ > Детская поликлиника',
         'ЦМСЧ № 120 ФМБА РФ > ОИРиТ внутрненние задачи',
         'ЦМСЧ № 120 ФМБА РФ > !Поликлиника для взрослых',
+        'Филиал МСЧ № 5',
+        'Филиал МСЧ № 6',
     ];
-    if ($include_branches) {
-        $entities[] = 'Филиал МСЧ № 5';
-        $entities[] = 'Филиал МСЧ № 6';
-    }
 
     $placeholders = implode(',', array_fill(0, count($entities), '%s'));
     $sql = "SELECT l.id, CONCAT(e.completename, ' / ', l.completename) AS fullname"
@@ -83,29 +83,33 @@ function gexe_glpi_dropdowns() {
     $locations = [];
     if ($locs) {
         foreach ($locs as $l) {
+            $full = str_replace('ЦМСЧ № 120 ФМБА РФ / ', '', $l['fullname']);
+            $full = str_replace('ЦМСЧ № 120 ФМБА РФ > ', '', $full);
+            $parts = preg_split('/\s[\/>]\s/', $full);
+            $short = end($parts);
             $locations[] = [
                 'id'   => intval($l['id']),
-                'name' => $l['fullname'],
+                'name' => $short,
+                'path' => $full,
             ];
         }
     }
 
     // Исполнители
     $mapping = [
-        ['wp_id' => 6,  'glpi_id' => 622, 'name' => 'Сушко В.'],
-        ['wp_id' => 4,  'glpi_id' => 621, 'name' => 'Скомороха А.'],
-        ['wp_id' => 5,  'glpi_id' => 269, 'name' => 'Смирнов М.'],
-        ['wp_id' => 7,  'glpi_id' => 180, 'name' => 'Кузнецов Е.'],
-        ['wp_id' => 1,  'glpi_id' => 2,   'name' => 'Куткин П.А.'],
-        ['wp_id' => 10, 'glpi_id' => 632, 'name' => 'Стельмашенко И.'],
-        ['wp_id' => 8,  'glpi_id' => 620, 'name' => 'Нечепорук А.'],
+        ['glpi_id' => 622, 'name' => 'Сушко Валентин'],
+        ['glpi_id' => 621, 'name' => 'Скомороха Анастасия'],
+        ['glpi_id' => 269, 'name' => 'Смирнов Максим'],
+        ['glpi_id' => 180, 'name' => 'Кузнецов Евгений'],
+        ['glpi_id' => 2,   'name' => 'Куткин Павел'],
+        ['glpi_id' => 632, 'name' => 'Стельмашенко Игнат'],
+        ['glpi_id' => 620, 'name' => 'Нечепорук Александр'],
     ];
     $executors = [];
     foreach ($mapping as $m) {
-        $user = get_user_by('ID', $m['wp_id']);
         $executors[] = [
             'id'   => (int)$m['glpi_id'],
-            'name' => $user ? $user->display_name : $m['name'],
+            'name' => $m['name'],
         ];
     }
 
