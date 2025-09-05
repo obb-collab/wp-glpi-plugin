@@ -43,9 +43,6 @@ add_action('wp_enqueue_scripts', function () {
     wp_enqueue_script('gexe-filter', plugin_dir_url(__FILE__) . 'gexe-filter.js', [], $js_ver, true);
 });
 
-// ====== ПОДКЛЮЧЕНИЕ К БД GLPI ======
-require_once __DIR__ . '/glpi-db-setup.php';
-
 // ====== УТИЛИТЫ ======
 function gexe_autoname($realname, $firstname) {
     $realname  = trim((string)$realname);
@@ -77,10 +74,7 @@ function gexe_slugify($text) {
 
 // ====== ШОРТКОД ======
 add_shortcode('glpi_cards_exe', 'gexe_glpi_cards_shortcode');
-
 function gexe_glpi_cards_shortcode($atts) {
-    global $glpi_db;
-
     // ---- Получаем привязку WP → GLPI ----
     $current_user   = wp_get_current_user();
     $glpi_user_key  = '';
@@ -89,105 +83,38 @@ function gexe_glpi_cards_shortcode($atts) {
     if ($current_user && $current_user->ID) {
         $glpi_user_key = trim((string)get_user_meta($current_user->ID, 'glpi_user_key', true));
         $glpi_show_all = (get_user_meta($current_user->ID, 'glpi_show_all_cards', true) === '1');
-        // Фоллбеки совместимости
         if ($glpi_user_key === '') { $glpi_user_key = trim((string)get_user_meta($current_user->ID, 'glpi_token', true)); }
         if ($glpi_user_key === '') { $glpi_user_key = trim((string)get_user_meta($current_user->ID, 'glpi_executor_id', true)); }
     }
 
-    // ---- Базовый запрос по активным тикетам ----
-    $where_status  = ' t.status IN (1,2,3,4) AND t.is_deleted = 0 ';
-    $join_assignee = ' LEFT JOIN glpi_tickets_users tu_ass ON t.id = tu_ass.tickets_id AND tu_ass.type = 2 ';
-    $join_req      = ' LEFT JOIN glpi_tickets_users tu_req ON t.id = tu_req.tickets_id AND tu_req.type = 1 ';
-    $join_user     = ' LEFT JOIN glpi_users u ON tu_ass.users_id = u.id ';
-    $join_cat      = ' LEFT JOIN glpi_itilcategories c ON t.itilcategories_id = c.id ';
-    $join_loc      = ' LEFT JOIN glpi_locations l ON t.locations_id = l.id ';
+    // ---- Получаем тикеты из кэша ----
+    $tickets = wp_cache_get('glpi_tickets', 'glpi');
+    if (!is_array($tickets)) {
+        $tickets = [];
+    }
 
-    $where_assignee = '';
-    $mode = 'all';
-
+    // ---- Фильтрация по сопоставленному пользователю ----
     if (!$glpi_show_all && $glpi_user_key !== '') {
-        if (preg_match('~^\d+$~', $glpi_user_key)) {
-            // Жёсткая фильтрация по users_id (GLPI)
-            $mode = 'assignee_id';
-            $where_assignee = $glpi_db->prepare(' AND tu_ass.users_id = %d ', (int)$glpi_user_key);
+        if (preg_match('~^\\d+$~', $glpi_user_key)) {
+            $uid = (int)$glpi_user_key;
+            $tickets = array_filter($tickets, function($t) use ($uid) {
+                $ids = isset($t['assignee_ids']) && is_array($t['assignee_ids']) ? $t['assignee_ids'] : [];
+                return in_array($uid, $ids, true);
+            });
         } elseif (preg_match('~^[a-f0-9]{32}$~i', $glpi_user_key)) {
-            // Фильтрация по md5 от форматированного имени — выполняем далее в PHP
-            $mode = 'assignee_md5';
+            $uk = strtolower($glpi_user_key);
+            $tickets = array_filter($tickets, function($t) use ($uk) {
+                $execs = isset($t['executors']) && is_array($t['executors']) ? $t['executors'] : [];
+                foreach ($execs as $nm) {
+                    if (md5($nm) === $uk) return true;
+                }
+                return false;
+            });
         }
     }
 
-    $sql = "
-        SELECT  t.id, t.status, t.time_to_resolve,
-                t.name, t.content, t.date,
-                tu_ass.users_id AS assignee_id,
-                tu_req.users_id AS author_id,
-                u.realname, u.firstname,
-                c.completename AS category_name,
-                l.completename AS location_name
-        FROM glpi_tickets t
-        $join_assignee
-        $join_req
-        $join_user
-        $join_cat
-        $join_loc
-        WHERE $where_status
-        $where_assignee
-        ORDER BY t.date DESC
-        LIMIT 500
-    ";
-
-    $t0   = microtime(true);
-    $rows = $glpi_db->get_results($sql);
-    $GLOBALS['gexe_query_times']['tickets'] = (int)round((microtime(true) - $t0) * 1000);
-
-    if (!$rows) {
+    if (empty($tickets)) {
         return '<p>Нет активных заявок.</p>';
-    }
-
-    // ---- Сборка карточек ----
-    $tickets = [];
-    foreach ($rows as $r) {
-        $id = (int)$r->id;
-        if (!isset($tickets[$id])) {
-            $tickets[$id] = [
-                'id'           => $id,
-                'status'       => (int)$r->status,
-                'name'         => (string)$r->name,
-                'content'      => (string)$r->content,
-                'date'         => (string)$r->date,
-                'category'     => (string)$r->category_name, // полное «Родитель > Дочерняя»
-                'location'     => (string)$r->location_name,
-                'executors'    => [],
-                'assignee_ids' => [],
-                'author_id'    => (int)$r->author_id,
-                'late'         => ($r->time_to_resolve && strtotime($r->time_to_resolve) < time()),
-            ];
-        }
-
-        // Имя исполнителя
-        $exec_name = gexe_autoname($r->realname, $r->firstname);
-        if ($exec_name && !in_array($exec_name, $tickets[$id]['executors'], true)) {
-            $tickets[$id]['executors'][] = $exec_name;
-        }
-
-        // ID исполнителя (без дублей и без пустых)
-        if ($r->assignee_id !== null && $r->assignee_id !== '') {
-            $aid = (int)$r->assignee_id;
-            if ($aid && !in_array($aid, $tickets[$id]['assignee_ids'], true)) {
-                $tickets[$id]['assignee_ids'][] = $aid;
-            }
-        }
-    }
-
-    // ---- Фильтрация по md5, если задан этот режим ----
-    if ($mode === 'assignee_md5') {
-        $uk = strtolower($glpi_user_key);
-        $tickets = array_filter($tickets, function ($t) use ($uk) {
-            foreach ($t['executors'] as $nm) {
-                if (md5($nm) === $uk) return true;
-            }
-            return false;
-        });
     }
 
     // ---- Статистика по статусам (для меню) ----
@@ -198,45 +125,33 @@ function gexe_glpi_cards_shortcode($atts) {
     }
     $total_count = array_sum($status_counts);
 
-    // ---- Предзагрузка комментариев для задач текущего исполнителя ----
+    // ---- Предзагрузка комментариев отключена, используем пустой массив ----
     $prefetched_comments = [];
-    $current_glpi_id = gexe_get_current_glpi_uid();
-    if ($current_glpi_id > 0) {
-        foreach ($tickets as $t) {
-            if (in_array($current_glpi_id, $t['assignee_ids'], true)) {
-                $data = gexe_render_comments((int)$t['id']);
-                $data['count'] = gexe_get_comment_count((int)$t['id']);
-                $prefetched_comments[$t['id']] = $data;
-            }
-        }
-    }
 
     // ---- Map исполнителей (для фильтра «Сегодня в программе», когда show_all = true) ----
     $executors_map = [];
     foreach ($tickets as $t) {
-        foreach ($t['executors'] as $e) {
+        $execs = isset($t['executors']) && is_array($t['executors']) ? $t['executors'] : [];
+        foreach ($execs as $e) {
             $executors_map[$e] = md5($e);
         }
     }
     ksort($executors_map, SORT_NATURAL | SORT_FLAG_CASE);
 
     // ---- Группировка по дочерним категориям (когда show_all = false) ----
-    $category_counts = [];   // 'Ремонт' => 12
-    $category_slugs  = [];   // 'Ремонт' => 'remont'
+    $category_counts = [];
+    $category_slugs  = [];
     foreach ($tickets as $t) {
         $full = (string)$t['category'];
-        // делим по ">" или " > "
-        $parts = preg_split('/\s*>\s*/u', $full);
+        $parts = preg_split('/\\s*>\\s*/u', $full);
         $leaf  = trim((string)end($parts));
         if ($leaf === '') $leaf = $full ?: '—';
         if (!isset($category_counts[$leaf])) $category_counts[$leaf] = 0;
         $category_counts[$leaf]++;
-
         if (!isset($category_slugs[$leaf])) {
             $category_slugs[$leaf] = gexe_slugify($leaf);
         }
     }
-    // сортировка категорий по алфавиту
     if (!empty($category_counts)) {
         uksort($category_counts, function($a,$b){
             return strnatcasecmp($a, $b);
@@ -263,6 +178,7 @@ function gexe_glpi_cards_shortcode($atts) {
     include $tpl;
     return ob_get_clean();
 }
+
 
 // ====== ПОЛЯ ПРОФИЛЯ WP-ПОЛЬЗОВАТЕЛЯ ======
 add_action('show_user_profile',  'gexe_show_glpi_profile_fields');
@@ -302,8 +218,6 @@ function gexe_save_glpi_profile_fields($user_id) {
 
 // ====== ПРОЧИЕ ФАЙЛЫ ПЛАГИНА ======
 require_once __DIR__ . '/gexe-executor-lock.php';
-require_once __DIR__ . '/glpi-categories-shortcode.php';
 require_once __DIR__ . '/glpi-modal-actions.php';
 require_once __DIR__ . '/glpi-icon-map.php';
-require_once __DIR__ . '/glpi-new-task.php';
 
