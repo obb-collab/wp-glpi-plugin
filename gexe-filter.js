@@ -462,17 +462,39 @@
     if (!doneModal) return;
     const id = Number(doneModal.getAttribute('data-ticket-id') || '0');
     if (!id) return;
-    closeDoneModal();
-    doCardAction('done', id, { solution_text: 'Выполнено' }).then(ok => {
-      if (ok) {
-        const card = document.querySelector('.glpi-card[data-ticket-id="'+id+'"]');
-        if (card) {
-          card.setAttribute('data-status', '5');
-          card.classList.add('gexe-hide');
-          recalcStatusCounts(); filterCards();
+    const btn = $('#gexe-done-confirm', doneModal);
+    if (btn) btn.disabled = true;
+    const fd = new FormData();
+    fd.append('action', 'glpi_mark_solved');
+    fd.append('_ajax_nonce', (window.glpiAjax && glpiAjax.nonce) || '');
+    fd.append('ticket_id', String(id));
+    fd.append('solution_text', 'Задача решена');
+    fetch(glpiAjax.url, { method: 'POST', body: fd })
+      .then(r => r.json())
+      .then(resp => {
+        if (resp && resp.ok) {
+          closeDoneModal();
+          const card = document.querySelector('.glpi-card[data-ticket-id="'+id+'"]');
+          if (card) {
+            card.setAttribute('data-status', String(glpiAjax.solvedStatus || 6));
+            let badge = card.querySelector('.glpi-solved-badge');
+            if (!badge) {
+              badge = document.createElement('div');
+              badge.className = 'glpi-solved-badge';
+              badge.textContent = 'Решено';
+              card.appendChild(badge);
+            }
+            card.classList.add('gexe-hide');
+            recalcStatusCounts(); filterCards();
+          }
+        } else {
+          alert('Не удалось отметить задачу как решённую');
         }
-      }
-    });
+      })
+      .catch(() => {
+        alert('Ошибка сети');
+      })
+      .finally(() => { if (btn) btn.disabled = false; });
   }
 
   /* ========================= ДЕЙСТВИЯ ПО КАРТОЧКЕ (AJAX) ========================= */
