@@ -44,7 +44,10 @@ add_action('wp_enqueue_scripts', function () {
 });
 
 // ====== ПОДКЛЮЧЕНИЕ К БД GLPI ======
-require_once __DIR__ . '/glpi-db-setup.php';
+require_once __DIR__ . '/glpi-utils.php';
+global $glpi_db, $glpi_db_ro;
+$glpi_db    = gexe_glpi_db();      // master for writes
+$glpi_db_ro = gexe_glpi_db('ro');  // local replica for reads
 
 // ====== УТИЛИТЫ ======
 function gexe_autoname($realname, $firstname) {
@@ -79,7 +82,7 @@ function gexe_slugify($text) {
 add_shortcode('glpi_cards_exe', 'gexe_glpi_cards_shortcode');
 
 function gexe_glpi_cards_shortcode($atts) {
-    global $glpi_db;
+    $glpi_db = gexe_glpi_db('ro');
 
     // ---- Получаем привязку WP → GLPI ----
     $current_user   = wp_get_current_user();
