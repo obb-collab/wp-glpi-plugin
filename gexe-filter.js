@@ -237,7 +237,10 @@
         let html;
         try { html = JSON.parse(text); } catch (e) { html = text; }
         const box = $('#gexe-comments');
-        if (box) box.innerHTML = html;
+        if (box) {
+          box.innerHTML = html;
+          updateAgeFooters();
+        }
       })
       .catch(()=>{});
   }
@@ -562,7 +565,7 @@
     return { text: days + ' ' + plural(days), cls };
   }
   function updateAgeFooters() {
-    $$('.glpi-date-footer').forEach(el => {
+    $$('.glpi-date-footer, .glpi-comment-date').forEach(el => {
       const r = ageInfo(el.getAttribute('data-date') || '');
       el.textContent = r.text;
       el.classList.remove('age-green','age-red','age-orange','age-blue','age-black');

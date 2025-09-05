@@ -181,7 +181,7 @@ function gexe_render_comments($ticket_id, $page = 1, $per_page = 20) {
         $out .= '<div class="glpi-comment">'
               .   '<div class="meta">'
               .     '<span class="glpi-comment-author"><i class="fa-regular fa-user"></i> ' . esc_html($who) . '</span>'
-              .     '<span class="glpi-comment-date">' . $when . '</span>'
+              .     '<span class="glpi-comment-date" data-date="' . $when . '"></span>'
               .   '</div>'
               .   '<div class="text">' . $txt . '</div>'
               . '</div>';
