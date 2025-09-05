@@ -22,6 +22,46 @@
     };
   };
 
+  /* ========================= КЭШ КОММЕНТАРИЕВ ========================= */
+  const PREFETCH_COUNT = 3;
+  const COMMENT_CACHE_TTL = 5 * 60 * 1000; // 5 минут
+
+  const storage = (function () {
+    try {
+      return window.sessionStorage;
+    } catch (e) {
+      return null;
+    }
+  })();
+
+  function commentsCacheKey(id, page) {
+    return 'gexe_comments_' + id + '_' + page;
+  }
+
+  function getCachedComments(id, page = 1) {
+    if (!storage) return null;
+    try {
+      const raw = storage.getItem(commentsCacheKey(id, page));
+      if (!raw) return null;
+      const obj = JSON.parse(raw);
+      if (!obj || typeof obj !== 'object') return null;
+      if (Date.now() - obj.ts > COMMENT_CACHE_TTL) {
+        storage.removeItem(commentsCacheKey(id, page));
+        return null;
+      }
+      return obj.data;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function setCachedComments(id, page, data) {
+    if (!storage) return;
+    try {
+      storage.setItem(commentsCacheKey(id, page), JSON.stringify({ ts: Date.now(), data }));
+    } catch (e) {}
+  }
+
   /* ========================= ПОИСК (СОЗДАТЬ СВЕРХУ) ========================= */
   function ensureSearchOnTop() {
     const root = document.querySelector('.glpi-filtering-panel .glpi-header-row')
@@ -288,29 +328,55 @@
     if (box) box.innerHTML = '';
     const modalCntInit = modalEl && modalEl.querySelector('.glpi-modal__comments-title .gexe-cmnt-count');
     if (modalCntInit) modalCntInit.textContent = '0';
+    const cached = getCachedComments(ticketId, page);
+    if (cached) {
+      applyCommentsData(ticketId, cached);
+      return;
+    }
     const url = base + 'comments?ticket_id=' + encodeURIComponent(ticketId) + '&page=' + page + '&_=' + Date.now();
     if (commentsController) commentsController.abort();
     commentsController = new AbortController();
     fetch(url, { headers: { 'X-WP-Nonce': nonce, 'Cache-Control': 'no-cache' }, signal: commentsController.signal })
       .then(r => r.json())
       .then(data => {
-        const box = $('#gexe-comments');
-        if (box) {
-          box.innerHTML = data && data.html ? data.html : '';
-          updateAgeFooters();
-        }
-        if (data && typeof data.count === 'number') {
-          const modalCnt = modalEl && modalEl.querySelector('.glpi-modal__comments-title .gexe-cmnt-count');
-          if (modalCnt) modalCnt.textContent = String(data.count);
-          const cardCnt = document.querySelector('.glpi-card[data-ticket-id="'+ticketId+'"] .gexe-cmnt-count');
-          if (cardCnt) cardCnt.textContent = String(data.count);
-        }
-        if (data && typeof data.time_ms === 'number') {
-          const stat = document.getElementById('glpi-comments-time');
-          if (stat) stat.textContent = String(data.time_ms);
-        }
+        setCachedComments(ticketId, page, data);
+        applyCommentsData(ticketId, data);
       })
       .catch(()=>{});
+  }
+
+  function applyCommentsData(ticketId, data) {
+    const box = $('#gexe-comments');
+    if (box) {
+      box.innerHTML = data && data.html ? data.html : '';
+      updateAgeFooters();
+    }
+    if (data && typeof data.count === 'number') {
+      const modalCnt = modalEl && modalEl.querySelector('.glpi-modal__comments-title .gexe-cmnt-count');
+      if (modalCnt) modalCnt.textContent = String(data.count);
+      const cardCnt = document.querySelector('.glpi-card[data-ticket-id="'+ticketId+'"] .gexe-cmnt-count');
+      if (cardCnt) cardCnt.textContent = String(data.count);
+    }
+    if (data && typeof data.time_ms === 'number') {
+      const stat = document.getElementById('glpi-comments-time');
+      if (stat) stat.textContent = String(data.time_ms);
+    }
+  }
+
+  function prefetchVisibleComments(limit = PREFETCH_COUNT) {
+    const base = window.glpiAjax && glpiAjax.rest;
+    const nonce = window.glpiAjax && glpiAjax.restNonce;
+    if (!base || !nonce) return;
+    const cards = $$('.glpi-card:not(.gexe-hide)');
+    cards.slice(0, limit).forEach(card => {
+      const id = card.getAttribute('data-ticket-id');
+      if (!id || getCachedComments(id, 1)) return;
+      const url = base + 'comments?ticket_id=' + encodeURIComponent(id) + '&page=1&_=' + Date.now();
+      fetch(url, { headers: { 'X-WP-Nonce': nonce, 'Cache-Control': 'no-cache' } })
+        .then(r => r.json())
+        .then(data => { setCachedComments(id, 1, data); })
+        .catch(()=>{});
+    });
   }
 
   /* ========================= МОДАЛКА КОММЕНТАРИЯ ========================= */
@@ -746,6 +812,7 @@
     recalcStatusCounts();
     recalcCategoryVisibility();
     filterCards();
+    prefetchVisibleComments();
     updateAgeFooters();
     setInterval(updateAgeFooters, 30 * 60 * 1000); // каждые 30 минут
 

@@ -14,12 +14,19 @@ register_activation_hook(__FILE__, function () {
     if ($role) {
         $role->add_cap('create_glpi_ticket');
     }
+    if (!wp_next_scheduled('gexe_warm_comments_cache')) {
+        wp_schedule_event(time() + MINUTE_IN_SECONDS, 'hourly', 'gexe_warm_comments_cache');
+    }
 });
 
 register_deactivation_hook(__FILE__, function () {
     $role = get_role('administrator');
     if ($role) {
         $role->remove_cap('create_glpi_ticket');
+    }
+    $ts = wp_next_scheduled('gexe_warm_comments_cache');
+    if ($ts) {
+        wp_unschedule_event($ts, 'gexe_warm_comments_cache');
     }
 });
 
