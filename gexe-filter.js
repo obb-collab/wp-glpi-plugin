@@ -570,7 +570,7 @@
             delete pendingComments[ticketId];
             lockAction(ticketId, 'comment', false);
             updateAgeFooters();
-          } else if (attempts * 2000 >= 30000) {
+          } else if (attempts >= 2) {
             const st = $('.glpi-comment-status', info.el);
             if (st) st.textContent = 'Отправлено, будет видно позже';
             info.el.classList.add('glpi-comment--stopped');
@@ -580,7 +580,7 @@
           }
         })
         .catch(() => {
-          if (attempts * 2000 >= 30000) {
+          if (attempts >= 2) {
             const st = $('.glpi-comment-status', info.el);
             if (st) st.textContent = 'Отправлено, будет видно позже';
             info.el.classList.add('glpi-comment--stopped');
@@ -589,7 +589,7 @@
             lockAction(ticketId, 'comment', false);
           }
         });
-    }, 2000);
+    }, 1500);
   }
 
   /* ========================= МОДАЛКА КОММЕНТАРИЯ ========================= */
@@ -654,19 +654,19 @@
     const actionId = crypto.randomUUID();
     addPendingComment(id, txt, actionId);
     const fd = new FormData();
-    fd.append('action', 'glpi_add_comment');
-    fd.append('_ajax_nonce', nonce);
+    fd.append('action', 'glpi_comment_add');
+    fd.append('nonce', nonce);
     fd.append('ticket_id', String(id));
     fd.append('content', txt);
     fd.append('action_id', actionId);
     fetch(url, { method: 'POST', body: fd })
       .then(r => r.json())
       .then(resp => {
-        if (resp && resp.success) {
+        if (resp && resp.ok) {
           if (window.gexePrefetchedComments) delete window.gexePrefetchedComments[id];
           applyActionVisibility();
           refreshTicketMeta(id);
-          markPendingSent(id, resp.data && resp.data.followup_id, resp.data && resp.data.created_at);
+          markPendingSent(id, resp.followup_id, resp.created_at);
         } else {
           const pend = pendingComments[id];
           if (pend) { pend.el.remove(); delete pendingComments[id]; }

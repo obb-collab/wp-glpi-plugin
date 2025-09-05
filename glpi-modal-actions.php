@@ -624,46 +624,73 @@ function gexe_refresh_actions_nonce() {
 }
 
 /* -------- AJAX: добавить комментарий -------- */
-add_action('wp_ajax_glpi_add_comment', 'gexe_glpi_add_comment');
-function gexe_glpi_add_comment() {
-    check_ajax_referer('gexe_actions');
+add_action('wp_ajax_glpi_comment_add', 'gexe_glpi_comment_add');
+function gexe_glpi_comment_add() {
+    if (!check_ajax_referer('gexe_actions', 'nonce', false)) {
+        wp_send_json(['ok' => false, 'code' => 'AJAX_FORBIDDEN'], 403);
+    }
+    if (!current_user_can('read')) {
+        wp_send_json(['ok' => false, 'code' => 'AJAX_FORBIDDEN'], 403);
+    }
 
     $ticket_id = isset($_POST['ticket_id']) ? intval($_POST['ticket_id']) : 0;
     $content   = isset($_POST['content']) ? (string) $_POST['content'] : '';
-    $is_private = !empty($_POST['is_private']) ? 1 : 0;
     $action_id = isset($_POST['action_id']) ? sanitize_text_field($_POST['action_id']) : '';
 
     if ($ticket_id <= 0 || trim($content) === '') {
-        wp_send_json_error(['message' => 'bad_request']);
+        wp_send_json(['ok' => false, 'code' => 'VALIDATION', 'message' => 'bad_request']);
     }
     if (!gexe_can_touch_glpi_ticket($ticket_id)) {
-        wp_send_json_error(['message' => 'forbidden']);
+        wp_send_json(['ok' => false, 'code' => 'AJAX_FORBIDDEN', 'message' => 'forbidden'], 403);
+    }
+    if ($action_id !== '') {
+        $content .= "\n<!--" . $action_id . "-->";
     }
 
+    $method = strtoupper(get_option('glpi_comment_method', 'REST'));
+    if ($method === 'SQL') {
+        $res = gexe_add_followup_sql($ticket_id, $content);
+        if ($res['ok']) {
+            gexe_clear_comments_cache($ticket_id);
+            $created_at = current_time('mysql');
+            wp_send_json([
+                'ok'         => true,
+                'action'     => 'comment',
+                'ticket_id'  => $ticket_id,
+                'followup_id'=> $res['followup_id'],
+                'created_at' => $created_at,
+            ]);
+        }
+        if ($res['code'] === 'SQL_ERROR' && get_option('glpi_comment_fallback_rest')) {
+            // try REST fallback once
+            $method = 'REST';
+        } else {
+            wp_send_json(['ok' => false, 'code' => $res['code'], 'message' => $res['message'] ?? '']);
+        }
+    }
+
+    // REST branch
     $payload = [
         'itemtype'   => 'Ticket',
         'items_id'   => $ticket_id,
         'content'    => $content,
-        'is_private' => $is_private ? 1 : 0,
+        'is_private' => 0,
     ];
-    if ($action_id !== '') {
-        $payload['content'] .= "\n<!--" . $action_id . "-->";
-    }
     $t0   = microtime(true);
     $resp = gexe_glpi_rest_request('ticket_comment ' . $ticket_id, 'POST', '/ITILFollowup/', [
         'input' => $payload,
     ]);
-    $elapsed_ms = (int)round((microtime(true) - $t0) * 1000);
+    $elapsed_ms = (int) round((microtime(true) - $t0) * 1000);
     if (is_wp_error($resp)) {
         gexe_log_action('[comment.create] ticket=' . $ticket_id . ' http=0 elapsed=' . $elapsed_ms . 'ms id=0');
-        wp_send_json_error(['message' => 'network_error']);
+        wp_send_json(['ok' => false, 'code' => 'NETWORK', 'message' => 'network_error']);
     }
     $code = wp_remote_retrieve_response_code($resp);
     if ($code >= 300) {
         $body  = wp_remote_retrieve_body($resp);
         $short = mb_substr(trim($body), 0, 200);
         gexe_log_action('[comment.create] ticket=' . $ticket_id . ' http=' . $code . ' elapsed=' . $elapsed_ms . 'ms id=0');
-        wp_send_json_error(['message' => $short]);
+        wp_send_json(['ok' => false, 'code' => 'HTTP_' . $code, 'message' => $short]);
     }
 
     $body_data = json_decode(wp_remote_retrieve_body($resp), true);
@@ -675,19 +702,15 @@ function gexe_glpi_add_comment() {
             $followup_id = intval($body_data['data']['id']);
         }
     }
-
     $created_at = current_time('mysql');
     gexe_log_action('[comment.create] ticket=' . $ticket_id . ' http=' . $code . ' elapsed=' . $elapsed_ms . 'ms id=' . $followup_id);
 
-    gexe_clear_comments_cache($ticket_id); // refresh caches after add
-    $count = gexe_get_comment_count($ticket_id);
-
-    wp_send_json_success([
-        'count'        => $count,
-        'refresh_meta' => true,
-        'followup_id'  => $followup_id,
-        'ticket_id'    => $ticket_id,
-        'created_at'   => $created_at,
-        'action_id'    => $action_id,
+    gexe_clear_comments_cache($ticket_id);
+    wp_send_json([
+        'ok'         => true,
+        'action'     => 'comment',
+        'ticket_id'  => $ticket_id,
+        'followup_id'=> $followup_id,
+        'created_at' => $created_at,
     ]);
 }
