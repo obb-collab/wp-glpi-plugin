@@ -153,7 +153,7 @@ function gexe_cat_slug($leaf) {
 
   <!-- Карточки -->
   <div class="glpi-wrapper">
-    <?php foreach ($tickets as $t): 
+    <?php foreach ($tickets as $t):
       $slug_list     = array_map('md5', $t['executors']);
       $slug_str      = implode(',', $slug_list);
       $assignees     = array_map('intval', $t['assignee_ids'] ?? []);
@@ -222,6 +222,11 @@ function gexe_cat_slug($leaf) {
         <div class="glpi-date-footer" data-date="<?php echo esc_attr((string)$t['date']); ?>"></div>
       </div>
     <?php endforeach; ?>
+  </div>
+
+  <div id="glpi-query-stats" class="glpi-query-stats">
+    <div>Задачи: <span id="glpi-task-time"><?php echo intval($GLOBALS['gexe_query_times']['tickets'] ?? 0); ?></span> мс</div>
+    <div>Комментарии: <span id="glpi-comments-time">0</span> мс</div>
   </div>
 
 </div>
