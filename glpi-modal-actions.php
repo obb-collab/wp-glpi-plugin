@@ -492,18 +492,20 @@ function gexe_glpi_card_action() {
 
 add_action('wp_ajax_glpi_ticket_accept_sql', 'gexe_glpi_ticket_accept_sql');
 function gexe_glpi_ticket_accept_sql() {
+    $wp_uid = get_current_user_id();
     if (!check_ajax_referer('gexe_actions', 'nonce', false)) {
-        wp_send_json(['error' => 'invalid_nonce'], 403);
+        error_log('[accept] nonce_failed ticket=' . intval($_POST['ticket_id'] ?? 0) . ' wp=' . $wp_uid . ' glpi=0');
+        wp_send_json(['error' => 'nonce_failed'], 403);
     }
 
     if (!is_user_logged_in()) {
-        gexe_log_action('[accept.sql] result=fail code=not_logged_in');
+        error_log('[accept] not_logged_in ticket=' . intval($_POST['ticket_id'] ?? 0) . ' wp=' . $wp_uid . ' glpi=0');
         wp_send_json(['error' => 'not_logged_in'], 401);
     }
 
-    $author_glpi = gexe_get_current_glpi_user_id(get_current_user_id());
+    $author_glpi = gexe_get_current_glpi_user_id($wp_uid);
     if ($author_glpi <= 0) {
-        gexe_log_action('[accept.sql] result=fail code=no_glpi_id');
+        error_log('[accept] no_glpi_id_for_current_user ticket=' . intval($_POST['ticket_id'] ?? 0) . ' wp=' . $wp_uid . ' glpi=0');
         wp_send_json(['error' => 'no_glpi_id_for_current_user'], 422);
     }
 
@@ -511,6 +513,7 @@ function gexe_glpi_ticket_accept_sql() {
     $assignee    = isset($_POST['assignee_glpi_id']) ? intval($_POST['assignee_glpi_id']) : 0;
     $add_comment = isset($_POST['add_comment']) ? intval($_POST['add_comment']) : 1;
     if ($ticket_id <= 0) {
+        error_log('[accept] ticket_not_found ticket=' . $ticket_id . ' wp=' . $wp_uid . ' glpi=' . $author_glpi);
         wp_send_json(['error' => 'ticket_not_found'], 404);
     }
 
@@ -518,7 +521,7 @@ function gexe_glpi_ticket_accept_sql() {
         $assignee = $author_glpi;
     }
     if ($assignee <= 0) {
-        gexe_log_action('[accept.sql] ticket=' . $ticket_id . ' result=fail code=no_glpi_id');
+        error_log('[accept] no_glpi_id_for_current_user ticket=' . $ticket_id . ' wp=' . $wp_uid . ' glpi=' . $author_glpi);
         wp_send_json(['error' => 'no_glpi_id_for_current_user'], 422);
     }
 
@@ -535,7 +538,7 @@ function gexe_glpi_ticket_accept_sql() {
         ARRAY_A
     );
     if (!$row) {
-        gexe_log_action('[accept.sql] ticket=' . $ticket_id . ' result=fail code=ticket_not_found');
+        error_log('[accept] ticket_not_found ticket=' . $ticket_id . ' wp=' . $wp_uid . ' glpi=' . $author_glpi);
         wp_send_json(['error' => 'ticket_not_found'], 404);
     }
     $entities_id = (int) $row['entities_id'];
@@ -561,7 +564,8 @@ function gexe_glpi_ticket_accept_sql() {
             $glpi_db->query('ROLLBACK');
             $elapsed = (int) round((microtime(true) - $start) * 1000);
             gexe_log_action(sprintf('[accept.sql] ticket=%d assignee=%d followup=0 status=2 elapsed=%dms result=fail code=sql_error msg="%s"', $ticket_id, $assignee, $elapsed, $err));
-            wp_send_json(['error' => 'sql_error', 'details' => mb_substr($err, 0, 200)], 500);
+            error_log('[accept] sql_error assignee_insert_failed ticket=' . $ticket_id . ' wp=' . $wp_uid . ' glpi=' . $author_glpi . ' sql=' . $err);
+            wp_send_json(['error' => 'sql_error', 'details' => 'assignee_insert_failed'], 500);
         }
     }
 
@@ -571,8 +575,10 @@ function gexe_glpi_ticket_accept_sql() {
             $glpi_db->query('ROLLBACK');
             if (($res['code'] ?? '') === 'SQL_ERROR') {
                 gexe_log_action(sprintf('[accept.sql] ticket=%d assignee=%d followup=0 status=2 result=fail code=sql_error msg="%s"', $ticket_id, $assignee, $res['message'] ?? ''));
-                wp_send_json(['error' => 'sql_error', 'details' => mb_substr($res['message'] ?? '', 0, 200)], 500);
+                error_log('[accept] sql_error followup_insert_failed ticket=' . $ticket_id . ' wp=' . $wp_uid . ' glpi=' . $author_glpi . ' sql=' . ($res['message'] ?? ''));
+                wp_send_json(['error' => 'sql_error', 'details' => 'followup_insert_failed'], 500);
             }
+            error_log('[accept] ' . ($res['code'] ?? 'error') . ' ticket=' . $ticket_id . ' wp=' . $wp_uid . ' glpi=' . $author_glpi);
             wp_send_json(['error' => $res['code'] ?? 'error'], 422);
         }
         $followup_id = (int) ($res['followup_id'] ?? 0);
@@ -585,7 +591,8 @@ function gexe_glpi_ticket_accept_sql() {
             $glpi_db->query('ROLLBACK');
             $elapsed = (int) round((microtime(true) - $start) * 1000);
             gexe_log_action(sprintf('[accept.sql] ticket=%d assignee=%d followup=%d status=2 elapsed=%dms result=fail code=sql_error msg="%s"', $ticket_id, $assignee, $followup_id, $elapsed, $err));
-            wp_send_json(['error' => 'sql_error', 'details' => mb_substr($err, 0, 200)], 500);
+            error_log('[accept] sql_error status_update_failed ticket=' . $ticket_id . ' wp=' . $wp_uid . ' glpi=' . $author_glpi . ' sql=' . $err);
+            wp_send_json(['error' => 'sql_error', 'details' => 'status_update_failed'], 500);
         }
     }
 
@@ -594,25 +601,23 @@ function gexe_glpi_ticket_accept_sql() {
     $elapsed = (int) round((microtime(true) - $start) * 1000);
     gexe_log_action(sprintf('[accept.sql] ticket=%d assignee=%d followup=%d status=2 elapsed=%dms result=ok', $ticket_id, $assignee, $followup_id, $elapsed));
 
-    $response = [
-        'ok'               => true,
+    $payload = [
         'ticket_id'        => $ticket_id,
         'assigned_glpi_id' => $assignee,
         'status'           => 2,
     ];
     if ($followup_id > 0) {
-        $response['followup'] = [
-            'id'        => $followup_id,
-            'items_id'  => $ticket_id,
-            'users_id'  => $assignee,
-            'content'   => 'Принято в работу',
-            'date'      => $created_at,
+        $payload['followup'] = [
+            'id'       => $followup_id,
+            'content'  => 'Принято в работу',
+            'date'     => $created_at,
+            'users_id' => $assignee,
         ];
     }
     if ($already_comment || $already_status) {
-        $response['already'] = true;
+        $payload['already'] = true;
     }
-    wp_send_json($response);
+    wp_send_json(['ok' => true, 'payload' => $payload]);
 }
 
 add_action('wp_ajax_gexe_refresh_actions_nonce', 'gexe_refresh_actions_nonce');
@@ -631,32 +636,36 @@ function gexe_refresh_actions_nonce() {
 /* -------- AJAX: добавить комментарий -------- */
 add_action('wp_ajax_glpi_comment_add', 'gexe_glpi_comment_add');
 function gexe_glpi_comment_add() {
+    $wp_uid = get_current_user_id();
     if (!check_ajax_referer('gexe_actions', 'nonce', false)) {
-        wp_send_json(['error' => 'invalid_nonce'], 403);
+        error_log('[comment] nonce_failed ticket=' . intval($_POST['ticket_id'] ?? 0) . ' wp=' . $wp_uid . ' glpi=0');
+        wp_send_json(['error' => 'nonce_failed'], 403);
     }
     if (!is_user_logged_in()) {
-        gexe_log_action('[comment.sql] result=fail code=not_logged_in');
+        error_log('[comment] not_logged_in ticket=' . intval($_POST['ticket_id'] ?? 0) . ' wp=' . $wp_uid . ' glpi=0');
         wp_send_json(['error' => 'not_logged_in'], 401);
     }
-    $author_glpi = gexe_get_current_glpi_user_id(get_current_user_id());
+    $author_glpi = gexe_get_current_glpi_user_id($wp_uid);
     if ($author_glpi <= 0) {
-        gexe_log_action('[comment.sql] result=fail code=no_glpi_id');
+        error_log('[comment] no_glpi_id_for_current_user ticket=' . intval($_POST['ticket_id'] ?? 0) . ' wp=' . $wp_uid . ' glpi=0');
         wp_send_json(['error' => 'no_glpi_id_for_current_user'], 422);
     }
 
     $ticket_id = isset($_POST['ticket_id']) ? intval($_POST['ticket_id']) : 0;
     $content   = isset($_POST['content']) ? sanitize_textarea_field((string) $_POST['content']) : '';
     if ($ticket_id <= 0) {
+        error_log('[comment] ticket_not_found ticket=' . $ticket_id . ' wp=' . $wp_uid . ' glpi=' . $author_glpi);
         wp_send_json(['error' => 'ticket_not_found'], 404);
     }
     if ($content === '') {
+        error_log('[comment] empty_comment ticket=' . $ticket_id . ' wp=' . $wp_uid . ' glpi=' . $author_glpi);
         wp_send_json(['error' => 'empty_comment'], 422);
     }
 
     global $glpi_db;
     $exists = $glpi_db->get_var($glpi_db->prepare('SELECT 1 FROM glpi_tickets WHERE id=%d', $ticket_id));
     if (!$exists) {
-        gexe_log_action('[comment.sql] ticket=' . $ticket_id . ' result=fail code=ticket_not_found');
+        error_log('[comment] ticket_not_found ticket=' . $ticket_id . ' wp=' . $wp_uid . ' glpi=' . $author_glpi);
         wp_send_json(['error' => 'ticket_not_found'], 404);
     }
 
@@ -664,8 +673,10 @@ function gexe_glpi_comment_add() {
     if (!$res['ok']) {
         if (($res['code'] ?? '') === 'SQL_ERROR') {
             gexe_log_action(sprintf('[comment.sql] ticket=%d author=%d result=fail code=sql_error msg="%s"', $ticket_id, $author_glpi, $res['message'] ?? ''));
-            wp_send_json(['error' => 'sql_error', 'details' => mb_substr($res['message'] ?? '', 0, 200)], 500);
+            error_log('[comment] sql_error followup_insert_failed ticket=' . $ticket_id . ' wp=' . $wp_uid . ' glpi=' . $author_glpi . ' sql=' . ($res['message'] ?? ''));
+            wp_send_json(['error' => 'sql_error', 'details' => 'followup_insert_failed'], 500);
         }
+        error_log('[comment] ' . ($res['code'] ?? 'error') . ' ticket=' . $ticket_id . ' wp=' . $wp_uid . ' glpi=' . $author_glpi);
         wp_send_json(['error' => $res['code'] ?? 'error'], 422);
     }
 
@@ -678,5 +689,5 @@ function gexe_glpi_comment_add() {
         'date'     => date('c'),
     ];
     gexe_log_action(sprintf('[comment.sql] ticket=%d author=%d followup=%d result=ok', $ticket_id, $author_glpi, $followup['id']));
-    wp_send_json(['ok' => true, 'followup' => $followup]);
+    wp_send_json(['ok' => true, 'payload' => ['ticket_id' => $ticket_id, 'followup' => $followup]]);
 }
