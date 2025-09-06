@@ -126,7 +126,7 @@
     const send = retry => fetch(ajax.url, { method: 'POST', body: fd })
       .then(r => r.json().then(data => ({ status: r.status, data })))
       .then(resp => {
-        if (resp.status === 403 && resp.data && resp.data.code === 'AJAX_FORBIDDEN' && !retry) {
+        if (resp.status === 403 && resp.data && resp.data.error === 'invalid_nonce' && !retry) {
           return refreshActionsNonce().then(() => { fd.set('nonce', ajax.nonce); return send(true); });
         }
         return resp;
@@ -177,9 +177,8 @@
         btn.removeAttribute('disabled');
         btn.removeAttribute('aria-disabled');
         lockAction(ticketId, 'accept', false);
-        const code = resp.data && resp.data.code ? resp.data.code : 'ERROR';
-        const msg = resp.data && resp.data.message ? resp.data.message : '';
-        if (window.glpiToast) glpiToast(code + (msg ? ': ' + msg : ''));
+        const msg = resp.data && resp.data.error ? resp.data.error : 'action_failed';
+        if (window.glpiToast) glpiToast(msg);
       }
     }).catch(() => {
       btn.classList.remove('is-loading');
@@ -677,9 +676,9 @@
     fd.append('content', txt);
     fd.append('action_id', actionId);
     fetch(url, { method: 'POST', body: fd })
-      .then(r => r.json())
+      .then(r => r.json().then(data => ({ status: r.status, data })))
       .then(resp => {
-        if (resp && resp.ok) {
+        if (resp.status === 200 && resp.data && resp.data.ok) {
           if (window.gexePrefetchedComments) delete window.gexePrefetchedComments[id];
           applyActionVisibility();
           refreshTicketMeta(id);
@@ -688,12 +687,15 @@
           const pend = pendingComments[id];
           if (pend) { pend.el.remove(); delete pendingComments[id]; }
           lockAction(id, 'comment', false);
+          const msg = resp.data && resp.data.error ? resp.data.error : 'comment_failed';
+          alert(msg);
         }
       })
       .catch(()=>{
         const pend = pendingComments[id];
         if (pend) { pend.el.remove(); delete pendingComments[id]; }
         lockAction(id, 'comment', false);
+        alert('network_error');
       });
   }
 
@@ -743,10 +745,10 @@
     fd.append('solution_text', 'Задача решена');
     const timeout = setTimeout(() => { lockAction(id, 'done', false); if (btn) setActionLoading(btn, false); }, 10000);
     fetch(glpiAjax.url, { method: 'POST', body: fd })
-      .then(r => r.json())
+      .then(r => r.json().then(data => ({ status: r.status, data })))
       .then(resp => {
         clearTimeout(timeout);
-        if (resp && resp.success) {
+        if (resp.status === 200 && resp.data && resp.data.ok) {
           if (btn) {
             btn.classList.remove('is-loading');
             btn.disabled = true;
@@ -771,7 +773,8 @@
         } else {
           if (btn) setActionLoading(btn, false);
           lockAction(id, 'done', false);
-          alert('Не удалось отметить задачу как решённую');
+          const msg = resp.data && resp.data.error ? resp.data.error : 'resolve_failed';
+          alert(msg);
         }
       })
       .catch(() => {

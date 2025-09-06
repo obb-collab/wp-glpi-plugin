@@ -9,33 +9,50 @@ function gexe_glpi_ticket_resolve() {
 
     $ticket_id = isset($_POST['ticket_id']) ? intval($_POST['ticket_id']) : 0;
     if ($ticket_id <= 0) {
-        wp_send_json_error(['code' => 'BAD_TICKET']);
-    }
-    if (!is_user_logged_in() || !gexe_can_touch_glpi_ticket($ticket_id)) {
-        wp_send_json_error(['code' => 'FORBIDDEN'], 403);
+        wp_send_json(['error' => 'bad_ticket'], 422);
     }
 
-    $resp = gexe_glpi_rest_request('ticket_solve ' . $ticket_id, 'PUT', '/Ticket/' . $ticket_id, [
-        'input' => [
-            'id'     => $ticket_id,
-            'status' => 6,
-        ],
-    ]);
-
-    if (is_wp_error($resp)) {
-        wp_send_json_error(['code' => 'NETWORK']);
+    if (!is_user_logged_in()) {
+        gexe_log_action('[resolve.sql] ticket=' . $ticket_id . ' result=fail code=not_logged_in');
+        wp_send_json(['error' => 'not_logged_in'], 401);
+    }
+    $author_glpi = gexe_get_current_glpi_uid();
+    if ($author_glpi <= 0) {
+        gexe_log_action('[resolve.sql] ticket=' . $ticket_id . ' result=fail code=no_glpi_id');
+        wp_send_json(['error' => 'no_glpi_id_for_current_user'], 422);
     }
 
-    $code = wp_remote_retrieve_response_code($resp);
-    if ($code >= 300) {
-        $body  = wp_remote_retrieve_body($resp);
-        $short = mb_substr(trim($body), 0, 200);
-        wp_send_json_error(['code' => 'GLPI_ERROR', 'message' => $short], 500);
+    $solution_text = isset($_POST['solution_text']) ? sanitize_textarea_field((string) $_POST['solution_text']) : '';
+    $status        = (int) get_option('glpi_solved_status', 6);
+
+    $res = set_ticket_status_sql($ticket_id, $status, $author_glpi);
+    if (!$res['ok']) {
+        if (($res['code'] ?? '') === 'SQL_ERROR') {
+            gexe_log_action(sprintf('[resolve.sql] ticket=%d author=%d result=fail code=sql_error msg="%s"', $ticket_id, $author_glpi, $res['message'] ?? ''));
+            wp_send_json(['error' => 'sql_error', 'details' => mb_substr($res['message'] ?? '', 0, 200)], 500);
+        }
+        wp_send_json(['error' => $res['code'] ?? 'error', 'message' => $res['message'] ?? ''], 422);
+    }
+
+    $followup_id = 0;
+    if ($solution_text !== '') {
+        $f = gexe_add_followup_sql($ticket_id, $solution_text, $author_glpi);
+        if (!$f['ok']) {
+            if (($f['code'] ?? '') === 'SQL_ERROR') {
+                gexe_log_action(sprintf('[resolve.sql] ticket=%d author=%d result=fail code=sql_error msg="%s"', $ticket_id, $author_glpi, $f['message'] ?? ''));
+                wp_send_json(['error' => 'sql_error', 'details' => mb_substr($f['message'] ?? '', 0, 200)], 500);
+            }
+            wp_send_json(['error' => $f['code'] ?? 'error', 'message' => $f['message'] ?? ''], 422);
+        }
+        $followup_id = $f['followup_id'] ?? 0;
     }
 
     gexe_clear_comments_cache($ticket_id);
-    wp_send_json_success([
-        'ticket_id' => $ticket_id,
-        'status'    => 6,
+    gexe_log_action(sprintf('[resolve.sql] ticket=%d author=%d followup=%d status=%d result=ok', $ticket_id, $author_glpi, $followup_id, $status));
+    wp_send_json([
+        'ok'          => true,
+        'ticket_id'   => $ticket_id,
+        'status'      => $status,
+        'followup_id' => $followup_id,
     ]);
 }
