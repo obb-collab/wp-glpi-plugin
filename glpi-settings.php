@@ -8,6 +8,7 @@ add_action('admin_menu', function () {
 
 add_action('admin_init', function () {
     register_setting('gexe_glpi', 'glpi_api_base');
+    register_setting('gexe_glpi', 'glpi_web_base');
     register_setting('gexe_glpi', 'glpi_app_token');
     register_setting('gexe_glpi', 'glpi_user_token');
     register_setting('gexe_glpi', 'glpi_solved_status');
@@ -19,6 +20,7 @@ add_action('admin_init', function () {
     }, 'gexe-glpi');
 
     add_settings_field('glpi_api_base', 'API Base URL', 'gexe_glpi_field_api_base', 'gexe-glpi', 'gexe_glpi_main');
+    add_settings_field('glpi_web_base', 'Web Base URL', 'gexe_glpi_field_web_base', 'gexe-glpi', 'gexe_glpi_main');
     add_settings_field('glpi_app_token', 'Application Token', 'gexe_glpi_field_app_token', 'gexe-glpi', 'gexe_glpi_main');
     add_settings_field('glpi_user_token', 'User Token', 'gexe_glpi_field_user_token', 'gexe-glpi', 'gexe_glpi_main');
     add_settings_field('glpi_solved_status', 'Solved Status', 'gexe_glpi_field_solved_status', 'gexe-glpi', 'gexe_glpi_main');
@@ -29,6 +31,10 @@ add_action('admin_init', function () {
 function gexe_glpi_field_api_base() {
     $v = esc_attr(get_option('glpi_api_base', ''));
     echo '<input type="text" name="glpi_api_base" value="' . $v . '" class="regular-text" />';
+}
+function gexe_glpi_field_web_base() {
+    $v = esc_attr(get_option('glpi_web_base', ''));
+    echo '<input type="text" name="glpi_web_base" value="' . $v . '" class="regular-text" />';
 }
 function gexe_glpi_field_app_token() {
     $v = esc_attr(get_option('glpi_app_token', ''));

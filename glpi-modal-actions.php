@@ -17,6 +17,7 @@ add_action('wp_enqueue_scripts', function () {
         'rest'         => esc_url_raw(rest_url('glpi/v1/')),
         'restNonce'    => wp_create_nonce('wp_rest'),
         'solvedStatus' => (int) get_option('glpi_solved_status', 6),
+        'webBase'      => gexe_glpi_web_base(),
     ]);
 });
 
@@ -81,6 +82,48 @@ function gexe_clean_comment_html($html) {
     }
     if (empty($out)) return '<div class="glpi-empty">Нет комментариев</div>';
     return implode("\n", $out);
+}
+
+/** Получить документы для набора followup_id */
+function gexe_fetch_followup_documents(array $ids) {
+    global $glpi_db;
+    $ids = array_map('intval', array_filter($ids));
+    if (empty($ids)) return [];
+    $place = implode(',', array_fill(0, count($ids), '%d'));
+    $sql = $glpi_db->prepare(
+        "SELECT di.items_id AS fid, d.id AS docid, d.filename\n"
+        . "FROM glpi_documents_items di\n"
+        . "JOIN glpi_documents d ON d.id = di.documents_id\n"
+        . "WHERE di.itemtype='ITILFollowup' AND di.items_id IN ($place)",
+        ...$ids
+    );
+    $rows = $glpi_db->get_results($sql, ARRAY_A);
+    $out = [];
+    foreach ($rows as $r) {
+        $fid = (int)($r['fid'] ?? 0);
+        $ext = strtolower(pathinfo((string)$r['filename'], PATHINFO_EXTENSION));
+        $out[$fid][] = [
+            'document_id' => (int)($r['docid'] ?? 0),
+            'extension'   => $ext,
+        ];
+    }
+    return $out;
+}
+
+/** Сформировать HTML блока ссылок на документы */
+function gexe_render_documents_block($ticket_id, array $docs) {
+    if (empty($docs)) return '';
+    $base = gexe_glpi_web_base();
+    $cnt  = count($docs);
+    $pref = $cnt > 1 ? 'Приложены документы: ' : 'Приложен документ: ';
+    $links = [];
+    foreach ($docs as $d) {
+        $ext   = $d['extension'] ? ' ' . $d['extension'] : '';
+        $label = 'документ' . $ext;
+        $url   = $base . '/front/document.send.php?docid=' . $d['document_id'] . '&tickets_id=' . $ticket_id;
+        $links[] = '<a href="' . esc_url($url) . '" target="_blank" rel="noopener">' . esc_html($label) . '</a>';
+    }
+    return '<p class="glpi-txt">' . $pref . implode(', ', $links) . '</p>';
 }
 
 /**
@@ -253,11 +296,18 @@ function gexe_render_comments($ticket_id, $page = 1, $per_page = 20) {
         return $data;
     }
 
+    $doc_map = gexe_fetch_followup_documents(array_column($rows, 'id'));
     $out = '';
     foreach ($rows as $r) {
         $when = esc_html($r['date']);
         $uid  = intval($r['users_id']);
-        $txt  = gexe_clean_comment_html((string)$r['content']);
+        $raw  = (string)$r['content'];
+        $docs = $doc_map[(int)$r['id']] ?? [];
+        if (trim($raw) === '' && $docs) {
+            $txt = gexe_render_documents_block($ticket_id, $docs);
+        } else {
+            $txt = gexe_clean_comment_html($raw);
+        }
         $who  = gexe_compose_short_name($r['realname'] ?? '', $r['firstname'] ?? '');
         if ($who === '') $who = 'Автор ID ' . $uid;
 
@@ -291,7 +341,7 @@ function gexe_glpi_get_comments() {
 function gexe_render_followup($id) {
     global $glpi_db;
     $row = $glpi_db->get_row($glpi_db->prepare(
-        "SELECT f.id, f.users_id, f.date, f.content, u.realname, u.firstname"
+        "SELECT f.id, f.users_id, f.items_id, f.date, f.content, u.realname, u.firstname"
          . " FROM glpi_itilfollowups AS f"
          . " LEFT JOIN glpi_users AS u ON u.id = f.users_id"
          . " WHERE f.id = %d",
@@ -300,7 +350,13 @@ function gexe_render_followup($id) {
     if (!$row) return null;
     $when = esc_html($row['date']);
     $uid  = intval($row['users_id']);
-    $txt  = gexe_clean_comment_html((string)$row['content']);
+    $docs = gexe_fetch_followup_documents([$row['id']]);
+    $raw  = (string)$row['content'];
+    if (trim($raw) === '' && !empty($docs[$row['id']])) {
+        $txt = gexe_render_documents_block((int)$row['items_id'], $docs[$row['id']]);
+    } else {
+        $txt = gexe_clean_comment_html($raw);
+    }
     $who  = gexe_compose_short_name($row['realname'] ?? '', $row['firstname'] ?? '');
     if ($who === '') $who = 'Автор ID ' . $uid;
     return [

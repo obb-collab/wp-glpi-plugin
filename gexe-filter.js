@@ -609,12 +609,32 @@
       meta.appendChild(author); meta.appendChild(date);
       const text = document.createElement('div');
       text.className = 'text';
-      String(f.content || '').split(/\n+/).map(s => s.trim()).filter(Boolean).forEach(line => {
+      const raw = String(f.content || '').trim();
+      if (raw) {
+        raw.split(/\n+/).map(s => s.trim()).filter(Boolean).forEach(line => {
+          const p = document.createElement('p');
+          p.className = 'glpi-txt';
+          p.textContent = line;
+          text.appendChild(p);
+        });
+      } else if (Array.isArray(f.documents) && f.documents.length) {
         const p = document.createElement('p');
         p.className = 'glpi-txt';
-        p.textContent = line;
+        const base = (window.glpiAjax && glpiAjax.webBase ? glpiAjax.webBase.replace(/\/$/, '') : '');
+        const pref = f.documents.length > 1 ? 'Приложены документы: ' : 'Приложен документ: ';
+        p.append(document.createTextNode(pref));
+        f.documents.forEach((d, idx) => {
+          const a = document.createElement('a');
+          const ext = d.extension ? ' ' + d.extension : '';
+          a.textContent = 'документ' + ext;
+          a.href = base + '/front/document.send.php?docid=' + d.document_id + '&tickets_id=' + ticketId;
+          a.target = '_blank';
+          a.rel = 'noopener';
+          p.appendChild(a);
+          if (idx < f.documents.length - 1) p.appendChild(document.createTextNode(', '));
+        });
         text.appendChild(p);
-      });
+      }
       wrap.appendChild(meta); wrap.appendChild(text);
       box.insertBefore(wrap, box.firstChild);
       updateAgeFooters();
