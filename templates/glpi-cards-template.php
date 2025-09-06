@@ -163,6 +163,7 @@ function gexe_cat_slug($leaf) {
       <div class="glpi-header-right">
         <div class="glpi-search-block">
           <input type="text" id="glpi-unified-search" class="glpi-search-input" placeholder="Поиск...">
+          <button type="button" class="gexe-search-clear" aria-label="Очистить поиск" hidden>&times;</button>
         </div>
         <button type="button" class="glpi-newtask-btn"><i class="fa-regular fa-file-lines"></i> Новая заявка</button>
       </div>

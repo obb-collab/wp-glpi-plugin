@@ -318,6 +318,19 @@
   let selectedCategories = [];
   let categoriesLoaded = false;
 
+  function resetCategories(){
+    selectedCategories = [];
+    const box = document.getElementById('glpi-categories-inline');
+    if (box){
+      $$('.glpi-cat-chip', box).forEach(c => { c.classList.remove('active'); c.setAttribute('aria-pressed','false'); });
+      const resetBtn = box.querySelector('.glpi-cat-reset');
+      if (resetBtn) resetBtn.hidden = true;
+    }
+    localStorage.removeItem('glpi.categories.selected');
+    recalcStatusCounts();
+    filterCards();
+  }
+
   function renderInlineCategories(){
     const box = document.getElementById('glpi-categories-inline');
     if (!box || !Array.isArray(window.gexeCategories)) return;
@@ -360,14 +373,7 @@
     }, true);
 
     // Кнопка сброса
-    reset.addEventListener('click', () => {
-      selectedCategories = [];
-      $$('.glpi-cat-chip', box).forEach(c => { c.classList.remove('active'); c.setAttribute('aria-pressed','false'); });
-      reset.hidden = true;
-      localStorage.removeItem('glpi.categories.selected');
-      recalcStatusCounts();
-      filterCards();
-    });
+    reset.addEventListener('click', resetCategories);
 
     // Восстановление выбора
     const saved = JSON.parse(localStorage.getItem('glpi.categories.selected') || '[]');
@@ -992,15 +998,42 @@
   function bindStatusAndSearch() {
     $$('.status-filter-btn').forEach(btn => {
       btn.addEventListener('click', () => {
+        const wasActive = btn.classList.contains('active');
         $$('.status-filter-btn').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
-        recalcStatusCounts();
-        recalcCategoryVisibility();
-        filterCards();
+        if (wasActive) {
+          resetCategories();
+          recalcCategoryVisibility();
+        } else {
+          recalcStatusCounts();
+          recalcCategoryVisibility();
+          filterCards();
+        }
       });
     });
     const inp = document.getElementById('glpi-unified-search');
-    if (inp) inp.addEventListener('input', debounce(() => { filterCards(); }, 120));
+    const clearBtn = document.querySelector('.gexe-search-clear');
+    if (inp) {
+      const toggleClear = () => { if (clearBtn) clearBtn.hidden = !(inp.value && inp.value.length); };
+      const debouncedFilter = debounce(() => { filterCards(); }, 120);
+      inp.addEventListener('input', () => { toggleClear(); debouncedFilter(); });
+      inp.addEventListener('keydown', e => {
+        if (e.key === 'Escape') {
+          inp.value = '';
+          toggleClear();
+          filterCards();
+        }
+      });
+      if (clearBtn) {
+        clearBtn.addEventListener('click', () => {
+          inp.value = '';
+          inp.focus();
+          toggleClear();
+          filterCards();
+        });
+      }
+      toggleClear();
+    }
   }
 
   /* ========================= ИНИЦИАЛИЗАЦИЯ ========================= */
