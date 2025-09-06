@@ -24,7 +24,7 @@ add_action('wp_enqueue_scripts', function () {
 function gexe_can_touch_glpi_ticket($ticket_id) {
     if (!is_user_logged_in()) return false;
 
-    $glpi_uid = gexe_get_current_glpi_uid();
+    $glpi_uid = gexe_get_current_glpi_user_id(get_current_user_id());
     if ($glpi_uid <= 0) return false;
 
     global $glpi_db;
@@ -501,7 +501,7 @@ function gexe_glpi_ticket_accept_sql() {
         wp_send_json(['error' => 'not_logged_in'], 401);
     }
 
-    $author_glpi = gexe_get_current_glpi_uid();
+    $author_glpi = gexe_get_current_glpi_user_id(get_current_user_id());
     if ($author_glpi <= 0) {
         gexe_log_action('[accept.sql] result=fail code=no_glpi_id');
         wp_send_json(['error' => 'no_glpi_id_for_current_user'], 422);
@@ -647,7 +647,7 @@ function gexe_refresh_actions_nonce() {
         gexe_log_action('[actions.nonce] result=fail code=not_logged_in');
         wp_send_json(['error' => 'not_logged_in'], 401);
     }
-    if (gexe_get_current_glpi_uid() <= 0) {
+    if (gexe_get_current_glpi_user_id(get_current_user_id()) <= 0) {
         gexe_log_action('[actions.nonce] result=fail code=no_glpi_id');
         wp_send_json(['error' => 'no_glpi_id_for_current_user'], 422);
     }
@@ -664,7 +664,7 @@ function gexe_glpi_comment_add() {
         gexe_log_action('[comment.sql] result=fail code=not_logged_in');
         wp_send_json(['error' => 'not_logged_in'], 401);
     }
-    $author_glpi = gexe_get_current_glpi_uid();
+    $author_glpi = gexe_get_current_glpi_user_id(get_current_user_id());
     if ($author_glpi <= 0) {
         gexe_log_action('[comment.sql] result=fail code=no_glpi_id');
         wp_send_json(['error' => 'no_glpi_id_for_current_user'], 422);
