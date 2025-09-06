@@ -7,8 +7,8 @@ add_action('wp_ajax_glpi_ticket_resolve', 'gexe_glpi_ticket_resolve');
 function gexe_glpi_ticket_resolve() {
     $wp_uid = get_current_user_id();
     if (!check_ajax_referer('gexe_actions', '_ajax_nonce', false)) {
-        error_log('[resolve] nonce_failed ticket=' . intval($_POST['ticket_id'] ?? 0) . ' wp=' . $wp_uid . ' glpi=0');
-        wp_send_json(['error' => 'nonce_failed'], 403);
+        error_log('[resolve] nonce_expired ticket=' . intval($_POST['ticket_id'] ?? 0) . ' wp=' . $wp_uid . ' glpi=0');
+        wp_send_json(['error' => 'nonce_expired'], 403);
     }
 
     $ticket_id = isset($_POST['ticket_id']) ? intval($_POST['ticket_id']) : 0;

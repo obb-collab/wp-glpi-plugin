@@ -16,9 +16,9 @@
   window.GEXE_DEBUG = window.GEXE_DEBUG || false;
 
   const ERROR_MAP = {
-    not_logged_in: 'Сессия истекла. Войдите в систему.',
-    nonce_failed: 'Обновите страницу (просрочен ключ безопасности).',
-    no_glpi_id_for_current_user: 'В профиле WP не указан GLPI ID.',
+    not_logged_in: 'Сессия истекла, обновите страницу.',
+    nonce_expired: 'Обновите страницу (просрочен ключ безопасности).',
+    no_glpi_id_for_current_user: 'Не найден профиль исполнителя (GLPI).',
     assignee_not_mapped_to_glpi: 'Выбранный исполнитель не привязан к GLPI.',
     ticket_not_found: 'Заявка не найдена.',
     sql_error: details => 'Ошибка записи в GLPI. Код: ' + (details || '') + '.',
@@ -134,6 +134,54 @@
     catch (e) { console.debug('AJAX text:', await res.clone().text()); }
   }
 
+  function disableActionsWithGuard(msg) {
+    $$('.gexe-action-btn, #gexe-cmnt-send, #gexe-done-confirm').forEach(btn => {
+      btn.disabled = true;
+      if (!btn.nextElementSibling || !btn.nextElementSibling.classList.contains('gexe-preflight-guard')) {
+        const span = document.createElement('span');
+        span.className = 'gexe-preflight-guard';
+        span.innerHTML = '<i class="fa-solid fa-circle-info"></i>';
+        span.title = msg;
+        btn.insertAdjacentElement('afterend', span);
+      } else {
+        btn.nextElementSibling.title = msg;
+      }
+    });
+  }
+
+  function removeActionGuards() {
+    $$('.gexe-preflight-guard').forEach(el => el.remove());
+  }
+
+  function applyPreflightGuards() {
+    removeActionGuards();
+    const ajax = window.gexeAjax || window.glpiAjax;
+    if (!ajax || !ajax.url || !ajax.nonce) {
+      disableActionsWithGuard('Сессия истекла, обновите страницу');
+      showError('not_logged_in');
+      return false;
+    }
+    if (!ajax.user_glpi_id || ajax.user_glpi_id <= 0) {
+      disableActionsWithGuard('Не найден профиль исполнителя (GLPI)');
+      showError('no_glpi_id_for_current_user');
+      return false;
+    }
+    return true;
+  }
+
+  function checkAjaxPreflight() {
+    const ajax = window.gexeAjax || window.glpiAjax;
+    if (!ajax || !ajax.url || !ajax.nonce) {
+      showError('not_logged_in');
+      return null;
+    }
+    if (!ajax.user_glpi_id || ajax.user_glpi_id <= 0) {
+      showError('no_glpi_id_for_current_user');
+      return null;
+    }
+    return ajax;
+  }
+
   function refreshActionsNonce() {
     const ajax = window.gexeAjax || window.glpiAjax;
     if (!ajax) return Promise.reject(new Error('no_ajax'));
@@ -148,6 +196,7 @@
       .then(data => {
         if (data && data.success && data.data && data.data.nonce) {
           ajax.nonce = data.data.nonce;
+          applyPreflightGuards();
           return ajax.nonce;
         }
         throw new Error('nonce_refresh_failed');
@@ -187,7 +236,7 @@
     if (!btn.classList.contains('gexe-open-accept')) return;
     if (btn.disabled || isActionLocked(ticketId, 'accept')) return;
 
-    const ajax = window.gexeAjax || window.glpiAjax;
+    const ajax = checkAjaxPreflight();
     if (!ajax || !ajax.url) return;
     lockAction(ticketId, 'accept', true);
     setActionLoading(btn, true);
@@ -212,7 +261,8 @@
       let data = null;
       try { data = await res.clone().json(); }
       catch (e) { try { await res.clone().text(); } catch (e2) {} }
-      if (res.status === 403 && data && data.error === 'nonce_failed' && !retry) {
+      if (res.status === 403 && data && data.error === 'nonce_expired' && !retry) {
+        showNotice('info', 'Повторяем…');
         await refreshActionsNonce();
         fd.set(nonceKey, ajax.nonce || '');
         fd.set('nonce', ajax.nonce || '');
@@ -578,6 +628,7 @@
 
     wrap.appendChild(clone);
     applyActionVisibility();
+    applyPreflightGuards();
   }
 
   function loadComments(ticketId, page = 1) {
@@ -739,6 +790,7 @@
         '</div>' +
       '</div>';
     document.body.appendChild(cmntModal);
+    applyPreflightGuards();
     $('.gexe-cmnt__backdrop', cmntModal).addEventListener('click', closeCommentModal);
     $('.gexe-cmnt__close', cmntModal).addEventListener('click', closeCommentModal);
     const sendBtn = $('#gexe-cmnt-send', cmntModal);
@@ -771,28 +823,39 @@
     const btn = $('#gexe-cmnt-send', cmntModal);
     const txt = (txtEl && txtEl.value ? txtEl.value : '').trim();
     if (!id || !txt || !btn) return;
-    const url = window.glpiAjax && glpiAjax.url;
-    const nonce = window.glpiAjax && glpiAjax.nonce;
-    if (!url || !nonce) return;
+    const ajax = checkAjaxPreflight();
+    if (!ajax) return;
     lockAction(id, 'comment', true);
     setActionLoading(btn, true);
     const fd = new FormData();
     fd.append('action', 'glpi_comment_add');
     const nonceKey = glpiAjax.nonce_key || 'nonce';
-    fd.append(nonceKey, nonce);
-    fd.append('nonce', nonce);
-    fd.append('_ajax_nonce', nonce);
+    fd.append(nonceKey, ajax.nonce);
+    fd.append('nonce', ajax.nonce);
+    fd.append('_ajax_nonce', ajax.nonce);
     fd.append('ticket_id', String(id));
     fd.append('content', txt);
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 15000);
-    debugRequest(url, Object.fromEntries(fd.entries()));
-    try {
-      const res = await fetch(url, { method: 'POST', body: fd, signal: controller.signal });
+    const send = async retry => {
+      debugRequest(ajax.url, Object.fromEntries(fd.entries()));
+      const res = await fetch(ajax.url, { method: 'POST', body: fd, signal: controller.signal });
       await debugResponse(res);
       let data = null;
       try { data = await res.clone().json(); }
       catch (e) { try { await res.clone().text(); } catch (e2) {} }
+      if (res.status === 403 && data && data.error === 'nonce_expired' && !retry) {
+        showNotice('info', 'Повторяем…');
+        await refreshActionsNonce();
+        fd.set(nonceKey, ajax.nonce || '');
+        fd.set('nonce', ajax.nonce || '');
+        fd.set('_ajax_nonce', ajax.nonce || '');
+        return send(true);
+      }
+      return { res, data };
+    };
+    try {
+      const { res, data } = await send(false);
       if (!res.ok) {
         showError(data && data.error ? data.error : 'bad_response', data && data.details, res.status);
         return;
@@ -836,6 +899,7 @@
         '</div>' +
       '</div>';
     document.body.appendChild(doneModal);
+    applyPreflightGuards();
     $('.gexe-done__backdrop', doneModal).addEventListener('click', closeDoneModal);
     $('.gexe-done__close', doneModal).addEventListener('click', closeDoneModal);
     $('#gexe-done-confirm', doneModal).addEventListener('click', sendDone);
@@ -858,24 +922,37 @@
     if (btn && isActionLocked(id, 'done')) return;
     if (btn) setActionLoading(btn, true);
     lockAction(id, 'done', true);
+    const ajax = checkAjaxPreflight();
+    if (!ajax) { if (btn) setActionLoading(btn,false); lockAction(id,'done',false); return; }
     const fd = new FormData();
     fd.append('action', 'glpi_ticket_resolve');
-    const nonce = (window.glpiAjax && glpiAjax.nonce) || '';
     const nonceKey = glpiAjax.nonce_key || 'nonce';
-    fd.append(nonceKey, nonce);
-    fd.append('nonce', nonce);
-    fd.append('_ajax_nonce', nonce);
+    fd.append(nonceKey, ajax.nonce);
+    fd.append('nonce', ajax.nonce);
+    fd.append('_ajax_nonce', ajax.nonce);
     fd.append('ticket_id', String(id));
     fd.append('solution_text', 'Завершено');
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 15000);
-    debugRequest(glpiAjax.url, Object.fromEntries(fd.entries()));
-    try {
-      const res = await fetch(glpiAjax.url, { method: 'POST', body: fd, signal: controller.signal });
+    const send = async retry => {
+      debugRequest(ajax.url, Object.fromEntries(fd.entries()));
+      const res = await fetch(ajax.url, { method: 'POST', body: fd, signal: controller.signal });
       await debugResponse(res);
       let data = null;
       try { data = await res.clone().json(); }
       catch (e) { try { await res.clone().text(); } catch (e2) {} }
+      if (res.status === 403 && data && data.error === 'nonce_expired' && !retry) {
+        showNotice('info', 'Повторяем…');
+        await refreshActionsNonce();
+        fd.set(nonceKey, ajax.nonce || '');
+        fd.set('nonce', ajax.nonce || '');
+        fd.set('_ajax_nonce', ajax.nonce || '');
+        return send(true);
+      }
+      return { res, data };
+    };
+    try {
+      const { res, data } = await send(false);
       if (!res.ok) {
         showError(data && data.error ? data.error : 'bad_response', data && data.details, res.status);
         return;
@@ -918,23 +995,37 @@
   /* ========================= ДЕЙСТВИЯ ПО КАРТОЧКЕ (AJAX) ========================= */
   function doCardAction(type, ticketId, payload, actionId) {
     return new Promise(resolve => {
-      const url = window.glpiAjax && glpiAjax.url;
-      const nonce = window.glpiAjax && glpiAjax.nonce;
+      const ajax = checkAjaxPreflight();
+      if (!ajax) { resolve({ success: false }); return; }
       const nonceKey = (window.glpiAjax && glpiAjax.nonce_key) || 'nonce';
-      if (!url || !nonce) { resolve({ success: false }); return; }
       const fd = new FormData();
       fd.append('action', 'glpi_card_action');
-      fd.append(nonceKey, nonce);
-      fd.append('nonce', nonce);
-      fd.append('_ajax_nonce', nonce);
+      fd.append(nonceKey, ajax.nonce);
+      fd.append('nonce', ajax.nonce);
+      fd.append('_ajax_nonce', ajax.nonce);
       fd.append('ticket_id', String(ticketId));
       fd.append('type', type);
       fd.append('payload', JSON.stringify(payload || {}));
       if (actionId) fd.append('action_id', actionId);
-      fetch(url, { method: 'POST', body: fd })
-        .then(r => r.json())
-        .then(resp => resolve(resp || { success: false }))
-        .catch(() => resolve({ success: false }));
+      const send = retry => {
+        fetch(ajax.url, { method: 'POST', body: fd })
+          .then(r => r.json().then(data => ({ r, data })))
+          .then(({ r, data }) => {
+            if (r.status === 403 && data && data.error === 'nonce_expired' && !retry) {
+              showNotice('info', 'Повторяем…');
+              refreshActionsNonce().then(() => {
+                fd.set(nonceKey, ajax.nonce || '');
+                fd.set('nonce', ajax.nonce || '');
+                fd.set('_ajax_nonce', ajax.nonce || '');
+                send(true);
+              }).catch(() => resolve({ success: false }));
+            } else {
+              resolve(data || { success: false });
+            }
+          })
+          .catch(() => resolve({ success: false }));
+      };
+      send(false);
     });
   }
 
@@ -993,13 +1084,6 @@
       const btnComment = $('.gexe-open-comment', bar);
       const btnAccept  = $('.gexe-open-accept',  bar);
       const btnClose   = $('.gexe-open-close',   bar);
-
-      if (uid <= 0) { // не авторизован — прячем все
-        if (btnComment) btnComment.style.display = 'none';
-        if (btnAccept)  btnAccept.style.display  = 'none';
-        if (btnClose)   btnClose.style.display   = 'none';
-        return;
-      }
 
       const assignees = (card.getAttribute('data-assignees') || '')
         .split(',').map(s => parseInt(s, 10)).filter(n => n > 0);
@@ -1233,6 +1317,7 @@
 
     injectCardActionButtons();
     applyActionVisibility();
+    applyPreflightGuards();
     bindCardOpen();
 
     bindStatusAndSearch();

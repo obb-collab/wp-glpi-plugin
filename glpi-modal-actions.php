@@ -550,8 +550,8 @@ add_action('wp_ajax_glpi_ticket_accept_sql', 'gexe_glpi_ticket_accept_sql');
 function gexe_glpi_ticket_accept_sql() {
     $wp_uid = get_current_user_id();
     if (!check_ajax_referer('gexe_actions', 'nonce', false)) {
-        error_log('[accept] nonce_failed ticket=' . intval($_POST['ticket_id'] ?? 0) . ' wp=' . $wp_uid . ' glpi=0');
-        wp_send_json(['error' => 'nonce_failed'], 403);
+        error_log('[accept] nonce_expired ticket=' . intval($_POST['ticket_id'] ?? 0) . ' wp=' . $wp_uid . ' glpi=0');
+        wp_send_json(['error' => 'nonce_expired'], 403);
     }
 
     if (!is_user_logged_in()) {
@@ -694,8 +694,8 @@ add_action('wp_ajax_glpi_comment_add', 'gexe_glpi_comment_add');
 function gexe_glpi_comment_add() {
     $wp_uid = get_current_user_id();
     if (!check_ajax_referer('gexe_actions', 'nonce', false)) {
-        error_log('[comment] nonce_failed ticket=' . intval($_POST['ticket_id'] ?? 0) . ' wp=' . $wp_uid . ' glpi=0');
-        wp_send_json(['error' => 'nonce_failed'], 403);
+        error_log('[comment] nonce_expired ticket=' . intval($_POST['ticket_id'] ?? 0) . ' wp=' . $wp_uid . ' glpi=0');
+        wp_send_json(['error' => 'nonce_expired'], 403);
     }
     if (!is_user_logged_in()) {
         error_log('[comment] not_logged_in ticket=' . intval($_POST['ticket_id'] ?? 0) . ' wp=' . $wp_uid . ' glpi=0');
