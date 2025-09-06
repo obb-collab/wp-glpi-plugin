@@ -103,6 +103,25 @@ function gexe_glpi_log($action, $url, $response, $start_time) {
 }
 
 /**
+ * Determine base URL of GLPI web interface for building document links.
+ *
+ * When the `glpi_web_base` option is not set, attempts to derive it from
+ * `glpi_api_base` by stripping a trailing `/apirest.php` segment.
+ *
+ * @return string Base URL without trailing slash.
+ */
+function gexe_glpi_web_base() {
+    $base = trim((string) get_option('glpi_web_base', ''));
+    if ($base === '') {
+        $api = trim((string) get_option('glpi_api_base', ''));
+        if ($api !== '') {
+            $base = preg_replace('~/apirest\.php$~', '', $api);
+        }
+    }
+    return rtrim($base, '/');
+}
+
+/**
  * Check if a column exists in a GLPI table.
  * Result is cached in-memory and via WordPress transient for 1 hour.
  */
