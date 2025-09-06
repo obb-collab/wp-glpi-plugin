@@ -364,20 +364,20 @@
       const list = modal.querySelector('#gnt-category-list');
       const counts = {};
       data.categories.forEach(function(c){
-        counts[c.name] = (counts[c.name] || 0) + 1;
+        const name = (c.name || '').trim();
+        counts[name] = (counts[name] || 0) + 1;
       });
       data.categories.forEach(function(c){
         const opt = document.createElement('option');
-        let val = c.name;
-        if (counts[c.name] > 1 && c.path) {
-          const parts = c.path.split(/\s[\/\>]\s/);
-          parts.pop();
-          const parent = parts.join(' / ');
-          if (parent) val = c.name + ' (' + parent + ')';
+        const name = (c.name || '').trim();
+        let path = (c.path || '').replace(/\s[\/\>]\s/g, ' › ').replace(/\s+/g, ' ').trim();
+        let val = name;
+        if (counts[name] > 1 && path) {
+          val = path;
         }
         opt.value = val;
         opt.setAttribute('data-id', c.id);
-        if (c.path) opt.setAttribute('data-path', c.path);
+        if (path) opt.setAttribute('data-path', path);
         list.appendChild(opt);
       });
       categoriesLoaded = true;

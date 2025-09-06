@@ -66,7 +66,7 @@ function gexe_get_form_data() {
             if (gexe_glpi_has_column('glpi_itilcategories', 'is_helpdesk_visible')) {
                 $cat_where[] = 'is_helpdesk_visible = 1';
             }
-            $cat_sql = 'SELECT id, name FROM `glpi`.`glpi_itilcategories`';
+            $cat_sql = 'SELECT id, name, completename FROM `glpi`.`glpi_itilcategories`';
             if (!empty($cat_where)) {
                 $cat_sql .= ' WHERE ' . implode(' AND ', $cat_where);
             }
@@ -76,9 +76,13 @@ function gexe_get_form_data() {
                 throw new Exception($glpi_db->last_error);
             }
             foreach ($cats as $c) {
+                $name = isset($c['name']) ? trim(preg_replace('/\s+/', ' ', wp_strip_all_tags($c['name']))) : '';
+                $path = isset($c['completename']) ? $c['completename'] : $name;
+                $path = trim(preg_replace('/\s+[\/\>]\s+/u', ' › ', wp_strip_all_tags($path)));
                 $categories[] = [
                     'id'   => (int) $c['id'],
-                    'name' => $c['name'],
+                    'name' => $name,
+                    'path' => $path,
                 ];
             }
 
@@ -117,7 +121,7 @@ function gexe_get_form_data() {
             $categories = [];
             $locations  = [];
 
-            $url = gexe_glpi_api_url() . '/ITILCategory/?range=0-1000&order=ASC&sort=name';
+            $url = gexe_glpi_api_url() . '/ITILCategory/?range=0-1000&order=ASC&sort=completename';
             $t_api = microtime(true);
             $resp = wp_remote_get($url, [
                 'timeout' => 10,
@@ -128,9 +132,13 @@ function gexe_get_form_data() {
                 $body = json_decode(wp_remote_retrieve_body($resp), true);
                 if (is_array($body)) {
                     foreach ($body as $c) {
+                        $name = isset($c['name']) ? trim(preg_replace('/\s+/', ' ', wp_strip_all_tags($c['name']))) : '';
+                        $path = isset($c['completename']) ? $c['completename'] : $name;
+                        $path = trim(preg_replace('/\s+[\/\>]\s+/u', ' › ', wp_strip_all_tags($path)));
                         $categories[] = [
                             'id'   => isset($c['id']) ? (int) $c['id'] : 0,
-                            'name' => isset($c['name']) ? $c['name'] : '',
+                            'name' => $name,
+                            'path' => $path,
                         ];
                     }
                 }
