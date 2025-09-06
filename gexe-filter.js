@@ -1069,14 +1069,9 @@
       btn.addEventListener('click', () => {
         $$('.status-filter-btn').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
-        // при выборе статуса сбрасываем выбранные категории
-        selectedCategories = [];
-        $$('.glpi-cat-chip').forEach(b => { b.classList.remove('active'); b.setAttribute('aria-pressed','false'); });
-        const box = document.getElementById('glpi-categories-inline');
-        const reset = box ? box.querySelector('.glpi-cat-reset') : null;
-        if (reset) reset.hidden = true;
-        localStorage.removeItem('glpi.categories.selected');
-        recalcStatusCounts(); recalcCategoryVisibility(); filterCards();
+        recalcStatusCounts();
+        recalcCategoryVisibility();
+        filterCards();
       });
     });
     const inp = document.getElementById('glpi-unified-search');
