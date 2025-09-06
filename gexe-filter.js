@@ -14,6 +14,19 @@
   window.gexeAjax = ajaxConfig;
   const glpiAjax = ajaxConfig;
 
+  const ERROR_MAP = {
+    not_logged_in: 'Требуется авторизация',
+    no_glpi_id_for_current_user: 'Нет связи с GLPI',
+    empty_comment: 'Введите комментарий',
+    ticket_not_found: 'Заявка не найдена',
+    sql_error: 'Ошибка базы данных',
+    network_error: 'Ошибка сети',
+  };
+  function showError(code) {
+    const msg = ERROR_MAP[code] || 'Неизвестная ошибка';
+    if (window.glpiToast) glpiToast(msg); else alert(msg);
+  }
+
   /* ========================= УТИЛИТЫ ========================= */
   const $  = (s, p) => (p || document).querySelector(s);
   const $$ = (s, p) => Array.from((p || document).querySelectorAll(s));
@@ -153,39 +166,29 @@
             mb.setAttribute('aria-disabled', 'true');
           }
         }
-        if (resp.data.followup_id) {
-          const actionId = crypto.randomUUID();
-          addPendingComment(ticketId, 'Принято в работу', actionId);
-          const info = pendingComments[ticketId];
-          if (info) {
-            const meta = $('.meta', info.el);
-            if (meta) {
-              meta.innerHTML = '<span class="glpi-comment-date" data-date="'+(resp.data.created_at || new Date().toISOString())+'"></span>';
-              updateAgeFooters();
-            }
-            info.el.classList.remove('glpi-comment--pending');
-            const st = info.el.querySelector('.glpi-comment-status');
-            if (st) st.remove();
-            delete pendingComments[ticketId];
-          }
-        }
+        reloadComments(ticketId);
+        refreshTicketMeta(ticketId);
         lockAction(ticketId, 'accept', false);
-        recalcStatusCounts(); filterCards(); refreshTicketMeta(ticketId);
-        if (window.glpiToast) glpiToast('Принято в работу');
+        recalcStatusCounts(); filterCards();
+        if (resp.data.already) {
+          if (window.glpiToast) glpiToast('Уже в работе');
+        } else if (window.glpiToast) {
+          glpiToast('Заявка принята в работу');
+        }
       } else {
         btn.classList.remove('is-loading');
         btn.removeAttribute('disabled');
         btn.removeAttribute('aria-disabled');
         lockAction(ticketId, 'accept', false);
-        const msg = resp.data && resp.data.error ? resp.data.error : 'action_failed';
-        if (window.glpiToast) glpiToast(msg);
+        const code = resp.data && resp.data.error ? resp.data.error : '';
+        showError(code || 'action_failed');
       }
     }).catch(() => {
       btn.classList.remove('is-loading');
       btn.removeAttribute('disabled');
       btn.removeAttribute('aria-disabled');
       lockAction(ticketId, 'accept', false);
-      if (window.glpiToast) glpiToast('Ошибка сети');
+      showError('network_error');
     });
   }
 
@@ -412,7 +415,6 @@
   /* ========================= МОДАЛКА ПРОСМОТРА КАРТОЧКИ ========================= */
   let modalEl = null;
   let commentsController = null;
-  const pendingComments = {};
   function ensureViewerModal() {
     if (modalEl) return modalEl;
     modalEl = document.createElement('div');
@@ -439,7 +441,6 @@
     if (!modalEl) return;
     modalEl.classList.remove('gexe-modal--open');
     document.body.classList.remove('glpi-modal-open');
-    Object.values(pendingComments).forEach(p => { if (p.poller) clearInterval(p.poller); });
   }
 
   function renderModalCard(cardEl) {
@@ -544,68 +545,18 @@
     }
   }
 
-  function addPendingComment(ticketId, text, actionId) {
-    const box = $('#gexe-comments');
-    if (!box) return;
-    const el = document.createElement('div');
-    el.className = 'glpi-comment glpi-comment--pending';
-    el.innerHTML = '<div class="meta"><span class="glpi-comment-status">Отправка...</span></div><div class="text glpi-txt"></div>';
-    const txtEl = $('.text', el); if (txtEl) txtEl.textContent = text;
-    box.appendChild(el);
-    pendingComments[ticketId] = { el, actionId, poller: null, followupId: 0, start: Date.now() };
-  }
-
-  function markPendingSent(ticketId, followupId, createdAt) {
-    const info = pendingComments[ticketId];
-    if (!info) return;
-    info.followupId = followupId;
-    const meta = $('.meta', info.el);
-    if (meta) {
-      meta.innerHTML = '<span class="glpi-comment-date" data-date="'+createdAt+'"></span><span class="glpi-comment-status"><span class="glpi-comment-spinner"></span> Отправлено</span>';
-      updateAgeFooters();
-    }
-    startPolling(ticketId);
-  }
-
-  function startPolling(ticketId) {
-    const info = pendingComments[ticketId];
-    if (!info || info.poller) return;
-    const base = window.glpiAjax && glpiAjax.rest;
-    const nonce = window.glpiAjax && glpiAjax.restNonce;
-    if (!base || !nonce || !info.followupId) return;
-    let attempts = 0;
-    info.poller = setInterval(() => {
-      attempts++;
-      fetch(base + 'followup?id=' + info.followupId + '&_=' + Date.now(), { headers: { 'X-WP-Nonce': nonce, 'Cache-Control': 'no-cache' } })
-        .then(r => r.json())
-        .then(data => {
-          if (data && data.html) {
-            info.el.innerHTML = data.html;
-            info.el.classList.remove('glpi-comment--pending');
-            clearInterval(info.poller);
-            delete pendingComments[ticketId];
-            lockAction(ticketId, 'comment', false);
-            updateAgeFooters();
-          } else if (attempts >= 2) {
-            const st = $('.glpi-comment-status', info.el);
-            if (st) st.textContent = 'Отправлено, будет видно позже';
-            info.el.classList.add('glpi-comment--stopped');
-            clearInterval(info.poller);
-            delete pendingComments[ticketId];
-            lockAction(ticketId, 'comment', false);
-          }
-        })
-        .catch(() => {
-          if (attempts >= 2) {
-            const st = $('.glpi-comment-status', info.el);
-            if (st) st.textContent = 'Отправлено, будет видно позже';
-            info.el.classList.add('glpi-comment--stopped');
-            clearInterval(info.poller);
-            delete pendingComments[ticketId];
-            lockAction(ticketId, 'comment', false);
-          }
-        });
-    }, 1500);
+  function reloadComments(ticketId) {
+    const url = window.glpiAjax && glpiAjax.url;
+    const nonce = window.glpiAjax && glpiAjax.nonce;
+    if (!url || !nonce) return;
+    const fd = new FormData();
+    fd.append('action', 'glpi_get_comments');
+    fd.append('_ajax_nonce', nonce);
+    fd.append('ticket_id', String(ticketId));
+    fetch(url, { method: 'POST', body: fd })
+      .then(r => r.json())
+      .then(data => applyCommentsData(ticketId, data))
+      .catch(()=>{});
   }
 
   /* ========================= МОДАЛКА КОММЕНТАРИЯ ========================= */
@@ -661,41 +612,33 @@
     const txtEl = document.querySelector('#gexe-cmnt-text');
     const txt = (txtEl && txtEl.value ? txtEl.value : '').trim();
     if (!id || !txt) return;
-    // закрываем окно сразу (важно на мобилках)
     closeCommentModal();
     const url = window.glpiAjax && glpiAjax.url;
     const nonce = window.glpiAjax && glpiAjax.nonce;
     if (!url || !nonce) return;
     lockAction(id, 'comment', true);
-    const actionId = crypto.randomUUID();
-    addPendingComment(id, txt, actionId);
     const fd = new FormData();
     fd.append('action', 'glpi_comment_add');
     fd.append('nonce', nonce);
     fd.append('ticket_id', String(id));
     fd.append('content', txt);
-    fd.append('action_id', actionId);
     fetch(url, { method: 'POST', body: fd })
       .then(r => r.json().then(data => ({ status: r.status, data })))
       .then(resp => {
+        lockAction(id, 'comment', false);
         if (resp.status === 200 && resp.data && resp.data.ok) {
-          if (window.gexePrefetchedComments) delete window.gexePrefetchedComments[id];
-          applyActionVisibility();
+          reloadComments(id);
           refreshTicketMeta(id);
-          markPendingSent(id, resp.followup_id, resp.created_at);
+          if (txtEl) txtEl.value = '';
+          if (window.glpiToast) glpiToast('Комментарий отправлен');
         } else {
-          const pend = pendingComments[id];
-          if (pend) { pend.el.remove(); delete pendingComments[id]; }
-          lockAction(id, 'comment', false);
-          const msg = resp.data && resp.data.error ? resp.data.error : 'comment_failed';
-          alert(msg);
+          const code = resp.data && resp.data.error ? resp.data.error : '';
+          showError(code || 'comment_failed');
         }
       })
-      .catch(()=>{
-        const pend = pendingComments[id];
-        if (pend) { pend.el.remove(); delete pendingComments[id]; }
+      .catch(() => {
         lockAction(id, 'comment', false);
-        alert('network_error');
+        showError('network_error');
       });
   }
 
@@ -742,7 +685,7 @@
     fd.append('action', 'glpi_ticket_resolve');
     fd.append('_ajax_nonce', (window.glpiAjax && glpiAjax.nonce) || '');
     fd.append('ticket_id', String(id));
-    fd.append('solution_text', 'Задача решена');
+    fd.append('solution_text', 'Завершено');
     const timeout = setTimeout(() => { lockAction(id, 'done', false); if (btn) setActionLoading(btn, false); }, 10000);
     fetch(glpiAjax.url, { method: 'POST', body: fd })
       .then(r => r.json().then(data => ({ status: r.status, data })))
@@ -770,18 +713,19 @@
           }
           refreshTicketMeta(id);
           lockAction(id, 'done', false);
+          if (window.glpiToast) glpiToast('Задача закрыта');
         } else {
           if (btn) setActionLoading(btn, false);
           lockAction(id, 'done', false);
-          const msg = resp.data && resp.data.error ? resp.data.error : 'resolve_failed';
-          alert(msg);
+          const code = resp.data && resp.data.error ? resp.data.error : '';
+          showError(code || 'resolve_failed');
         }
       })
       .catch(() => {
         clearTimeout(timeout);
         if (btn) setActionLoading(btn, false);
         lockAction(id, 'done', false);
-        alert('Ошибка сети');
+        showError('network_error');
       });
   }
 
@@ -803,28 +747,6 @@
         .then(resp => resolve(resp || { success: false }))
         .catch(() => resolve({ success: false }));
     });
-  }
-
-  function verifyStartComment(ticketId) {
-    const url = window.glpiAjax && glpiAjax.url;
-    const nonce = window.glpiAjax && glpiAjax.nonce;
-    if (!url || !nonce) return;
-    const fd = new FormData();
-    fd.append('action', 'glpi_ticket_started');
-    fd.append('_ajax_nonce', nonce);
-    fd.append('ticket_id', String(ticketId));
-    fetch(url, { method: 'POST', body: fd })
-      .then(r => r.json())
-      .then(resp => {
-        if (!(resp && resp.success && resp.data && resp.data.started)) {
-          if (window.glpiToast) {
-            window.glpiToast('Комментарий пока не виден, попробуйте обновить');
-          } else {
-            console.warn('Комментарий пока не виден, попробуйте обновить');
-          }
-        }
-      })
-      .catch(()=>{});
   }
 
   /* ========================= КНОПКИ ДЕЙСТВИЙ НА КАРТОЧКЕ ========================= */
