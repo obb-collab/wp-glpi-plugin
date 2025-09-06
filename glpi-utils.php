@@ -64,42 +64,37 @@ function gexe_get_current_glpi_uid() {
 }
 
 /**
- * Log GLPI REST actions into uploads/glpi-plugin/logs/actions.log.
+ * Stub for legacy logging – no-op.
  */
 function gexe_glpi_log($action, $url, $response, $start_time) {
-    $uploads = wp_upload_dir();
-    $dir     = trailingslashit($uploads['basedir']) . 'glpi-plugin/logs';
-    if (!is_dir($dir)) {
-        wp_mkdir_p($dir);
-    }
+    // Logging disabled
+}
 
-    $elapsed = (int) round((microtime(true) - $start_time) * 1000);
-    if (is_wp_error($response)) {
-        $line = sprintf(
-            "%s\t%s\t0\t%dms\t%s\n",
-            $action,
-            $url,
-            $elapsed,
-            $response->get_error_message()
-        );
-    } else {
-        $code = wp_remote_retrieve_response_code($response);
-        $body = wp_remote_retrieve_body($response);
-        $short = mb_substr(trim($body), 0, 200);
-        $line = sprintf(
-            "%s\t%s\t%d\t%dms\t%s\n",
-            $action,
-            $url,
-            $code,
-            $elapsed,
-            $short
-        );
-        if ($code >= 400) {
-            $line .= $body . "\n"; // full body for errors
-        }
-    }
+/**
+ * Send unified AJAX success response.
+ */
+function gexe_ajax_success(array $data = [], $status = 200) {
+    wp_send_json([
+        'success' => true,
+        'data'    => $data,
+    ], $status);
+}
 
-    file_put_contents($dir . '/actions.log', $line, FILE_APPEND);
+/**
+ * Send unified AJAX error response.
+ */
+function gexe_ajax_error($code, $message, $status = 400, $details = null) {
+    $error = [
+        'code'    => (string) $code,
+        'message' => (string) $message,
+    ];
+    if ($details !== null) {
+        $error['details'] = $details;
+    }
+    wp_send_json([
+        'success' => false,
+        'error'   => $error,
+    ], $status);
 }
 
 /**
