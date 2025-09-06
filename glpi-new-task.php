@@ -68,55 +68,51 @@ function gexe_create_ticket() {
         wp_send_json(['ok' => false, 'error' => 'bad_request'], 400);
     }
 
-    global $glpi_db;
-
     $glpi_uid = gexe_get_current_glpi_uid(); // может быть 0
 
-    // Создаём тикет
-    $ticket_data = [
+    $input = [
         'name'             => $name,
         'content'          => $content,
-        'status'           => 1, // Новая
-        'date'             => current_time('mysql'),
         'itilcategories_id'=> $cat_id ?: 0,
         'locations_id'     => $loc_id ?: 0,
+        'urgency'          => 3,
+        'impact'           => 3,
+        'priority'         => 3,
+        'type'             => 1,
+        'status'           => 1,
     ];
-    $formats = ['%s','%s','%d','%s','%d','%d'];
-
-    $ok = (false !== $glpi_db->insert('glpi_tickets', $ticket_data, $formats));
-    if (!$ok) {
-        wp_send_json(['ok' => false, 'error' => 'insert_ticket_failed']);
-    }
-
-    $ticket_id = intval($glpi_db->insert_id);
-
-    // Добавляем заявителя (requester, type=1), если есть пользователь GLPI
-    if ($glpi_uid > 0) {
-        $glpi_db->insert('glpi_tickets_users', [
-            'tickets_id' => $ticket_id,
-            'users_id'   => $glpi_uid,
-            'type'       => 1
-        ], ['%d','%d','%d']);
-    }
-
-    // Исполнитель по флажку (assignee, type=2)
     if ($assign_me && $glpi_uid > 0) {
-        $glpi_db->insert('glpi_tickets_users', [
-            'tickets_id' => $ticket_id,
-            'users_id'   => $glpi_uid,
-            'type'       => 2
-        ], ['%d','%d','%d']);
-    }
-    if ($assignee_id > 0 && $assignee_id !== $glpi_uid) {
-        $glpi_db->insert('glpi_tickets_users', [
-            'tickets_id' => $ticket_id,
-            'users_id'   => $assignee_id,
-            'type'       => 2
-        ], ['%d','%d','%d']);
+        $input['users_id_recipient'] = $glpi_uid;
+    } elseif ($assignee_id > 0) {
+        $input['users_id_assign'] = $assignee_id;
     }
 
-    wp_send_json([
-        'ok'        => true,
-        'ticket_id' => $ticket_id
-    ]);
+    $resp = gexe_glpi_rest_request('ticket_create', 'POST', '/Ticket', [ 'input' => $input ]);
+    if (is_wp_error($resp)) {
+        wp_send_json(['ok' => false, 'error' => 'network_error'], 500);
+    }
+
+    $code = wp_remote_retrieve_response_code($resp);
+    $body = json_decode(wp_remote_retrieve_body($resp), true);
+    if ($code === 200 || $code === 201) {
+        $ticket_id = 0;
+        if (is_array($body) && isset($body['id'])) {
+            $ticket_id = intval($body['id']);
+        } elseif (is_array($body) && isset($body['ticket']['id'])) {
+            $ticket_id = intval($body['ticket']['id']);
+        }
+        wp_send_json([
+            'ok'        => true,
+            'ticket_id' => $ticket_id
+        ]);
+    }
+
+    $message = '';
+    if (is_array($body) && isset($body['message'])) {
+        $message = (string) $body['message'];
+    }
+    if ($message === '') {
+        $message = 'GLPI API error';
+    }
+    wp_send_json(['ok' => false, 'error' => $message], $code);
 }

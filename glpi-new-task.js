@@ -357,6 +357,14 @@
       const data = resp.data || resp;
       if (data && data.ok) {
         close();
+        if (data.ticket_id) {
+          const note = document.createElement('div');
+          note.className = 'gnt-ticket-note';
+          note.textContent = 'Создана заявка №' + data.ticket_id;
+          note.style.cssText = 'position:fixed;top:10px;right:10px;background:#4caf50;color:#fff;padding:10px;z-index:10000;';
+          document.body.appendChild(note);
+          setTimeout(()=>{ note.remove(); }, 5000);
+        }
       } else {
         showSubmitError(data && data.error ? data.error : 'Ошибка создания заявки');
       }
