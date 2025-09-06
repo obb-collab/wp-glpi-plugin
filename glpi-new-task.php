@@ -82,6 +82,12 @@ function gexe_create_ticket() {
         'type'             => 1,
         'status'           => 1,
     ];
+    $due_raw = isset($payload['due_date']) ? sanitize_text_field($payload['due_date']) : '';
+    $due_iso = gexe_iso_datetime($due_raw);
+    if (null !== $due_iso) {
+        $input['due_date'] = $due_iso;
+    }
+
     $input['users_id_recipient'] = $glpi_uid;
 
     $assign_glpi_id = $glpi_uid;
