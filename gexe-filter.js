@@ -120,6 +120,7 @@
     fd.append('action', 'glpi_ticket_accept_sql');
     fd.append('ticket_id', String(ticketId));
     fd.append('assignee_glpi_id', String(ajax.user_glpi_id || 0));
+    fd.append('add_comment', '1');
     fd.append('nonce', ajax.nonce);
 
     const send = retry => fetch(ajax.url, { method: 'POST', body: fd })
