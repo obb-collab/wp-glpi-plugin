@@ -15,16 +15,22 @@
   const glpiAjax = ajaxConfig;
 
   const ERROR_MAP = {
-    not_logged_in: 'Требуется авторизация',
-    no_glpi_id_for_current_user: 'Нет связи с GLPI',
+    not_logged_in: 'Сессия истекла. Войдите в систему.',
+    nonce_failed: 'Обновите страницу (просрочен ключ безопасности).',
+    no_glpi_id_for_current_user: 'В профиле WP не указан GLPI ID.',
+    assignee_not_mapped_to_glpi: 'Выбранный исполнитель не привязан к GLPI.',
+    ticket_not_found: 'Заявка не найдена.',
+    sql_error: details => 'Ошибка записи в GLPI. Код: ' + (details || '') + '.',
     empty_comment: 'Введите комментарий',
-    ticket_not_found: 'Заявка не найдена',
-    sql_error: 'Ошибка базы данных',
     network_error: 'Ошибка сети',
   };
-  function showError(code) {
-    const msg = ERROR_MAP[code] || 'Неизвестная ошибка';
-    if (window.glpiToast) glpiToast(msg); else alert(msg);
+  function showError(code, details, status) {
+    let msg;
+    const m = ERROR_MAP[code];
+    if (typeof m === 'function') msg = m(details);
+    else if (typeof m === 'string') msg = m;
+    if (!msg) msg = 'Неизвестная ошибка' + (status ? ' (' + status + ')' : '');
+    if (window.glpiToast) glpiToast(msg); else console.error(msg);
   }
 
   /* ========================= УТИЛИТЫ ========================= */
@@ -65,6 +71,17 @@
       el.removeAttribute('aria-disabled');
       el.classList.remove('is-loading');
     }
+  }
+
+  function debugRequest(url, payload) {
+    if (!window.GEXE_DEBUG) return;
+    console.debug('AJAX request:', url, payload);
+  }
+  async function debugResponse(res) {
+    if (!window.GEXE_DEBUG) return;
+    console.debug('AJAX response status:', res.status);
+    try { console.debug('AJAX json:', await res.clone().json()); }
+    catch (e) { console.debug('AJAX text:', await res.clone().text()); }
   }
 
   function refreshActionsNonce() {
@@ -124,9 +141,7 @@
     if (!ajax || !ajax.url) return;
 
     lockAction(ticketId, 'accept', true);
-    btn.setAttribute('disabled', 'disabled');
-    btn.setAttribute('aria-disabled', 'true');
-    btn.classList.add('is-loading');
+    setActionLoading(btn, true);
     if (window.glpiToast) glpiToast('Принимаем в работу…');
 
     const fd = new FormData();
@@ -136,57 +151,69 @@
     fd.append('add_comment', '1');
     fd.append('nonce', ajax.nonce);
 
-    const send = retry => fetch(ajax.url, { method: 'POST', body: fd })
-      .then(r => r.json().then(data => ({ status: r.status, data })))
-      .then(resp => {
-        if (resp.status === 403 && resp.data && resp.data.error === 'invalid_nonce' && !retry) {
-          return refreshActionsNonce().then(() => { fd.set('nonce', ajax.nonce); return send(true); });
-        }
-        return resp;
-      });
+    const send = async retry => {
+      debugRequest(ajax.url, Object.fromEntries(fd.entries()));
+      const res = await fetch(ajax.url, { method: 'POST', body: fd });
+      await debugResponse(res);
+      let data = null;
+      try { data = await res.clone().json(); } catch(e) {}
+      if (res.status === 403 && data && data.error === 'nonce_failed' && !retry) {
+        await refreshActionsNonce();
+        fd.set('nonce', ajax.nonce);
+        return send(true);
+      }
+      return { res, data };
+    };
 
-    send(false).then(resp => {
-      if (resp.status === 200 && resp.data && resp.data.ok) {
-        btn.classList.remove('is-loading');
-        const cardEl = document.querySelector('.glpi-card[data-ticket-id="'+ticketId+'"]');
-        if (cardEl) {
-          cardEl.setAttribute('data-status', '2');
-          const cardBtn = cardEl.querySelector('.gexe-open-accept');
-          if (cardBtn) {
-            cardBtn.disabled = true;
-            cardBtn.classList.remove('is-loading');
-            cardBtn.setAttribute('aria-disabled', 'true');
-          }
+    send(false).then(({res, data}) => {
+      lockAction(ticketId, 'accept', false);
+      if (!res.ok || !data || !data.ok) {
+        setActionLoading(btn, false);
+        showError(data && data.error, data && data.details, res.status);
+        return;
+      }
+      setActionLoading(btn, false);
+      btn.innerHTML = '<i class="fa-solid fa-check"></i>';
+      const cardEl = document.querySelector('.glpi-card[data-ticket-id="'+ticketId+'"]');
+      if (cardEl) {
+        cardEl.setAttribute('data-status', '2');
+        cardEl.setAttribute('data-unassigned', '0');
+        if (data.payload && data.payload.assigned_glpi_id) {
+          cardEl.setAttribute('data-assignees', String(data.payload.assigned_glpi_id));
         }
-        if (modalEl && modalEl.getAttribute('data-ticket-id') === String(ticketId)) {
-          const mb = modalEl.querySelector('.gexe-open-accept');
-          if (mb) {
-            mb.disabled = true;
-            mb.classList.remove('is-loading');
-            mb.setAttribute('aria-disabled', 'true');
-          }
+        const cardBtn = cardEl.querySelector('.gexe-open-accept');
+        if (cardBtn && cardBtn !== btn) {
+          setActionLoading(cardBtn, false);
+          cardBtn.disabled = true;
+          cardBtn.innerHTML = '<i class="fa-solid fa-check"></i>';
+          cardBtn.setAttribute('aria-disabled', 'true');
         }
-        reloadComments(ticketId);
-        refreshTicketMeta(ticketId);
-        lockAction(ticketId, 'accept', false);
-        recalcStatusCounts(); filterCards();
-        if (resp.data.already) {
-          if (window.glpiToast) glpiToast('Уже в работе');
-        } else if (window.glpiToast) {
-          glpiToast('Заявка принята в работу');
+        const footer = cardEl.querySelector('.glpi-executor-footer');
+        if (footer && !footer.querySelector('.glpi-executors')) {
+          const span = document.createElement('span');
+          span.className = 'glpi-executors';
+          span.innerHTML = '<i class="fa-solid fa-user-tie glpi-executor"></i> Вы';
+          footer.appendChild(span);
         }
-      } else {
-        btn.classList.remove('is-loading');
-        btn.removeAttribute('disabled');
-        btn.removeAttribute('aria-disabled');
-        lockAction(ticketId, 'accept', false);
-        const code = resp.data && resp.data.error ? resp.data.error : '';
-        showError(code || 'action_failed');
+      }
+      if (modalEl && modalEl.getAttribute('data-ticket-id') === String(ticketId)) {
+        const mb = modalEl.querySelector('.gexe-open-accept');
+        if (mb && mb !== btn) {
+          setActionLoading(mb, false);
+          mb.disabled = true;
+          mb.innerHTML = '<i class="fa-solid fa-check"></i>';
+          mb.setAttribute('aria-disabled', 'true');
+        }
+      }
+      insertFollowup(ticketId, data.payload && data.payload.followup);
+      refreshTicketMeta(ticketId);
+      recalcStatusCounts(); filterCards();
+      if (window.glpiToast) {
+        if (data.payload && data.payload.already) glpiToast('Уже в работе');
+        else glpiToast('Заявка принята в работу');
       }
     }).catch(() => {
-      btn.classList.remove('is-loading');
-      btn.removeAttribute('disabled');
-      btn.removeAttribute('aria-disabled');
+      setActionLoading(btn, false);
       lockAction(ticketId, 'accept', false);
       showError('network_error');
     });
@@ -565,6 +592,39 @@
       .catch(()=>{});
   }
 
+  function insertFollowup(ticketId, f) {
+    if (!f) return;
+    const box = $('#gexe-comments');
+    if (box) {
+      const wrap = document.createElement('div');
+      wrap.className = 'glpi-comment';
+      const meta = document.createElement('div');
+      meta.className = 'meta';
+      const author = document.createElement('span');
+      author.className = 'glpi-comment-author';
+      author.innerHTML = '<i class="fa-regular fa-user"></i> Вы';
+      const date = document.createElement('span');
+      date.className = 'glpi-comment-date';
+      date.setAttribute('data-date', f.date || '');
+      meta.appendChild(author); meta.appendChild(date);
+      const text = document.createElement('div');
+      text.className = 'text';
+      String(f.content || '').split(/\n+/).map(s => s.trim()).filter(Boolean).forEach(line => {
+        const p = document.createElement('p');
+        p.className = 'glpi-txt';
+        p.textContent = line;
+        text.appendChild(p);
+      });
+      wrap.appendChild(meta); wrap.appendChild(text);
+      box.insertBefore(wrap, box.firstChild);
+      updateAgeFooters();
+    }
+    const modalCnt = modalEl && modalEl.querySelector('.glpi-modal__comments-title .gexe-cmnt-count');
+    if (modalCnt) modalCnt.textContent = String((parseInt(modalCnt.textContent,10) || 0) + 1);
+    const cardCnt = document.querySelector('.glpi-card[data-ticket-id="'+ticketId+'"] .gexe-cmnt-count');
+    if (cardCnt) cardCnt.textContent = String((parseInt(cardCnt.textContent,10) || 0) + 1);
+  }
+
   /* ========================= МОДАЛКА КОММЕНТАРИЯ ========================= */
   let cmntModal = null;
   let doneModal = null;
@@ -612,7 +672,7 @@
     if (!cmntModal) return;
     cmntModal.classList.remove('is-open'); document.body.classList.remove('glpi-modal-open');
   }
-  function sendComment(){
+  async function sendComment(){
     if (!cmntModal) return;
     const id  = Number(cmntModal.getAttribute('data-ticket-id') || '0');
     const txtEl = document.querySelector('#gexe-cmnt-text');
@@ -628,24 +688,26 @@
     fd.append('nonce', nonce);
     fd.append('ticket_id', String(id));
     fd.append('content', txt);
-    fetch(url, { method: 'POST', body: fd })
-      .then(r => r.json().then(data => ({ status: r.status, data })))
-      .then(resp => {
-        lockAction(id, 'comment', false);
-        if (resp.status === 200 && resp.data && resp.data.ok) {
-          reloadComments(id);
-          refreshTicketMeta(id);
-          if (txtEl) txtEl.value = '';
-          if (window.glpiToast) glpiToast('Комментарий отправлен');
-        } else {
-          const code = resp.data && resp.data.error ? resp.data.error : '';
-          showError(code || 'comment_failed');
-        }
-      })
-      .catch(() => {
-        lockAction(id, 'comment', false);
-        showError('network_error');
-      });
+    debugRequest(url, Object.fromEntries(fd.entries()));
+    try {
+      const res = await fetch(url, { method: 'POST', body: fd });
+      await debugResponse(res);
+      let data = null;
+      try { data = await res.clone().json(); } catch(e) { console.error(e); }
+      lockAction(id, 'comment', false);
+      if (!res.ok || !data || !data.ok) {
+        const code = data && data.error;
+        showError(code, data && data.details, res.status);
+        return;
+      }
+      if (txtEl) txtEl.value = '';
+      insertFollowup(id, data.payload && data.payload.followup);
+      refreshTicketMeta(id);
+      if (window.glpiToast) glpiToast('Комментарий отправлен');
+    } catch (err) {
+      lockAction(id, 'comment', false);
+      showError('network_error');
+    }
   }
 
   /* ========================= МОДАЛКА ПОДТВЕРЖДЕНИЯ ЗАВЕРШЕНИЯ ========================= */
@@ -679,7 +741,7 @@
     if (!doneModal) return;
     doneModal.classList.remove('is-open'); document.body.classList.remove('glpi-modal-open');
   }
-  function sendDone() {
+  async function sendDone() {
     if (!doneModal) return;
     const id = Number(doneModal.getAttribute('data-ticket-id') || '0');
     if (!id) return;
@@ -692,47 +754,40 @@
     fd.append('_ajax_nonce', (window.glpiAjax && glpiAjax.nonce) || '');
     fd.append('ticket_id', String(id));
     fd.append('solution_text', 'Завершено');
-    const timeout = setTimeout(() => { lockAction(id, 'done', false); if (btn) setActionLoading(btn, false); }, 10000);
-    fetch(glpiAjax.url, { method: 'POST', body: fd })
-      .then(r => r.json().then(data => ({ status: r.status, data })))
-      .then(resp => {
-        clearTimeout(timeout);
-        if (resp.status === 200 && resp.data && resp.data.ok) {
-          if (btn) {
-            btn.classList.remove('is-loading');
-            btn.disabled = true;
-            btn.setAttribute('aria-disabled', 'true');
-          }
-          closeDoneModal();
-          const card = document.querySelector('.glpi-card[data-ticket-id="'+id+'"]');
-          if (card) {
-            card.setAttribute('data-status', String(glpiAjax.solvedStatus || 6));
-            let badge = card.querySelector('.glpi-solved-badge');
-            if (!badge) {
-              badge = document.createElement('div');
-              badge.className = 'glpi-solved-badge';
-              badge.textContent = 'Решено';
-              card.appendChild(badge);
-            }
-            card.classList.add('gexe-hide');
-            recalcStatusCounts(); filterCards();
-          }
-          refreshTicketMeta(id);
-          lockAction(id, 'done', false);
-          if (window.glpiToast) glpiToast('Задача закрыта');
-        } else {
-          if (btn) setActionLoading(btn, false);
-          lockAction(id, 'done', false);
-          const code = resp.data && resp.data.error ? resp.data.error : '';
-          showError(code || 'resolve_failed');
+    debugRequest(glpiAjax.url, Object.fromEntries(fd.entries()));
+    try {
+      const res = await fetch(glpiAjax.url, { method: 'POST', body: fd });
+      await debugResponse(res);
+      let data = null;
+      try { data = await res.clone().json(); } catch(e) {}
+      lockAction(id, 'done', false);
+      if (btn) setActionLoading(btn, false);
+      if (!res.ok || !data || !data.ok) {
+        showError(data && data.error, data && data.details, res.status);
+        return;
+      }
+      closeDoneModal();
+      const card = document.querySelector('.glpi-card[data-ticket-id="'+id+'"]');
+      if (card) {
+        card.setAttribute('data-status', String(glpiAjax.solvedStatus || 6));
+        let badge = card.querySelector('.glpi-solved-badge');
+        if (!badge) {
+          badge = document.createElement('div');
+          badge.className = 'glpi-solved-badge';
+          badge.textContent = 'Решено';
+          card.appendChild(badge);
         }
-      })
-      .catch(() => {
-        clearTimeout(timeout);
-        if (btn) setActionLoading(btn, false);
-        lockAction(id, 'done', false);
-        showError('network_error');
-      });
+        card.classList.add('gexe-hide');
+        recalcStatusCounts(); filterCards();
+      }
+      insertFollowup(id, data.payload && data.payload.followup);
+      refreshTicketMeta(id);
+      if (window.glpiToast) glpiToast('Задача закрыта');
+    } catch (err) {
+      if (btn) setActionLoading(btn, false);
+      lockAction(id, 'done', false);
+      showError('network_error');
+    }
   }
 
   /* ========================= ДЕЙСТВИЯ ПО КАРТОЧКЕ (AJAX) ========================= */
