@@ -200,8 +200,12 @@ function gexe_add_followup_sql($ticket_id, $content, $glpi_user_id_override = nu
         )
     );
     if ($author_id <= 0) {
+        // Prefer the current mapped GLPI user even if they are not yet assigned
+        // to the ticket. This allows operators with global permissions to
+        // comment on unassigned tickets. Fall back to the latest assignee if
+        // present.
         $current_glpi = gexe_get_current_glpi_uid();
-        if ($current_glpi > 0 && in_array($current_glpi, $assignees, true)) {
+        if ($current_glpi > 0) {
             $author_id = $current_glpi;
         } elseif (!empty($assignees)) {
             $author_id = (int) $assignees[0];
