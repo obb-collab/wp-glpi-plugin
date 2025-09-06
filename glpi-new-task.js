@@ -125,6 +125,13 @@
     });
   }
 
+  function showSubmitError(message){
+    const box = modal.querySelector('.glpi-form-loader');
+    if (!box) return;
+    box.innerHTML = '<span class="error">' + (message || 'Ошибка создания заявки') + '</span>';
+    box.hidden = false;
+  }
+
   function logClientError(msg){
     if (!window.gexeAjax) return;
     const params = new URLSearchParams();
@@ -312,6 +319,7 @@
 
   function submit(){
     if (!window.gexeAjax) return;
+    hideLoader();
     const name = modal.querySelector('#gnt-name').value.trim();
     const content = modal.querySelector('#gnt-content').value.trim();
     const catInput = modal.querySelector('#gnt-category');
@@ -330,18 +338,32 @@
       assign_me: assignMe ? 1 : 0,
       assignee_id: assigneeId
     };
-    const body = 'action=gexe_create_ticket&nonce='+encodeURIComponent(gexeAjax.nonce)+'&payload='+encodeURIComponent(JSON.stringify(payload));
+    const makeBody = () => 'action=gexe_create_ticket&nonce='+encodeURIComponent(gexeAjax.nonce)+'&payload='+encodeURIComponent(JSON.stringify(payload));
     const btn = modal.querySelector('.gnt-submit');
     btn.disabled = true;
-    fetch(gexeAjax.url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body
-    }).then(r=>r.json()).then(data=>{
+    const send = (retry) => {
+      return fetch(gexeAjax.url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: makeBody()
+      }).then(r=>r.json().then(data=>({status:r.status,data:data}))).then(resp=>{
+        if (resp.status === 403 && resp.data && resp.data.error === 'AJAX_FORBIDDEN' && !retry) {
+          return refreshNonce().then(()=>send(true));
+        }
+        return resp;
+      });
+    };
+    send(false).then(resp=>{
+      const data = resp.data || resp;
       if (data && data.ok) {
         close();
+      } else {
+        showSubmitError(data && data.error ? data.error : 'Ошибка создания заявки');
       }
-    }).catch(()=>{}).finally(()=>{btn.disabled = false;});
+    }).catch(err=>{
+      logClientError((err && err.code ? err.code + ': ' : '') + (err && err.message ? err.message : String(err)));
+      showSubmitError(err && err.message ? err.message : 'Ошибка отправки');
+    }).finally(()=>{btn.disabled = false;});
   }
 
   function updatePaths(){
