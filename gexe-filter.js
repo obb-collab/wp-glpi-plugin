@@ -22,6 +22,7 @@
     ticket_not_found: 'Заявка не найдена.',
     sql_error: details => 'Ошибка записи в GLPI. Код: ' + (details || '') + '.',
     empty_comment: 'Введите комментарий',
+    bad_response: 'Не удалось обработать ответ сервера.',
     network_error: 'Ошибка сети',
   };
   function showError(code, details, status) {
@@ -156,7 +157,7 @@
       const res = await fetch(ajax.url, { method: 'POST', body: fd });
       await debugResponse(res);
       let data = null;
-      try { data = await res.clone().json(); } catch(e) {}
+      try { data = await res.clone().json(); } catch (e) {}
       if (res.status === 403 && data && data.error === 'nonce_failed' && !retry) {
         await refreshActionsNonce();
         fd.set('nonce', ajax.nonce);
@@ -165,14 +166,21 @@
       return { res, data };
     };
 
-    send(false).then(({res, data}) => {
+    send(false).then(({ res, data }) => {
       lockAction(ticketId, 'accept', false);
-      if (!res.ok || !data || !data.ok) {
-        setActionLoading(btn, false);
-        showError(data && data.error, data && data.details, res.status);
+      setActionLoading(btn, false);
+      if (!res.ok) {
+        showError(data ? data.error : 'bad_response', data && data.details, res.status);
         return;
       }
-      setActionLoading(btn, false);
+      if (!data) {
+        showError('bad_response', null, res.status);
+        return;
+      }
+      if (!data.ok) {
+        showError(data.error, data.details, res.status);
+        return;
+      }
       btn.innerHTML = '<i class="fa-solid fa-check"></i>';
       const cardEl = document.querySelector('.glpi-card[data-ticket-id="'+ticketId+'"]');
       if (cardEl) {
@@ -696,13 +704,14 @@
     if (!cmntModal) return;
     const id  = Number(cmntModal.getAttribute('data-ticket-id') || '0');
     const txtEl = document.querySelector('#gexe-cmnt-text');
+    const btn = $('#gexe-cmnt-send', cmntModal);
     const txt = (txtEl && txtEl.value ? txtEl.value : '').trim();
-    if (!id || !txt) return;
-    closeCommentModal();
+    if (!id || !txt || !btn) return;
     const url = window.glpiAjax && glpiAjax.url;
     const nonce = window.glpiAjax && glpiAjax.nonce;
     if (!url || !nonce) return;
     lockAction(id, 'comment', true);
+    setActionLoading(btn, true);
     const fd = new FormData();
     fd.append('action', 'glpi_comment_add');
     fd.append('nonce', nonce);
@@ -713,11 +722,19 @@
       const res = await fetch(url, { method: 'POST', body: fd });
       await debugResponse(res);
       let data = null;
-      try { data = await res.clone().json(); } catch(e) { console.error(e); }
+      try { data = await res.clone().json(); } catch (e) {}
       lockAction(id, 'comment', false);
-      if (!res.ok || !data || !data.ok) {
-        const code = data && data.error;
-        showError(code, data && data.details, res.status);
+      setActionLoading(btn, false);
+      if (!res.ok) {
+        showError(data ? data.error : 'bad_response', data && data.details, res.status);
+        return;
+      }
+      if (!data) {
+        showError('bad_response', null, res.status);
+        return;
+      }
+      if (!data.ok) {
+        showError(data.error, data.details, res.status);
         return;
       }
       if (txtEl) txtEl.value = '';
@@ -726,6 +743,7 @@
       if (window.glpiToast) glpiToast('Комментарий отправлен');
     } catch (err) {
       lockAction(id, 'comment', false);
+      setActionLoading(btn, false);
       showError('network_error');
     }
   }
@@ -779,11 +797,19 @@
       const res = await fetch(glpiAjax.url, { method: 'POST', body: fd });
       await debugResponse(res);
       let data = null;
-      try { data = await res.clone().json(); } catch(e) {}
+      try { data = await res.clone().json(); } catch (e) {}
       lockAction(id, 'done', false);
       if (btn) setActionLoading(btn, false);
-      if (!res.ok || !data || !data.ok) {
-        showError(data && data.error, data && data.details, res.status);
+      if (!res.ok) {
+        showError(data ? data.error : 'bad_response', data && data.details, res.status);
+        return;
+      }
+      if (!data) {
+        showError('bad_response', null, res.status);
+        return;
+      }
+      if (!data.ok) {
+        showError(data.error, data.details, res.status);
         return;
       }
       closeDoneModal();
