@@ -8,6 +8,9 @@
   let loadSeq = 0;
   window.__gexeFormDataLoading = null;
 
+  let successModal = null;
+  let successTimer = null;
+
   function buildModal(){
     if (modal) return;
     modal = document.createElement('div');
@@ -252,6 +255,107 @@
     document.body.classList.remove('glpi-modal-open');
   }
 
+  function resetForm(){
+    if (!modal) return;
+    modal.querySelector('#gnt-name').value = '';
+    modal.querySelector('#gnt-content').value = '';
+    modal.querySelector('#gnt-category').value = '';
+    modal.querySelector('#gnt-location').value = '';
+    modal.querySelector('#gnt-category-path').textContent = '';
+    modal.querySelector('#gnt-location-path').textContent = '';
+    const assignChk = modal.querySelector('#gnt-assign-me');
+    const assigneeSel = modal.querySelector('#gnt-assignee');
+    assignChk.checked = true;
+    assigneeSel.value = '';
+    assigneeSel.disabled = true;
+    updateSubmitState();
+  }
+
+  function ensureSuccessModal(){
+    if (successModal) return;
+    successModal = document.createElement('div');
+    successModal.className = 'gnt-success-modal';
+    successModal.innerHTML = `
+      <div class="gnt-success-backdrop"></div>
+      <div class="gnt-success-dialog" role="dialog" aria-modal="true">
+        <div class="gnt-success-title">Успешно создана заявка</div>
+        <div class="gnt-success-text">Успешно создана заявка № <span class="gnt-ticket-id"></span></div>
+        <div class="gnt-success-actions">
+          <button type="button" class="gnt-open-ticket">Открыть заявку</button>
+          <button type="button" class="gnt-copy-ticket">Скопировать номер</button>
+          <button type="button" class="gnt-close-success">Закрыть</button>
+        </div>
+      </div>`;
+    document.body.appendChild(successModal);
+    successModal.querySelector('.gnt-success-backdrop').addEventListener('click', closeSuccessModal);
+    successModal.querySelector('.gnt-close-success').addEventListener('click', closeSuccessModal);
+    successModal.querySelector('.gnt-open-ticket').addEventListener('click', function(){
+      const tid = Number(successModal.getAttribute('data-ticket-id') || '0');
+      window.dispatchEvent(new CustomEvent('gexe:ticket:open', {detail:{ticketId:tid}}));
+      closeSuccessModal();
+    });
+    const copyBtn = successModal.querySelector('.gnt-copy-ticket');
+    copyBtn.addEventListener('click', function(){
+      const tid = successModal.getAttribute('data-ticket-id') || '';
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(String(tid));
+      }
+      copyBtn.textContent = 'Скопировано';
+      setTimeout(()=>{ copyBtn.textContent = 'Скопировать номер'; }, 2000);
+    });
+    successModal.addEventListener('keydown', handleSuccessKey);
+    ['mousemove','mousedown','touchstart'].forEach(ev=>{
+      successModal.addEventListener(ev, startSuccessTimer);
+    });
+  }
+
+  function handleSuccessKey(e){
+    if (e.key === 'Escape') { e.preventDefault(); closeSuccessModal(); return; }
+    if (e.key === 'Tab') { trapSuccessFocus(e); }
+    startSuccessTimer();
+  }
+
+  function trapSuccessFocus(e){
+    const focusable = successModal.querySelectorAll('button');
+    if (focusable.length === 0) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    const active = document.activeElement;
+    if (e.shiftKey && active === first) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && active === last) {
+      e.preventDefault();
+      first.focus();
+    }
+  }
+
+  function startSuccessTimer(){
+    clearTimeout(successTimer);
+    successTimer = setTimeout(closeSuccessModal, 5000);
+  }
+
+  function showSuccessModal(ticketId){
+    ensureSuccessModal();
+    successModal.setAttribute('data-ticket-id', String(ticketId));
+    successModal.querySelector('.gnt-ticket-id').textContent = ticketId;
+    successModal.classList.add('open');
+    document.body.classList.add('glpi-modal-open');
+    const openBtn = successModal.querySelector('.gnt-open-ticket');
+    if (openBtn) openBtn.focus();
+    startSuccessTimer();
+  }
+
+  function closeSuccessModal(){
+    if (!successModal) return;
+    successModal.classList.remove('open');
+    document.body.classList.remove('glpi-modal-open');
+    clearTimeout(successTimer);
+    resetForm();
+    const btn = document.querySelector('.glpi-newtask-btn');
+    if (btn) btn.focus();
+  }
+
   // deprecated loadFormData removed
 
   function fillDropdowns(data){
@@ -361,12 +465,7 @@
       if (data && data.ok) {
         close();
         if (data.ticket_id) {
-          const note = document.createElement('div');
-          note.className = 'gnt-ticket-note';
-          note.textContent = 'Создана заявка №' + data.ticket_id;
-          note.style.cssText = 'position:fixed;top:10px;right:10px;background:#4caf50;color:#fff;padding:10px;z-index:10000;';
-          document.body.appendChild(note);
-          setTimeout(()=>{ note.remove(); }, 5000);
+          showSuccessModal(data.ticket_id);
         }
       } else {
         showSubmitError(data && data.error ? data.error : 'Ошибка создания заявки');
