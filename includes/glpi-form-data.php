@@ -163,21 +163,26 @@ function gexe_get_form_data() {
             }
         }
 
-        // Жёстко заданные исполнители
-        $mapping = [
-            ['glpi_id' => 622, 'name' => 'Сушко Валентин'],
-            ['glpi_id' => 621, 'name' => 'Скомороха Анастасия'],
-            ['glpi_id' => 269, 'name' => 'Смирнов Максим'],
-            ['glpi_id' => 180, 'name' => 'Кузнецов Евгений'],
-            ['glpi_id' => 2,   'name' => 'Куткин Павел'],
-            ['glpi_id' => 632, 'name' => 'Стельмашенко Игнат'],
-            ['glpi_id' => 620, 'name' => 'Нечепорук Александр'],
-        ];
+        // Список возможных исполнителей — WP-пользователи, у которых есть glpi_user_id
         $executors = [];
-        foreach ($mapping as $m) {
+        $users = get_users([
+            'meta_query' => [
+                [
+                    'key'     => 'glpi_user_id',
+                    'value'   => 0,
+                    'compare' => '>',
+                    'type'    => 'NUMERIC',
+                ],
+            ],
+            'number'  => 1000,
+            'orderby' => 'display_name',
+            'order'   => 'ASC',
+            'fields'  => ['ID', 'display_name'],
+        ]);
+        foreach ($users as $u) {
             $executors[] = [
-                'id'   => (int) $m['glpi_id'],
-                'name' => $m['name'],
+                'id'   => (int) $u->ID,
+                'name' => $u->display_name,
             ];
         }
 

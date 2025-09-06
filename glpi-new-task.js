@@ -62,12 +62,15 @@
     const assigneeSel = modal.querySelector('#gnt-assignee');
     assignChk.addEventListener('change', function(){
       assigneeSel.disabled = this.checked;
+      if (this.checked) {
+        assigneeSel.value = '';
+      }
+      updateSubmitState();
     });
     ['#gnt-name','#gnt-content','#gnt-category','#gnt-location','#gnt-assignee'].forEach(function(sel){
       modal.querySelector(sel).addEventListener('input', updateSubmitState);
     });
     modal.querySelector('#gnt-assignee').addEventListener('change', updateSubmitState);
-    modal.querySelector('#gnt-assign-me').addEventListener('change', updateSubmitState);
   }
 
   function lockForm(state){
