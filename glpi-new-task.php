@@ -51,7 +51,7 @@ function gexe_create_ticket() {
     }
 
     $wp_uid   = get_current_user_id();
-    $glpi_uid = get_mapped_glpi_user_id($wp_uid);
+    $glpi_uid = gexe_get_current_glpi_user_id($wp_uid);
     if (!$glpi_uid) {
         wp_send_json(['error' => 'no_glpi_id_for_current_user'], 422);
     }
@@ -87,7 +87,7 @@ function gexe_create_ticket() {
     $assign_glpi_id = $glpi_uid;
     if (!$assign_me) {
         if ($assignee_wp_id > 0) {
-            $assign_glpi_id = get_mapped_glpi_user_id($assignee_wp_id);
+            $assign_glpi_id = gexe_get_current_glpi_user_id($assignee_wp_id);
             if (!$assign_glpi_id) {
                 wp_send_json(['error' => 'assignee_not_mapped_to_glpi'], 422);
             }

@@ -4,22 +4,63 @@
  */
 
 require_once __DIR__ . '/includes/logger.php';
+
 /**
- * Returns GLPI users.id associated with the current WP user.
+ * Determine GLPI user ID for a WordPress user based on stored meta.
+ *
+ * The primary source of mapping is the `glpi_user_key` user meta which may
+ * contain either a numeric `users_id` or an MD5 hash composed from the user's
+ * realname and firstname (as used by GLPI 9.5.x). When the resulting identifier
+ * is numeric it is cached in `glpi_user_id` for faster subsequent lookups.
+ *
+ * @param int $wp_user_id WordPress user identifier.
+ * @return int GLPI `users.id` or 0 when not found.
+ */
+function gexe_get_current_glpi_user_id($wp_user_id) {
+    $wp_user_id = (int) $wp_user_id;
+    if ($wp_user_id <= 0) {
+        return 0;
+    }
+
+    $key   = get_user_meta($wp_user_id, 'glpi_user_key', true);
+    $key   = is_string($key) ? trim($key) : '';
+    $glpi  = 0;
+
+    if (preg_match('/^\d+$/', $key)) {
+        // Direct numeric mapping
+        $glpi = (int) $key;
+    } elseif (preg_match('/^[a-f0-9]{32}$/i', $key)) {
+        // MD5 hash -> lookup in glpi_users
+        global $glpi_db;
+        if ($glpi_db instanceof wpdb) {
+            $sql = $glpi_db->prepare(
+                "SELECT id FROM glpi_users WHERE MD5(CONCAT(realname,' ',LEFT(firstname,1),'.')) = %s LIMIT 1",
+                $key
+            );
+            $glpi = (int) $glpi_db->get_var($sql);
+        }
+    }
+
+    if ($glpi > 0) {
+        // Cache numeric identifiers for faster future lookups
+        update_user_meta($wp_user_id, 'glpi_user_id', $glpi);
+        return $glpi;
+    }
+
+    return 0;
+}
+
+/**
+ * Returns GLPI users.id associated with the current logged-in WP user.
+ *
+ * @return int
  */
 function gexe_get_current_glpi_uid() {
-    if (!is_user_logged_in()) return 0;
-
-    $wp_uid = get_current_user_id();
-
-    $glpi_uid = intval(get_user_meta($wp_uid, 'glpi_user_id', true));
-    if ($glpi_uid > 0) return $glpi_uid;
-
-    $key = get_user_meta($wp_uid, 'glpi_user_key', true);
-    if (preg_match('~^\d+$~', (string)$key)) {
-        return (int)$key;
+    if (!is_user_logged_in()) {
+        return 0;
     }
-    return 0;
+
+    return gexe_get_current_glpi_user_id(get_current_user_id());
 }
 
 /**
