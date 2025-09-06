@@ -31,3 +31,19 @@
 .glpi-create-modal .glpi-form-loader .error { color:#f87171; }
 .glpi-create-modal .glpi-form-loader .gnt-retry { background:#2563eb; border:0; color:#fff; padding:4px 8px; border-radius:6px; cursor:pointer; }
 @keyframes gnt-spin { to { transform: rotate(360deg); } }
+
+/* Success modal */
+.gnt-success-modal{position:fixed;inset:0;z-index:10000;display:none;}
+.gnt-success-modal.open{display:block;}
+.gnt-success-modal .gnt-success-backdrop{position:absolute;inset:0;background:rgba(0,0,0,.55);backdrop-filter:blur(2px);}
+.gnt-success-modal .gnt-success-dialog{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:min(520px,94vw);background:#0f172a;color:#e5e7eb;border-radius:12px;box-shadow:0 20px 60px rgba(0,0,0,.5);padding:24px;text-align:center;}
+.gnt-success-modal .gnt-success-title{font-weight:700;margin-bottom:8px;}
+.gnt-success-modal .gnt-success-text{margin-bottom:20px;}
+.gnt-success-modal .gnt-success-actions{display:flex;flex-direction:column;gap:8px;}
+.gnt-success-modal .gnt-success-actions button{padding:10px 14px;border-radius:10px;border:0;cursor:pointer;}
+.gnt-success-modal .gnt-open-ticket{background:#2563eb;color:#fff;}
+.gnt-success-modal .gnt-copy-ticket{background:#1f2937;color:#e5e7eb;}
+.gnt-success-modal .gnt-close-success{background:#374151;color:#e5e7eb;}
+@media (min-width:460px){
+  .gnt-success-modal .gnt-success-actions{flex-direction:row;justify-content:center;}
+}
