@@ -122,6 +122,28 @@ function gexe_glpi_web_base() {
 }
 
 /**
+ * Normalize a date/time string to ISO-8601 with timezone.
+ *
+ * Returns null when the value is empty, equals "0000-00-00 00:00:00" or
+ * cannot be parsed by DateTime.
+ *
+ * @param string $raw Original date/time string.
+ * @return string|null ISO-8601 formatted string or null on failure.
+ */
+function gexe_iso_datetime($raw) {
+    $raw = trim((string) $raw);
+    if ($raw === '' || $raw === '0000-00-00 00:00:00') {
+        return null;
+    }
+    try {
+        $dt = new DateTime($raw);
+        return $dt->format('c');
+    } catch (Exception $e) {
+        return null;
+    }
+}
+
+/**
  * Check if a column exists in a GLPI table.
  * Result is cached in-memory and via WordPress transient for 1 hour.
  */
