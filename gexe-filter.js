@@ -27,6 +27,9 @@
     network_error: 'Ошибка сети',
   };
 
+  const ACTION_TIMEOUT = 15000;
+  const FAIL_MSG = 'Не удалось завершить операцию, попробуйте ещё раз';
+
   function ensureNoticeHost() {
     let parent = null;
     if (cmntModal && cmntModal.classList.contains('is-open')) {
@@ -111,10 +114,12 @@
       el.setAttribute('disabled', 'disabled');
       el.setAttribute('aria-disabled', 'true');
       el.classList.add('is-loading');
+      el.setAttribute('title', 'Выполняется…');
     } else {
       el.removeAttribute('disabled');
       el.removeAttribute('aria-disabled');
       el.classList.remove('is-loading');
+      el.removeAttribute('title');
     }
   }
 
@@ -203,7 +208,7 @@
     fd.append('_ajax_nonce', glpiAjax.nonce || '');
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15000);
+    const timeoutId = setTimeout(() => controller.abort(), ACTION_TIMEOUT);
 
     const send = async retry => {
       debugRequest(ajax.url, Object.fromEntries(fd.entries()));
@@ -239,6 +244,7 @@
       btn.innerHTML = '<i class="fa-solid fa-check"></i>';
       btn.disabled = true;
       btn.setAttribute('aria-disabled', 'true');
+      btn.setAttribute('title', 'Уже в работе');
       const cardEl = document.querySelector('.glpi-card[data-ticket-id="'+ticketId+'"]');
       if (cardEl) {
         cardEl.setAttribute('data-status', '2');
@@ -252,6 +258,7 @@
           cardBtn.disabled = true;
           cardBtn.innerHTML = '<i class="fa-solid fa-check"></i>';
           cardBtn.setAttribute('aria-disabled', 'true');
+          cardBtn.setAttribute('title', 'Уже в работе');
         }
         const footer = cardEl.querySelector('.glpi-executor-footer');
         if (footer && !footer.querySelector('.glpi-executors')) {
@@ -268,6 +275,7 @@
           mb.disabled = true;
           mb.innerHTML = '<i class="fa-solid fa-check"></i>';
           mb.setAttribute('aria-disabled', 'true');
+          mb.setAttribute('title', 'Уже в работе');
         }
       }
       insertFollowup(ticketId, data.payload && data.payload.followup);
@@ -275,10 +283,9 @@
       recalcStatusCounts(); filterCards();
       const msg = (data.payload && data.payload.already) ? 'Уже в работе' : 'Заявка принята в работу';
       showNotice('success', msg);
-    }).catch(err => {
+    }).catch(() => {
       setActionLoading(btn, false);
-      if (err && err.name === 'AbortError') showNotice('error','Таймаут запроса');
-      else showError('network_error');
+      showNotice('error', FAIL_MSG);
     }).finally(() => {
       clearTimeout(timeoutId);
       lockAction(ticketId, 'accept', false);
@@ -743,10 +750,18 @@
     $('.gexe-cmnt__close', cmntModal).addEventListener('click', closeCommentModal);
     const sendBtn = $('#gexe-cmnt-send', cmntModal);
     const txtArea = $('#gexe-cmnt-text', cmntModal);
-    if (sendBtn) sendBtn.disabled = true;
+    if (sendBtn) {
+      sendBtn.disabled = true;
+      sendBtn.setAttribute('title', 'Введите текст комментария');
+    }
     if (txtArea) {
       txtArea.addEventListener('input', () => {
-        if (sendBtn) sendBtn.disabled = txtArea.value.trim() === '';
+        if (sendBtn) {
+          const empty = txtArea.value.trim() === '';
+          sendBtn.disabled = empty;
+          if (empty) sendBtn.setAttribute('title', 'Введите текст комментария');
+          else sendBtn.removeAttribute('title');
+        }
       });
     }
     if (sendBtn) sendBtn.addEventListener('click', sendComment);
@@ -757,7 +772,11 @@
     $('.gexe-cmnt__title', cmntModal).textContent = title || 'Комментарий';
     cmntModal.setAttribute('data-ticket-id', String(ticketId || 0));
     const ta = $('#gexe-cmnt-text', cmntModal); if (ta) { ta.value = ''; ta.focus(); }
-    const sendBtn = $('#gexe-cmnt-send', cmntModal); if (sendBtn) sendBtn.disabled = true;
+    const sendBtn = $('#gexe-cmnt-send', cmntModal);
+    if (sendBtn) {
+      sendBtn.disabled = true;
+      sendBtn.setAttribute('title', 'Введите текст комментария');
+    }
     cmntModal.classList.add('is-open'); document.body.classList.add('glpi-modal-open');
   }
   function closeCommentModal() {
@@ -785,7 +804,7 @@
     fd.append('ticket_id', String(id));
     fd.append('content', txt);
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15000);
+    const timeoutId = setTimeout(() => controller.abort(), ACTION_TIMEOUT);
     debugRequest(url, Object.fromEntries(fd.entries()));
     try {
       const res = await fetch(url, { method: 'POST', body: fd, signal: controller.signal });
@@ -810,8 +829,8 @@
       refreshTicketMeta(id);
       showNotice('success','Комментарий отправлен');
     } catch (err) {
-      if (err && err.name === 'AbortError') showNotice('error','Таймаут запроса');
-      else showError('network_error');
+      console.error(err);
+      showNotice('error', FAIL_MSG);
     } finally {
       clearTimeout(timeoutId);
       lockAction(id, 'comment', false);
@@ -868,7 +887,7 @@
     fd.append('ticket_id', String(id));
     fd.append('solution_text', 'Завершено');
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15000);
+    const timeoutId = setTimeout(() => controller.abort(), ACTION_TIMEOUT);
     debugRequest(glpiAjax.url, Object.fromEntries(fd.entries()));
     try {
       const res = await fetch(glpiAjax.url, { method: 'POST', body: fd, signal: controller.signal });
@@ -906,8 +925,8 @@
       refreshTicketMeta(id);
       showNotice('success','Задача закрыта');
     } catch (err) {
-      if (err && err.name === 'AbortError') showNotice('error','Таймаут запроса');
-      else showError('network_error');
+      console.error(err);
+      showNotice('error', FAIL_MSG);
     } finally {
       clearTimeout(timeoutId);
       if (btn) setActionLoading(btn, false);

@@ -11,6 +11,24 @@
   let successModal = null;
   let successTimer = null;
 
+  const ACTION_TIMEOUT = 15000;
+  const FAIL_MSG = 'Не удалось завершить операцию, попробуйте ещё раз';
+
+  function setButtonLoading(btn, state) {
+    if (!btn) return;
+    if (state) {
+      btn.classList.add('is-loading');
+      btn.setAttribute('disabled', 'disabled');
+      btn.setAttribute('aria-disabled', 'true');
+      btn.setAttribute('title', 'Выполняется…');
+    } else {
+      btn.classList.remove('is-loading');
+      btn.removeAttribute('disabled');
+      btn.removeAttribute('aria-disabled');
+      btn.removeAttribute('title');
+    }
+  }
+
   function buildModal(){
     if (modal) return;
     modal = document.createElement('div');
@@ -111,7 +129,7 @@
   function showError(message){
     const box = modal.querySelector('.glpi-form-loader');
     if (!box) return;
-    const msg = 'Не удалось загрузить справочники категорий и местоположений. ' + (message || 'Попробуйте ещё раз.');
+    const msg = message || FAIL_MSG;
     box.innerHTML = '<span class="error">' + msg + '</span><button type="button" class="gnt-retry">Повторить</button>';
     box.hidden = false;
     const btn = box.querySelector('.gnt-retry');
@@ -126,7 +144,7 @@
         updateSubmitState();
       }).catch(function(err){
         logClientError((err && err.code ? err.code + ': ' : '') + (err && err.message ? err.message : String(err)));
-        showError(err && err.message ? err.message : 'Ошибка загрузки');
+        showError();
       });
     });
   }
@@ -134,7 +152,7 @@
   function showSubmitError(message){
     const box = modal.querySelector('.glpi-form-loader');
     if (!box) return;
-    box.innerHTML = '<span class="error">' + (message || 'Ошибка создания заявки') + '</span>';
+    box.innerHTML = '<span class="error">' + (message || FAIL_MSG) + '</span>';
     box.hidden = false;
   }
 
@@ -177,7 +195,7 @@
     params.append('action','gexe_get_form_data');
     params.append('nonce', gexeAjax.nonce);
     const controller = new AbortController();
-    const t = setTimeout(() => controller.abort(), 10000);
+    const t = setTimeout(() => controller.abort(), ACTION_TIMEOUT);
     loadingPromise = fetch(gexeAjax.url, {
       method:'POST',
       headers:{'Content-Type':'application/x-www-form-urlencoded'},
@@ -243,7 +261,7 @@
         updateSubmitState();
       }).catch(function(err){
         logClientError((err && err.code ? err.code + ': ' : '') + (err && err.message ? err.message : String(err)));
-        showError(err && err.message ? err.message : 'Ошибка загрузки');
+        showError();
       });
     }
     updateSubmitState();
@@ -447,12 +465,15 @@
     };
     const makeBody = () => 'action=gexe_create_ticket&nonce='+encodeURIComponent(gexeAjax.nonce)+'&payload='+encodeURIComponent(JSON.stringify(payload));
     const btn = modal.querySelector('.gnt-submit');
-    btn.disabled = true;
+    setButtonLoading(btn, true);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), ACTION_TIMEOUT);
     const send = (retry) => {
       return fetch(gexeAjax.url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: makeBody()
+        body: makeBody(),
+        signal: controller.signal
       }).then(r=>r.json().then(data=>({status:r.status,data:data}))).then(resp=>{
         if (resp.status === 403 && resp.data && resp.data.error === 'AJAX_FORBIDDEN' && !retry) {
           return refreshNonce().then(()=>send(true));
@@ -468,12 +489,16 @@
           showSuccessModal(data.ticket_id);
         }
       } else {
-        showSubmitError(data && data.error ? data.error : 'Ошибка создания заявки');
+        showSubmitError(FAIL_MSG);
       }
     }).catch(err=>{
       logClientError((err && err.code ? err.code + ': ' : '') + (err && err.message ? err.message : String(err)));
-      showSubmitError(err && err.message ? err.message : 'Ошибка отправки');
-    }).finally(()=>{btn.disabled = false;});
+      showSubmitError(FAIL_MSG);
+    }).finally(()=>{
+      clearTimeout(timeoutId);
+      setButtonLoading(btn, false);
+      updateSubmitState();
+    });
   }
 
   function updatePaths(){
@@ -496,7 +521,10 @@
     const assigneeSel = modal.querySelector('#gnt-assignee');
     const assigneeId = assigneeSel.disabled ? 0 : parseInt(assigneeSel.value,10) || 0;
     const ready = name && content && catId && locId && (assignMe || assigneeId);
-    modal.querySelector('.gnt-submit').disabled = !ready;
+    const btn = modal.querySelector('.gnt-submit');
+    btn.disabled = !ready;
+    if (!ready) btn.setAttribute('title','Заполните все поля');
+    else btn.removeAttribute('title');
   }
 
   document.addEventListener('DOMContentLoaded', function(){

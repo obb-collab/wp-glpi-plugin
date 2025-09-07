@@ -32,6 +32,10 @@
 .glpi-create-modal .glpi-form-loader .gnt-retry { background:#2563eb; border:0; color:#fff; padding:4px 8px; border-radius:6px; cursor:pointer; }
 @keyframes gnt-spin { to { transform: rotate(360deg); } }
 
+/* Unified button spinner */
+.glpi-create-modal button.is-loading{position:relative;}
+.glpi-create-modal button.is-loading::after{content:"";position:absolute;top:50%;left:50%;width:16px;height:16px;margin:-8px 0 0 -8px;border:2px solid currentColor;border-top-color:transparent;border-radius:50%;animation:gnt-spin .6s linear infinite;}
+
 /* Success modal */
 .gnt-success-modal{position:fixed;inset:0;z-index:10000;display:none;}
 .gnt-success-modal.open{display:block;}
