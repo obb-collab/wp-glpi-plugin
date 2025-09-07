@@ -9,31 +9,6 @@ require_once __DIR__ . '/glpi-utils.php';
 require_once __DIR__ . '/includes/glpi-sql.php';
 require_once __DIR__ . '/includes/glpi-auth-map.php';
 
-// Localize runtime configuration for front-end scripts.
-add_action('wp_enqueue_scripts', 'gexe_glpi_localize_runtime', 20);
-function gexe_glpi_localize_runtime() {
-    if (!function_exists('wp_localize_script')) return;
-    if (!wp_script_is('gexe-filter', 'enqueued')) return;
-
-    $current = function_exists('glpi_current_user_id') ? glpi_current_user_id() : 0;
-    $can_view_all = false;
-    if (is_user_logged_in() && function_exists('get_current_user_id')) {
-        $can_view_all = (get_user_meta(get_current_user_id(), 'glpi_show_all_cards', true) === '1');
-    }
-    $features = [
-        'executors' => ($current === 2),
-    ];
-
-    wp_localize_script('gexe-filter', 'GLPI_RUNTIME', [
-        'ajax_url' => admin_url('admin-ajax.php'),
-        'nonce'    => wp_create_nonce('gexe_actions'),
-        'user_glpi_id' => $current,
-        'current_glpi_user_id' => $current,
-        'can_view_all' => $can_view_all,
-        'features' => $features,
-    ]);
-}
-
 function gexe_action_response($ok, $code, $ticket_id, $action, $msg = '', $extra = []) {
     $payload = array_merge([
         'ok'        => (bool) $ok,
@@ -94,54 +69,6 @@ function gexe_compose_short_name($realname, $firstname) {
     if ($realname) return $realname;
     if ($firstname) return $firstname;
     return '';
-}
-
-if (!function_exists('gexe_clean_html_text')) {
-    function gexe_clean_html_text($html) {
-        $s = (string)$html;
-        $s = html_entity_decode($s, ENT_QUOTES | ENT_HTML5, 'UTF-8');
-        $s = html_entity_decode($s, ENT_QUOTES | ENT_HTML5, 'UTF-8');
-        $s = preg_replace('~<\s*br\s*/?\s*>~i', "\n", $s);
-        $s = preg_replace('~</\s*p\s*>~i', "\n", $s);
-        $s = strip_tags($s);
-        $s = html_entity_decode($s, ENT_QUOTES | ENT_HTML5, 'UTF-8');
-        $s = preg_replace('/\s+/u', ' ', $s);
-        return trim($s);
-    }
-}
-
-if (!function_exists('gexe_trim_words')) {
-    function gexe_trim_words($text, $words = 40, $suffix = '…') {
-        $text = trim((string)$text);
-        if ($text === '') return '';
-        $parts = preg_split('/\s+/u', $text);
-        if (count($parts) <= $words) return $text;
-        $parts = array_slice($parts, 0, $words);
-        return implode(' ', $parts) . $suffix;
-    }
-}
-
-if (!function_exists('gexe_leaf_category')) {
-    function gexe_leaf_category($full) {
-        $full  = (string)$full;
-        $full  = html_entity_decode($full, ENT_QUOTES | ENT_HTML5, 'UTF-8');
-        $parts = preg_split('/\s*>\s*/u', $full);
-        $leaf  = trim((string)end($parts));
-        return ($leaf !== '') ? $leaf : $full;
-    }
-}
-
-if (!function_exists('gexe_cat_slug')) {
-    function gexe_cat_slug($leaf) {
-        if (function_exists('transliterator_transliterate')) {
-            $leaf = transliterator_transliterate('Any-Latin; Latin-ASCII', $leaf);
-        }
-        $leaf = strtolower($leaf);
-        $leaf = preg_replace('/[^a-z0-9]+/u', '-', $leaf);
-        $leaf = trim($leaf, '-');
-        if ($leaf === '') $leaf = substr(md5((string)$leaf), 0, 8);
-        return $leaf;
-    }
 }
 
 /** Очистка HTML комментария (текст в карточке модалки) */
@@ -759,6 +686,5 @@ function gexe_glpi_comment_add($action = 'comment', $content_override = null) {
     }
     $glpi_db->query('COMMIT');
     gexe_clear_comments_cache($ticket_id);
-gexe_action_response(true, 'ok', $ticket_id, $action, '', ['extra' => ['followup' => $res['followup']]]);
+    gexe_action_response(true, 'ok', $ticket_id, $action, '', ['extra' => ['followup' => $res['followup']]]);
 }
-

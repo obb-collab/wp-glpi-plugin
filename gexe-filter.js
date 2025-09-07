@@ -1,22 +1,15 @@
 /**
  * gexe-filter.js — панель фильтров, поиск, карточки, модалки и действия
  * Требования:
- *  - window.GLPI_RUNTIME локализуется из glpi-modal-actions.php (ajax_url, nonce, current_glpi_user_id)
- *  - для совместимости поддерживается window.glpiAjax
+ *  - window.glpiAjax локализуется из glpi-modal-actions.php (url, nonce, user_glpi_id)
  *  - HTML карточек и шапки — как в шаблоне gexe-copy.php
-*/
+ */
 
 (function () {
   'use strict';
 
   // Ensure AJAX settings are available under both legacy and new globals
-  const ajaxConfig = window.GLPI_RUNTIME || window.gexeAjax || window.glpiAjax || {};
-  if (ajaxConfig.current_glpi_user_id && !ajaxConfig.user_glpi_id) {
-    ajaxConfig.user_glpi_id = ajaxConfig.current_glpi_user_id;
-  }
-  if (ajaxConfig.ajax_url && !ajaxConfig.url) {
-    ajaxConfig.url = ajaxConfig.ajax_url;
-  }
+  const ajaxConfig = window.gexeAjax || window.glpiAjax || {};
   window.glpiAjax = ajaxConfig;
   window.gexeAjax = ajaxConfig;
   const glpiAjax = ajaxConfig;
@@ -51,15 +44,14 @@
   }
 
   function ajaxPost(params, retry) {
-    const ajax = window.GLPI_RUNTIME || window.gexeAjax || window.glpiAjax;
-    const url = ajax && (ajax.ajax_url || ajax.url);
-    if (!url) return Promise.resolve({ ok: false, code: 'network_error' });
+    const ajax = window.gexeAjax || window.glpiAjax;
+    if (!ajax || !ajax.url) return Promise.resolve({ ok: false, code: 'network_error' });
     const fd = new FormData();
     Object.keys(params).forEach(k => fd.append(k, params[k]));
     if (!params.nonce && ajax.nonce) {
       fd.append('nonce', ajax.nonce);
     }
-    return fetch(url, { method: 'POST', body: fd })
+    return fetch(ajax.url, { method: 'POST', body: fd })
       .then(r => r.json())
       .then(normalizeResponse)
       .then(res => {
@@ -218,7 +210,7 @@
   }
 
   function refreshActionsNonce() {
-    const ajax = window.GLPI_RUNTIME || window.gexeAjax || window.glpiAjax;
+    const ajax = window.gexeAjax || window.glpiAjax;
     if (!ajax) return Promise.reject(new Error('no_ajax'));
     return ajaxPost({ action: 'gexe_refresh_actions_nonce' })
       .then(res => {
@@ -467,14 +459,7 @@
     if (!modal) return;
     const catSel = modal.querySelector('#gnt-category');
     const locSel = modal.querySelector('#gnt-location');
-    const execSel = modal.querySelector('#gnt-assignee');
     const submit = modal.querySelector('.gnt-submit');
-    const loader = modal.querySelector('.glpi-form-loader');
-
-    if (loader) {
-      loader.innerHTML = '<span class="spinner"></span><span>Загрузка…</span>';
-      loader.hidden = false;
-    }
 
     // Disable all form controls until dictionaries are loaded.
     $$('input,select,textarea,button.gnt-submit', modal).forEach(el => {
@@ -502,8 +487,7 @@
       setStatus(el, 'loading', 'Загрузка…');
       return fetchDict(which).then(res => {
         if (res && res.ok) {
-          if (which === 'executors') fillSelect('#gnt-assignee', res.list);
-          else if (which === 'categories') fillSelect('#gnt-category', res.list);
+          if (which === 'categories') fillSelect('#gnt-category', res.list);
           else if (which === 'locations') fillSelect('#gnt-location', res.list);
           el.disabled = false;
           el.classList.remove('disabled');
@@ -519,18 +503,13 @@
       });
     };
 
-    const dictPromises = [
+    Promise.all([
       loadOne('categories', catSel),
       loadOne('locations', locSel)
-    ];
-    const rt = window.GLPI_RUNTIME || {};
-    if (rt.features && rt.features.executors) {
-      dictPromises.push(loadOne('executors', execSel));
-    }
-    Promise.all(dictPromises).then(([cat, loc]) => {
+    ]).then(([cat, loc]) => {
       // Enable common fields once dictionaries have finished loading
       $$('input,select,textarea', modal).forEach(el => {
-        if (el === catSel || el === locSel || el === execSel) return; // handled above
+        if (el === catSel || el === locSel) return; // handled above
         el.disabled = false;
         el.classList.remove('disabled');
       });
@@ -538,9 +517,6 @@
         submit.disabled = false;
         submit.classList.remove('disabled');
       }
-    }).finally(() => {
-      if (loader) { loader.hidden = true; loader.innerHTML = ''; }
-      bindNewTaskForm(modal);
     });
 
     const updatePath = (input, pathId) => {
@@ -567,65 +543,9 @@
   window.addEventListener('gexe:newtask:open', loadNewTaskDicts);
   window.addEventListener('gexe:newtask:retry', loadNewTaskDicts);
 
-  function bindNewTaskForm(modal) {
-    if (!modal || modal.__gntBound) return;
-    modal.__gntBound = true;
-    const btn = modal.querySelector('.gnt-submit');
-    if (!btn) return;
-    btn.addEventListener('click', (e) => {
-      e.preventDefault();
-      submitNewTask(modal, btn);
-    });
-  }
-
-  function submitNewTask(modal, btn) {
-    const name = $('#gnt-name', modal)?.value.trim() || '';
-    const desc = $('#gnt-content', modal)?.value.trim() || '';
-    const catId = parseInt($('#gnt-category', modal)?.value, 10) || 0;
-    const locId = parseInt($('#gnt-location', modal)?.value, 10) || 0;
-    const assignMe = $('#gnt-assign-me', modal)?.checked;
-    const execSel = $('#gnt-assignee', modal);
-    const execId = execSel && !execSel.disabled ? (parseInt(execSel.value, 10) || 0) : 0;
-
-    if (!name || !desc || !catId) {
-      showNotice('error', 'Заполните обязательные поля');
-      return;
-    }
-
-    setActionLoading(btn, true);
-    ajaxPost({
-      action: 'glpi_create_ticket',
-      name: name,
-      description: desc,
-      category_id: catId,
-      location_id: locId,
-      assign_me: assignMe ? 1 : 0,
-      executor_id: execId
-    }).then(res => {
-      if (res && res.ok) {
-        showNotice('success', 'Заявка создана #' + (res.data.ticket_id || ''));
-        if (window.GNT && typeof window.GNT.close === 'function') window.GNT.close();
-        if (res.data && res.data.ticket_id) {
-          loadTicketsForExecutor(selectedExecutor);
-        }
-      } else if (res && res.code === 'already_exists') {
-        showNotice('info', 'Заявка уже существует #' + (res.data.ticket_id || ''));
-      } else if (res) {
-        showError(res.code || 'network_error');
-      }
-    }).catch(() => {
-      showError('network_error');
-    }).finally(() => {
-      setActionLoading(btn, false);
-    });
-  }
-
   /* ========================= ИНЛАЙН КАТЕГОРИИ ========================= */
   let selectedCategories = [];
   let categoriesLoaded = false;
-
-  /* ========================= ФИЛЬТР ИСПОЛНИТЕЛЕЙ ========================= */
-  let selectedExecutor = localStorage.getItem('glpi.executor_id') || 'all';
 
   function resetCategories(){
     selectedCategories = [];
@@ -724,89 +644,6 @@
       renderInlineCategories();
       box.removeAttribute('hidden');
       toggle.setAttribute('aria-expanded','true');
-    }
-  }
-
-  /* ========================= ИСПОЛНИТЕЛИ ========================= */
-  function updateExecutorBadge(select){
-    const badge = document.querySelector('.glpi-executor-block .glpi-executor-badge');
-    if (!badge || !select) return;
-    if (selectedExecutor === 'all') { badge.textContent = ''; badge.hidden = true; return; }
-    const opt = select.options[select.selectedIndex];
-    badge.textContent = 'Исполнитель: ' + (opt ? opt.textContent : selectedExecutor);
-    badge.hidden = false;
-  }
-
-  function updateStatusCountsFromData(counts){
-    if (!counts) return;
-    const total = Object.values(counts).reduce((a,b)=>a+Number(b||0),0);
-    const allEl = document.querySelector('.status-filter-btn[data-status="all"] .status-count');
-    if (allEl) allEl.textContent = String(total);
-    Object.keys(counts).forEach(st=>{
-      const el = document.querySelector('.status-filter-btn[data-status="'+st+'"] .status-count');
-      if (el) el.textContent = String(counts[st]);
-    });
-  }
-
-  function applyExecutorResponse(data){
-    if (!data) return;
-    const wrap = document.querySelector('.glpi-wrapper');
-    if (wrap) wrap.innerHTML = data.html || '';
-    if (Array.isArray(data.categories)) { window.gexeCategories = data.categories; renderInlineCategories(); }
-    if (data.status_counts) updateStatusCountsFromData(data.status_counts);
-    injectCardActionButtons();
-    applyActionVisibility();
-    bindCardOpen();
-    recalcCategoryVisibility();
-    recalcStatusCounts();
-    filterCards();
-    updateAgeFooters();
-  }
-
-  function loadTicketsForExecutor(execId, select){
-    const sel = select || document.getElementById('glpi-executor-filter');
-    if (sel) sel.disabled = true;
-    ajaxPost({ action: 'glpi_filter_tickets', executor_id: execId }).then(res => {
-      if (sel) sel.disabled = false;
-      if (res && res.ok) {
-        applyExecutorResponse(res.data);
-      } else if (res && res.code) {
-        showError(res.code);
-      }
-    });
-  }
-
-  function initExecutorFilter(){
-    if (!window.GLPI_RUNTIME || !GLPI_RUNTIME.features || !GLPI_RUNTIME.features.executors) return;
-    try {
-      const block = document.querySelector('.glpi-executor-block');
-      if (!block) return;
-      block.innerHTML = '<select id="glpi-executor-filter" class="glpi-executor-select" disabled><option value="all">no filter</option></select><span class="glpi-executor-badge" hidden></span>';
-      const select = block.querySelector('#glpi-executor-filter');
-      ajaxPost({ action: 'glpi_executors' }).then(res => {
-        if (res && res.ok && Array.isArray(res.data.list)) {
-          res.data.list.forEach(it => {
-            const opt = document.createElement('option');
-            opt.value = String(it.id);
-            opt.textContent = it.name;
-            select.appendChild(opt);
-          });
-          select.disabled = false;
-          select.value = selectedExecutor;
-          updateExecutorBadge(select);
-          if (selectedExecutor !== 'all') loadTicketsForExecutor(selectedExecutor, select);
-        }
-      });
-      select.addEventListener('change', () => {
-        const val = select.value;
-        if (val === selectedExecutor) return;
-        selectedExecutor = val;
-        localStorage.setItem('glpi.executor_id', val);
-        updateExecutorBadge(select);
-        loadTicketsForExecutor(val, select);
-      });
-    } catch (e) {
-      if (window._GLPI_DEBUG) console.error(e);
     }
   }
 
@@ -1380,7 +1217,7 @@
       card.insertBefore(bar, card.firstChild);
 
       // чип со счётчиком комментариев (в левом футере)
-      const foot = card.querySelector('.glpi-executor-footer');
+      const foot = card.querySelector('.glpi-card-footer');
       if (foot && !foot.querySelector('.glpi-comments-chip')) {
         const chip = document.createElement('span');
         chip.className = 'glpi-comments-chip';
@@ -1539,9 +1376,7 @@
     return selectedCategories.includes(cat);
   }
   function cardMatchesExecutor(card) {
-    if (selectedExecutor === 'all') return true;
-    const assignees = (card.getAttribute('data-assignees') || '').split(',').map(s => s.trim()).filter(Boolean);
-    return assignees.includes(String(selectedExecutor));
+    return true;
   }
   function cardMatchesStatus(card) {
     const st = activeStatus();
@@ -1665,7 +1500,7 @@
     injectCardActionButtons();
     applyActionVisibility();
     bindCardOpen();
-    initExecutorFilter();
+
 
     bindStatusAndSearch();
     recalcStatusCounts();

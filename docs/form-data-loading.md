@@ -1,6 +1,6 @@
 # Form data loading
 
-Endpoint `gexe_get_form_data` returns lists of categories, locations and executors for the "New ticket" modal.
+Endpoint `gexe_get_form_data` returns lists of categories and locations for the "New ticket" modal.
 
 * Primary source: GLPI MySQL database (`glpi_itilcategories` and `glpi_locations`).
   * SQL:
@@ -12,7 +12,7 @@ Endpoint `gexe_get_form_data` returns lists of categories, locations and executo
   * Headers: `Authorization: user_token`, `App-Token`.
 * Result is cached for 30 minutes under key `glpi_form_data_v1`.
 * Result format:
-  * Success: `{"ok":true,"categories":[...],"locations":[...],"executors":[...],"took_ms":123,"source":"db|api|cache"}`
+  * Success: `{"ok":true,"categories":[...],"locations":[...],"took_ms":123,"source":"db|api|cache"}`
   * Error: `{"ok":false,"code":"AJAX_FORBIDDEN|DB_CONNECT_FAILED|SQL_ERROR|API_UNAVAILABLE","message":"...","took_ms":123}`
 * Logs are written to `wp-content/uploads/glpi-plugin/logs/actions.log` with entries like `[form-data] source=db|api|cache http=200|500 elapsed=XXXms cats=N locs=M err="<short>"`.
 * With `?debug=1` the handler runs `SELECT 1`, `SELECT id FROM glpi.glpi_itilcategories LIMIT 1` and `SELECT id FROM glpi.glpi_locations LIMIT 1` and logs `SHOW GRANTS FOR CURRENT_USER`.

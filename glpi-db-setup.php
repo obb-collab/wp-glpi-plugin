@@ -216,8 +216,7 @@ function glpi_db_create_ticket(array $payload) {
     $desc   = trim((string)($payload['content'] ?? ''));
     $cat    = (int)($payload['category_id'] ?? 0);
     $loc    = (int)($payload['location_id'] ?? 0);
-    $author = (int)($payload['requester_id'] ?? 0);
-    $exec   = (int)($payload['executor_glpi_id'] ?? 0);
+    $author    = (int)($payload['requester_id'] ?? 0);
     $assign_me = !empty($payload['assign_me']);
 
     if ($name === '' || mb_strlen($name) > 255) {
@@ -254,14 +253,14 @@ function glpi_db_create_ticket(array $payload) {
         $loc = null;
     }
 
-    $assigned = $assign_me ? $author : $exec;
+    $assigned = $assign_me ? $author : 0;
     $user_row = $glpi_db->get_row($glpi_db->prepare(
         'SELECT id, entities_id FROM glpi_users WHERE id=%d AND is_active=1',
-        $assigned
+        $author
     ), ARRAY_A);
     if (!$user_row) {
         $glpi_db->query('ROLLBACK');
-        return ['ok' => false, 'code' => 'invalid_executor'];
+        return ['ok' => false, 'code' => 'invalid_requester'];
     }
     $entities_id = (int)$user_row['entities_id'];
 
@@ -309,11 +308,13 @@ function glpi_db_create_ticket(array $payload) {
         $glpi_db->query('ROLLBACK');
         return ['ok' => false, 'code' => 'sql_error', 'msg' => $err];
     }
-    $sql = $glpi_db->prepare('INSERT INTO glpi_tickets_users (tickets_id, users_id, type) VALUES (%d,%d,2)', $ticket_id, $assigned);
-    if (!$glpi_db->query($sql)) {
-        $err = $glpi_db->last_error;
-        $glpi_db->query('ROLLBACK');
-        return ['ok' => false, 'code' => 'sql_error', 'msg' => $err];
+    if ($assign_me) {
+        $sql = $glpi_db->prepare('INSERT INTO glpi_tickets_users (tickets_id, users_id, type) VALUES (%d,%d,2)', $ticket_id, $author);
+        if (!$glpi_db->query($sql)) {
+            $err = $glpi_db->last_error;
+            $glpi_db->query('ROLLBACK');
+            return ['ok' => false, 'code' => 'sql_error', 'msg' => $err];
+        }
     }
 
     $sql = $glpi_db->prepare(
@@ -325,7 +326,7 @@ function glpi_db_create_ticket(array $payload) {
     $glpi_db->query($sql);
 
     $glpi_db->query('COMMIT');
-    return ['ok' => true, 'ticket_id' => $ticket_id, 'message' => 'created'];
+    return ['ok' => true, 'ticket_id' => $ticket_id, 'message' => 'created', 'assigned' => ($assign_me ? $author : null)];
 }
 
 /**

@@ -7,9 +7,8 @@ This document summarises the current structure and integration points of the plu
 ```
 plugin-root/
 ├─ gexe-copy.php — main plugin bootstrap (registers hooks, includes all modules, loads assets).
-├─ gexe-executor-lock.php — footer script that filters ticket cards by executor tokens.
 ├─ gexe-filter.js — front‑end controller for filtering panel, card actions and events.
-├─ gee.css — shared styles for ticket UI and executor lock.
+├─ gee.css — shared styles for ticket UI.
 ├─ glpi-api.php — minimal REST client class `Gexe_GLPI_API` (App/User/Session token handling).
 ├─ glpi-categories-shortcode.php — shortcode `[glpi_categories]` dumping GLPI categories via SQL.
 ├─ glpi-db-setup.php — establishes `$glpi_db` (wpdb) connection and installs SQL triggers.
@@ -35,7 +34,7 @@ plugin-root/
 
 ## Dependencies and observations
 
-- `gexe-copy.php` requires **glpi-db-setup.php**, **gexe-executor-lock.php**, **glpi-categories-shortcode.php**, **glpi-modal-actions.php**, **glpi-api.php**, **glpi-solve.php**, **glpi-icon-map.php**, **glpi-new-task.php**, and **glpi-settings.php**. It acts as a monolithic entry point.
+- `gexe-copy.php` requires **glpi-db-setup.php**, **glpi-categories-shortcode.php**, **glpi-modal-actions.php**, **glpi-api.php**, **glpi-solve.php**, **glpi-icon-map.php**, **glpi-new-task.php**, and **glpi-settings.php**. It acts as a monolithic entry point.
 - `glpi-modal-actions.php` and `includes/glpi-form-data.php` both depend on the global `$glpi_db` connection from `glpi-db-setup.php` and on helpers from `glpi-utils.php`.
 - `glpi-solve.php` includes `glpi-modal-actions.php`, creating tight coupling between actions.
 - `glpi-new-task.php` includes `includes/glpi-form-data.php`, which itself loads `glpi-utils.php`.

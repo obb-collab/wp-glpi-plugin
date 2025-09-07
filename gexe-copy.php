@@ -183,7 +183,6 @@ function gexe_glpi_cards_shortcode($atts) {
                 'date'         => (string)$r->date,
                 'category'     => (string)$r->category_name, // полное «Родитель > Дочерняя»
                 'location'     => (string)$r->location_name,
-                'executors'    => [],
                 'assignee_ids' => [],
                 'author_id'    => (int)$r->author_id,
                 'late'         => ($r->time_to_resolve && strtotime($r->time_to_resolve) < time()),
@@ -192,9 +191,6 @@ function gexe_glpi_cards_shortcode($atts) {
 
         // Имя исполнителя
         $exec_name = gexe_autoname($r->realname, $r->firstname);
-        if ($exec_name && !in_array($exec_name, $tickets[$id]['executors'], true)) {
-            $tickets[$id]['executors'][] = $exec_name;
-        }
 
         // ID исполнителя (без дублей и без пустых)
         if ($r->assignee_id !== null && $r->assignee_id !== '') {
@@ -314,7 +310,6 @@ function gexe_save_glpi_profile_fields($user_id) {
 }
 
 // ====== ПРОЧИЕ ФАЙЛЫ ПЛАГИНА ======
-require_once __DIR__ . '/gexe-executor-lock.php';
 require_once __DIR__ . '/glpi-categories-shortcode.php';
 require_once __DIR__ . '/glpi-modal-actions.php';
 require_once __DIR__ . '/glpi-api.php';
