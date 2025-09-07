@@ -78,8 +78,16 @@
     assignChk.addEventListener('change', function(){
       assigneeSel.disabled = this.checked || !executorsLoaded;
       if (this.checked) {
-        assigneeSel.value = '';
+        const glpiId = Number((gexeAjax && gexeAjax.user_glpi_id) || 0);
+        if (glpiId > 0) {
+          const opt = assigneeSel.querySelector('option[data-glpi-id="' + glpiId + '"]');
+          if (opt) {
+            assigneeSel.value = opt.value;
+          }
+        }
         setFieldError('assignee');
+      } else {
+        assigneeSel.value = '';
       }
     });
     [['#gnt-name','name'],['#gnt-content','content'],['#gnt-category','category'],['#gnt-location','location'],['#gnt-assignee','assignee'],['#gnt-due','due']].forEach(function(pair){
@@ -424,6 +432,9 @@
           const opt = document.createElement('option');
           opt.value = u.id;
           opt.textContent = u.label;
+          if (u.glpi_user_id) {
+            opt.setAttribute('data-glpi-id', u.glpi_user_id);
+          }
           sel.appendChild(opt);
         });
         if (data.executors_more && data.executors_more > 0) {
@@ -436,6 +447,8 @@
         }
         executorsLoaded = true;
         sel.disabled = modal.querySelector('#gnt-assign-me').checked;
+        const assignChk = modal.querySelector('#gnt-assign-me');
+        if (assignChk) assignChk.dispatchEvent(new Event('change'));
       } else {
         sel.innerHTML = '';
         const opt = document.createElement('option');

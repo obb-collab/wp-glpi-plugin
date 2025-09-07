@@ -24,8 +24,6 @@ function gexe_query_wp_executors($limit = 1000) {
             ],
         ],
         'fields'      => ['ID', 'display_name'],
-        'orderby'     => 'display_name',
-        'order'       => 'ASC',
         'number'      => $limit,
         'count_total' => true,
     ]);
@@ -33,17 +31,34 @@ function gexe_query_wp_executors($limit = 1000) {
     $total = (int) $query->get_total();
     $seen = [];
     foreach ($users as $u) {
-        $label = trim($u->display_name);
+        $glpi_id = (int) get_user_meta($u->ID, 'glpi_user_id', true);
+        if ($glpi_id <= 0) continue;
+        if (isset($seen[$glpi_id])) continue;
+
+        $last  = trim((string) get_user_meta($u->ID, 'last_name', true));
+        $first = trim((string) get_user_meta($u->ID, 'first_name', true));
+        $label = '';
+        if ($last !== '') {
+            $label = $last;
+            if ($first !== '') {
+                $label .= ' ' . mb_substr($first, 0, 1) . '.';
+            }
+        } else {
+            $label = trim($u->display_name);
+        }
         if ($label === '') continue;
-        if (isset($seen[$label])) continue;
-        $seen[$label] = [
-            'id'    => (int) $u->ID,
-            'label' => $label,
+
+        $seen[$glpi_id] = [
+            'id'           => (int) $u->ID,
+            'glpi_user_id' => $glpi_id,
+            'label'        => $label,
         ];
     }
     $executors = array_values($seen);
     usort($executors, function ($a, $b) {
-        return strcasecmp($a['label'], $b['label']);
+        $la = mb_strtolower($a['label'], 'UTF-8');
+        $lb = mb_strtolower($b['label'], 'UTF-8');
+        return $la <=> $lb;
     });
     $more = max(0, $total - count($executors));
     return [$executors, $more];

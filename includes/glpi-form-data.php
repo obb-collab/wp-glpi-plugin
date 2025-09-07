@@ -17,13 +17,13 @@ function gexe_get_form_data() {
     if (!$nonce_ok) {
         $elapsed = (int) round((microtime(true) - $t0) * 1000);
         gexe_log_action(sprintf('[form-data] source=auth http=403 elapsed=%dms cats=0 locs=0 err="nonce"', $elapsed));
-        wp_send_json(['ok' => false, 'code' => 'AJAX_FORBIDDEN', 'reason' => 'nonce', 'message' => 'forbidden', 'took_ms' => $elapsed], 403);
+        gexe_ajax_error_compat('NONCE_EXPIRED', 'nonce_failed', ['took_ms' => $elapsed], 403);
     }
 
     if (!is_user_logged_in() || !current_user_can('read')) {
         $elapsed = (int) round((microtime(true) - $t0) * 1000);
         gexe_log_action(sprintf('[form-data] source=auth http=403 elapsed=%dms cats=0 locs=0 err="cap"', $elapsed));
-        wp_send_json(['ok' => false, 'code' => 'AJAX_FORBIDDEN', 'reason' => 'cap', 'message' => 'forbidden', 'took_ms' => $elapsed], 403);
+        gexe_ajax_error_compat('NO_PERMISSION', 'forbidden', ['took_ms' => $elapsed], 403);
     }
 
     $data       = wp_cache_get($cache_key, 'glpi');
@@ -168,7 +168,7 @@ function gexe_get_form_data() {
                 $elapsed = (int) round((microtime(true) - $t0) * 1000);
                 $err = $error_msg !== '' ? $error_msg : 'API_UNAVAILABLE';
                 gexe_log_action(sprintf('[form-data] source=db http=500 elapsed=%dms cats=%d locs=%d err="%s"', $elapsed, count($categories), count($locations), $err));
-                wp_send_json(['ok' => false, 'code' => 'SQL_ERROR', 'message' => $err, 'took_ms' => $elapsed], 500);
+                gexe_ajax_error_compat('SQL_OP_FAILED', $err, ['took_ms' => $elapsed], 500);
             }
         }
 
@@ -191,7 +191,6 @@ function gexe_get_form_data() {
     gexe_log_action(sprintf('[form-data] source=%s http=200 elapsed=%dms cats=%d locs=%d err="%s"', $source, $elapsed, count($data['categories']), count($data['locations']), $err_log));
 
     $out = $data;
-    $out['ok']      = true;
     $out['source']  = $source;
     $out['took_ms'] = $elapsed;
     if (isset($_GET['debug'])) {
@@ -203,7 +202,7 @@ function gexe_get_form_data() {
             $out['debug']['tests'] = $debug_tests;
         }
     }
-    wp_send_json($out);
+    gexe_ajax_success_compat($out);
 }
 
 /**
@@ -212,9 +211,9 @@ function gexe_get_form_data() {
 add_action('wp_ajax_gexe_refresh_nonce', 'gexe_refresh_nonce');
 function gexe_refresh_nonce() {
     if (!is_user_logged_in() || !current_user_can('read')) {
-        wp_send_json_error(['code' => 'AJAX_FORBIDDEN', 'reason' => 'cap'], 403);
+        gexe_ajax_error_compat('NO_PERMISSION', 'forbidden', [], 403);
     }
-    wp_send_json_success(['nonce' => wp_create_nonce('gexe_form_data')]);
+    gexe_ajax_success_compat(['nonce' => wp_create_nonce('gexe_form_data')]);
 }
 
 /**
