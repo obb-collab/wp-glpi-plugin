@@ -93,102 +93,32 @@ function glpi_ajax_load_dicts() {
     try {
         $pdo = glpi_get_pdo();
         $pdo->beginTransaction();
-        $scope = 'all';
-        $note = null;
+        $scope = 'categories';
 
+        // Entity-based filtering temporarily disabled. Legacy code preserved below for future restoration.
+        /*
         $use_filter = defined('WP_GLPI_FILTER_CATALOGS_BY_ENTITY') && WP_GLPI_FILTER_CATALOGS_BY_ENTITY;
         $allowed = [];
         if ($use_filter) {
-            $glpi_user_id = gexe_get_glpi_user_id(get_current_user_id());
-            if ($glpi_user_id > 0) {
-                $stmt = $pdo->prepare('SELECT u.entities_id, u.is_active FROM glpi_users u WHERE u.id = :id LIMIT 1');
-                $stmt->execute([':id' => $glpi_user_id]);
-                $user_row = $stmt->fetch();
-                if ($user_row && (int)($user_row['is_active'] ?? 0) === 1) {
-                    $user_eid = (int) ($user_row['entities_id'] ?? 0);
-                    $entity_mode = defined('WP_GLPI_ENTITY_MODE') ? WP_GLPI_ENTITY_MODE : 'user_fallback';
-                    if ($entity_mode !== 'all') {
-                        $cache_key = 'wp_glpi_allowed_' . $glpi_user_id . '_' . $entity_mode;
-                        $cached = get_transient($cache_key);
-                        if (is_array($cached) && $cached) {
-                            $allowed = array_map('intval', $cached);
-                        } else {
-                            $stmtP = $pdo->prepare('SELECT pu.entities_id, pu.is_recursive FROM glpi_profiles_users pu WHERE pu.users_id = :uid');
-                            $stmtP->execute([':uid' => $glpi_user_id]);
-                            $profiles = $stmtP->fetchAll();
-                            $profiles_count = count($profiles);
-                            if ($profiles_count > 0 || $entity_mode === 'profiles') {
-                                foreach ($profiles as $p) {
-                                    $eid = (int) ($p['entities_id'] ?? 0);
-                                    if ($eid <= 0) continue;
-                                    $stmtE = $pdo->prepare('SELECT e2.id FROM glpi_entities e2 WHERE e2.id = :eid OR e2.ancestors_cache LIKE CONCAT(\'%$\', :eid, \'$%\')');
-                                    $stmtE->bindValue(':eid', $eid, PDO::PARAM_INT);
-                                    $stmtE->execute();
-                                    $allowed = array_merge($allowed, array_map('intval', $stmtE->fetchAll(PDO::FETCH_COLUMN)));
-                                }
-                            } else {
-                                $stmtE = $pdo->prepare('SELECT e2.id FROM glpi_entities e2 WHERE e2.id = :eid OR e2.ancestors_cache LIKE CONCAT(\'%$\', :eid, \'$%\')');
-                                $stmtE->bindValue(':eid', $user_eid, PDO::PARAM_INT);
-                                $stmtE->execute();
-                                $allowed = array_map('intval', $stmtE->fetchAll(PDO::FETCH_COLUMN));
-                            }
-                            $allowed = array_values(array_unique($allowed));
-                            set_transient($cache_key, $allowed, 5 * MINUTE_IN_SECONDS);
-                        }
-                    }
-                }
-            }
-            if (!$allowed) {
-                $use_filter = false;
-                $note = 'fallback_no_entities';
-            }
+            // ... previous entity filtering logic ...
         }
+        */
 
-        $scope = 'categories';
-        $sqlC = 'SELECT c.id, c.name, c.completename, c.level FROM glpi_itilcategories c WHERE c.is_deleted = 0 AND c.is_helpdeskvisible = 1';
-        if ($use_filter) {
-            $ph = implode(',', array_map(function ($i) { return ':e' . $i; }, array_keys($allowed)));
-            $sqlC .= ' AND c.entities_id IN (' . $ph . ')';
-        }
-        $sqlC .= ' ORDER BY c.completename ASC';
-        $stmtC = $pdo->prepare($sqlC);
-        if ($use_filter) {
-            foreach ($allowed as $i => $id) {
-                $stmtC->bindValue(':e' . $i, $id, PDO::PARAM_INT);
-            }
-        }
-        $stmtC->execute();
-        $categories = $stmtC->fetchAll();
-        $meta_empty = ['categories' => empty($categories), 'locations' => false];
+        $categories = $pdo->query(
+            "SELECT c.id, c.name, c.completename FROM glpi_itilcategories AS c WHERE c.is_deleted = 0 AND c.is_helpdeskvisible = 1 ORDER BY c.completename ASC"
+        )->fetchAll(PDO::FETCH_ASSOC);
 
         $scope = 'locations';
-        $sqlL = 'SELECT l.id, l.name, l.completename FROM glpi_locations l WHERE l.is_deleted = 0';
-        if ($use_filter) {
-            $ph = implode(',', array_map(function ($i) { return ':e' . $i; }, array_keys($allowed)));
-            $sqlL .= ' AND l.entities_id IN (' . $ph . ')';
-        }
-        $sqlL .= ' ORDER BY l.completename ASC';
-        $stmtL = $pdo->prepare($sqlL);
-        if ($use_filter) {
-            foreach ($allowed as $i => $id) {
-                $stmtL->bindValue(':e' . $i, $id, PDO::PARAM_INT);
-            }
-        }
-        $stmtL->execute();
-        $locations = $stmtL->fetchAll();
-        $meta_empty['locations'] = empty($locations);
+        $locations = $pdo->query(
+            "SELECT l.id, l.name, l.completename FROM glpi_locations AS l WHERE l.is_deleted = 0 ORDER BY l.completename ASC"
+        )->fetchAll(PDO::FETCH_ASSOC);
 
         $pdo->commit();
 
         $executors = glpi_get_wp_executors();
-        $meta = ['entity_filter' => $use_filter ? 'on' : 'off', 'empty' => $meta_empty];
-        if ($note) {
-            $meta['note'] = $note;
-        }
-        if (WP_GLPI_DEBUG) {
-            $meta['allowed_entities'] = $allowed;
-        }
-        error_log('[wp-glpi:new-task catalogs] mode=' . ($use_filter ? 'on' : 'off') . ' cats=' . count($categories) . ' locs=' . count($locations));
+        $meta = ['empty' => ['categories' => empty($categories), 'locations' => empty($locations)]];
+
+        error_log('[wp-glpi:new-task] catalogs cats=' . count($categories) . ' locs=' . count($locations) . ')');
 
         wp_send_json_success([
             'categories' => $categories,
@@ -200,29 +130,12 @@ function glpi_ajax_load_dicts() {
         if (isset($pdo) && $pdo->inTransaction()) {
             $pdo->rollBack();
         }
-        error_log('[wp-glpi:new-task] [' . ($scope ?? 'all') . '] ' . $e->getMessage());
+        error_log('[wp-glpi:new-task] SQL ERROR (' . ($scope ?? 'all') . '): ' . $e->getMessage());
         wp_send_json_error([
-            'error' => [
-                'type'    => 'SQL',
-                'scope'   => $scope ?? 'all',
-                'code'    => $e->getCode(),
-                'message' => 'Ошибка SQL при загрузке ' . ($scope === 'categories' ? 'категорий' : ($scope === 'locations' ? 'местоположений' : 'справочников')),
-                'details' => WP_GLPI_DEBUG ? $e->getMessage() : null,
-            ]
-        ]);
-    } catch (Exception $e) {
-        if (isset($pdo) && $pdo->inTransaction()) {
-            $pdo->rollBack();
-        }
-        error_log('[wp-glpi:new-task] [all] ' . $e->getMessage());
-        wp_send_json_error([
-            'error' => [
-                'type'    => 'UNKNOWN',
-                'scope'   => 'all',
-                'code'    => 'UNHANDLED',
-                'message' => 'Не удалось загрузить справочники',
-                'details' => WP_GLPI_DEBUG ? $e->getMessage() : null,
-            ]
+            'type'    => 'SQL',
+            'scope'   => $scope ?? 'all',
+            'message' => 'Ошибка SQL при загрузке ' . ($scope === 'categories' ? 'категорий' : 'локаций'),
+            'details' => $e->getMessage(),
         ]);
     }
 }
