@@ -51,12 +51,21 @@ body {
 .glpi-card:hover { box-shadow: 0 0 12px 2px #3b82f6; transform: translateY(-2px); }
 
 .glpi-card-header { display: flex; justify-content: space-between; align-items: flex-start; padding-top: 28px; margin-bottom: 12px; }
+
+/* Заголовок карточки */
+.glpi-card h3 {
+  font-family: inherit;
+  font-weight: 600;
+  font-size: 1rem;
+  line-height: 1.4;
+  color: inherit;
+  text-transform: none;
+  letter-spacing: normal;
+}
+
 /* Заголовок карточки (ссылка) */
 .glpi-topic {
-  color: #fff;
-  font-weight: 700;
-  font-size: 15px;
-  line-height: 1.2;
+  color: inherit;
   text-decoration: none;
   max-width: 100%;
   overflow: visible;
