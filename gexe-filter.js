@@ -9,9 +9,8 @@
 (function () {
   'use strict';
 
-  const R = window.GLPI_RUNTIME || { features: {} };
-  window.GLPI_RUNTIME = R;
-  const ajaxConfig = (R.ajax_url && R.nonce) ? R : {};
+  // Ensure AJAX settings are available under both legacy and new globals
+  const ajaxConfig = window.GLPI_RUNTIME || window.gexeAjax || window.glpiAjax || {};
   if (ajaxConfig.current_glpi_user_id && !ajaxConfig.user_glpi_id) {
     ajaxConfig.user_glpi_id = ajaxConfig.current_glpi_user_id;
   }
@@ -22,7 +21,6 @@
   window.gexeAjax = ajaxConfig;
   const glpiAjax = ajaxConfig;
   window.GEXE_DEBUG = window.GEXE_DEBUG || false;
-  const EXEC_FEATURE = !!(R.features && R.features.executors === true && R.current_glpi_user_id === 2);
 
   const ERROR_MAP = {
     csrf: 'Сессия устарела. Обновите страницу.',
@@ -525,7 +523,8 @@
       loadOne('categories', catSel),
       loadOne('locations', locSel)
     ];
-    if (EXEC_FEATURE) {
+    const rt = window.GLPI_RUNTIME || {};
+    if (rt.features && rt.features.executors) {
       dictPromises.push(loadOne('executors', execSel));
     }
     Promise.all(dictPromises).then(([cat, loc]) => {
@@ -626,12 +625,7 @@
   let categoriesLoaded = false;
 
   /* ========================= ФИЛЬТР ИСПОЛНИТЕЛЕЙ ========================= */
-  let selectedExecutor = 'all';
-  if (EXEC_FEATURE) {
-    try {
-      selectedExecutor = localStorage.getItem('glpi.executor_id') || 'all';
-    } catch (e) {}
-  }
+  let selectedExecutor = localStorage.getItem('glpi.executor_id') || 'all';
 
   function resetCategories(){
     selectedCategories = [];
@@ -776,21 +770,14 @@
       if (sel) sel.disabled = false;
       if (res && res.ok) {
         applyExecutorResponse(res.data);
-      } else {
-        showError(res && res.code ? res.code : 'network_error');
+      } else if (res && res.code) {
+        showError(res.code);
       }
-    }).catch(() => {
-      if (sel) sel.disabled = false;
-      showError('network_error');
     });
   }
 
   function initExecutorFilter(){
-    if (!EXEC_FEATURE) {
-      const b = document.querySelector('.glpi-executor-block');
-      if (b) b.classList.add('gexe-hide-executors');
-      return;
-    }
+    if (!window.GLPI_RUNTIME || !GLPI_RUNTIME.features || !GLPI_RUNTIME.features.executors) return;
     try {
       const block = document.querySelector('.glpi-executor-block');
       if (!block) return;
@@ -808,19 +795,13 @@
           select.value = selectedExecutor;
           updateExecutorBadge(select);
           if (selectedExecutor !== 'all') loadTicketsForExecutor(selectedExecutor, select);
-        } else {
-          select.disabled = false;
-          showError(res && res.code ? res.code : 'network_error');
         }
-      }).catch(() => {
-        select.disabled = false;
-        showError('network_error');
       });
       select.addEventListener('change', () => {
         const val = select.value;
         if (val === selectedExecutor) return;
         selectedExecutor = val;
-        try { localStorage.setItem('glpi.executor_id', val); } catch(e){}
+        localStorage.setItem('glpi.executor_id', val);
         updateExecutorBadge(select);
         loadTicketsForExecutor(val, select);
       });
@@ -1399,7 +1380,7 @@
       card.insertBefore(bar, card.firstChild);
 
       // чип со счётчиком комментариев (в левом футере)
-      const foot = card.querySelector('.glpi-location-footer');
+      const foot = card.querySelector('.glpi-executor-footer');
       if (foot && !foot.querySelector('.glpi-comments-chip')) {
         const chip = document.createElement('span');
         chip.className = 'glpi-comments-chip';
@@ -1684,11 +1665,7 @@
     injectCardActionButtons();
     applyActionVisibility();
     bindCardOpen();
-    if (EXEC_FEATURE) initExecutorFilter();
-    else {
-      const b = document.querySelector('.glpi-executor-block');
-      if (b) b.classList.add('gexe-hide-executors');
-    }
+    initExecutorFilter();
 
     bindStatusAndSearch();
     recalcStatusCounts();
