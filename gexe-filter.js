@@ -465,7 +465,7 @@
     const execSel = modal.querySelector('#gnt-assignee');
     const assignChk = modal.querySelector('#gnt-assign-me');
     const submit = modal.querySelector('.gnt-submit');
-    const loader = modal.querySelector('.glpi-form-loader');
+    const loader = modal.querySelector('.gexe-dict-status');
 
     if (loader) {
       loader.innerHTML = '<span class="spinner"></span><span>Загрузка…</span>';
