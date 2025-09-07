@@ -17,18 +17,20 @@
 
   const ERROR_MAP = {
     not_logged_in: 'Сессия истекла. Войдите в систему.',
-    nonce_failed: 'Обновите страницу (просрочен ключ безопасности).',
-    NONCE_EXPIRED: 'Обновите страницу (просрочен ключ безопасности).',
-    NO_PERMISSION: 'Недостаточно прав.',
-    no_glpi_id_for_current_user: 'Не найден профиль исполнителя (GLPI).',
-    NO_GLPI_USER: 'Не найден профиль исполнителя (GLPI).',
+    nonce_failed: 'Сессия истекла. Обновите страницу.',
+    NONCE_EXPIRED: 'Сессия истекла. Обновите страницу.',
+    NO_PERMISSION: 'У вас нет прав для этой заявки.',
+    no_glpi_id_for_current_user: 'Не найден профиль исполнителя GLPI. Обратитесь к администратору.',
+    NO_GLPI_USER: 'Не найден профиль исполнителя GLPI. Обратитесь к администратору.',
     assignee_not_mapped_to_glpi: 'Выбранный исполнитель не привязан к GLPI.',
     ticket_not_found: 'Заявка не найдена.',
-    SQL_OP_FAILED: details => details ? 'Ошибка записи в GLPI. Код: ' + details + '.' : 'Операция не выполнена',
-    EMPTY_CONTENT: 'Введите комментарий',
+    SQL_OP_FAILED: details => details || 'Не удалось выполнить операцию. Попробуйте ещё раз.',
+    EMPTY_CONTENT: 'Введите текст комментария.',
+    ALREADY_ACCEPTED: 'Уже принято в работу.',
+    INVALID_INPUT: 'Проверьте заполнение полей.',
     bad_response: 'Не удалось обработать ответ сервера.',
     network_error: 'Ошибка сети',
-    SESSION_EXPIRED: 'Сессия истекла, обновите страницу.',
+    SESSION_EXPIRED: 'Сессия истекла. Обновите страницу.',
   };
 
   function ensureNoticeHost() {
@@ -961,19 +963,33 @@
           '<button class="gexe-done__close" aria-label="Закрыть"><i class="fa-solid fa-xmark"></i></button>' +
         '</div>' +
         '<div class="gexe-done__body">' +
-          '<button id="gexe-done-confirm" class="glpi-act">Задача решена</button>' +
+          '<button id="gexe-done-confirm" class="glpi-act">Завершить</button>' +
         '</div>' +
       '</div>';
     document.body.appendChild(doneModal);
     $('.gexe-done__backdrop', doneModal).addEventListener('click', closeDoneModal);
     $('.gexe-done__close', doneModal).addEventListener('click', closeDoneModal);
-    $('#gexe-done-confirm', doneModal).addEventListener('click', () => sendDone());
+    const confirmBtn = $('#gexe-done-confirm', doneModal);
+    confirmBtn.addEventListener('click', () => {
+      if (confirmBtn.getAttribute('data-confirm') === '1') {
+        sendDone();
+      } else {
+        confirmBtn.setAttribute('data-confirm', '1');
+        confirmBtn.textContent = 'Точно завершить?';
+      }
+    });
     return doneModal;
+  }
+  function resetDoneButton(btn) {
+    if (!btn) return;
+    btn.textContent = 'Завершить';
+    btn.removeAttribute('data-confirm');
   }
   function openDoneModal(ticketId) {
     ensureDoneModal();
     doneModal.setAttribute('data-ticket-id', String(ticketId || 0));
     const btn = $('#gexe-done-confirm', doneModal);
+    resetDoneButton(btn);
     const pre = checkPreflight(false);
     if (btn) {
       if (pre.ok) clearPreflight(btn);
@@ -984,6 +1000,7 @@
   function closeDoneModal() {
     if (!doneModal) return;
     doneModal.classList.remove('is-open'); document.body.classList.remove('glpi-modal-open');
+    resetDoneButton($('#gexe-done-confirm', doneModal));
   }
   async function sendDone(retried) {
     if (!doneModal) return;
@@ -1013,33 +1030,36 @@
       let data = null;
       try { data = await res.clone().json(); }
       catch (e) { try { await res.clone().text(); } catch (e2) {} }
-      if (!res.ok) {
-        showError(data && data.error ? data.error : 'bad_response', data && data.details, res.status);
+      if (!res.ok || !data) {
+        showError(data && data.error && data.error.code ? data.error.code : 'bad_response', data && data.error && data.error.message, res.status);
+        resetDoneButton(btn);
         return;
       }
-      if (!data) {
-        showError('bad_response', null, res.status);
-        return;
-      }
-      if (!data.ok) {
-        const code = data.error;
+      if (!data.success) {
+        const code = data.error && data.error.code ? data.error.code : data.error;
         if (code === 'NONCE_EXPIRED' && !retried) {
           try {
             await refreshActionsNonce();
-            showNotice('info', 'Повторяем...');
+            showNotice('info', 'Доступ обновлён, повторяем операцию…');
             return sendDone(true);
           } catch (e) {
             showError('network_error');
+            resetDoneButton(btn);
             return;
           }
         }
-        showError(code, data.details, res.status);
+        showError(code, data.error && data.error.message, res.status);
+        if (btn) {
+          btn.textContent = 'Повторить';
+          btn.removeAttribute('data-confirm');
+        }
         return;
       }
       closeDoneModal();
       const card = document.querySelector('.glpi-card[data-ticket-id="'+id+'"]');
       if (card) {
-        card.setAttribute('data-status', String(glpiAjax.solvedStatus || 6));
+        const newStatus = (data.data && data.data.status) || (glpiAjax.solvedStatus || 6);
+        card.setAttribute('data-status', String(newStatus));
         let badge = card.querySelector('.glpi-solved-badge');
         if (!badge) {
           badge = document.createElement('div');
@@ -1050,12 +1070,16 @@
         card.classList.add('gexe-hide');
         recalcStatusCounts(); filterCards();
       }
-      insertFollowup(id, data.payload && data.payload.followup);
+      insertFollowup(id, data.data && data.data.followup);
       refreshTicketMeta(id);
-      showNotice('success','Задача закрыта');
+      showNotice('success','Заявка завершена');
     } catch (err) {
       if (err && err.name === 'AbortError') showNotice('error','Таймаут запроса');
       else showError('network_error');
+      if (btn) {
+        btn.textContent = 'Повторить';
+        btn.removeAttribute('data-confirm');
+      }
     } finally {
       clearTimeout(timeoutId);
       if (btn) setActionLoading(btn, false);
