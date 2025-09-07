@@ -1,15 +1,22 @@
 /**
  * gexe-filter.js — панель фильтров, поиск, карточки, модалки и действия
  * Требования:
- *  - window.glpiAjax локализуется из glpi-modal-actions.php (url, nonce, user_glpi_id)
+ *  - window.GLPI_RUNTIME локализуется из glpi-modal-actions.php (ajax_url, nonce, current_glpi_user_id)
+ *  - для совместимости поддерживается window.glpiAjax
  *  - HTML карточек и шапки — как в шаблоне gexe-copy.php
- */
+*/
 
 (function () {
   'use strict';
 
   // Ensure AJAX settings are available under both legacy and new globals
-  const ajaxConfig = window.gexeAjax || window.glpiAjax || {};
+  const ajaxConfig = window.GLPI_RUNTIME || window.gexeAjax || window.glpiAjax || {};
+  if (ajaxConfig.current_glpi_user_id && !ajaxConfig.user_glpi_id) {
+    ajaxConfig.user_glpi_id = ajaxConfig.current_glpi_user_id;
+  }
+  if (ajaxConfig.ajax_url && !ajaxConfig.url) {
+    ajaxConfig.url = ajaxConfig.ajax_url;
+  }
   window.glpiAjax = ajaxConfig;
   window.gexeAjax = ajaxConfig;
   const glpiAjax = ajaxConfig;
@@ -44,14 +51,15 @@
   }
 
   function ajaxPost(params, retry) {
-    const ajax = window.gexeAjax || window.glpiAjax;
-    if (!ajax || !ajax.url) return Promise.resolve({ ok: false, code: 'network_error' });
+    const ajax = window.GLPI_RUNTIME || window.gexeAjax || window.glpiAjax;
+    const url = ajax && (ajax.ajax_url || ajax.url);
+    if (!url) return Promise.resolve({ ok: false, code: 'network_error' });
     const fd = new FormData();
     Object.keys(params).forEach(k => fd.append(k, params[k]));
     if (!params.nonce && ajax.nonce) {
       fd.append('nonce', ajax.nonce);
     }
-    return fetch(ajax.url, { method: 'POST', body: fd })
+    return fetch(url, { method: 'POST', body: fd })
       .then(r => r.json())
       .then(normalizeResponse)
       .then(res => {
@@ -210,7 +218,7 @@
   }
 
   function refreshActionsNonce() {
-    const ajax = window.gexeAjax || window.glpiAjax;
+    const ajax = window.GLPI_RUNTIME || window.gexeAjax || window.glpiAjax;
     if (!ajax) return Promise.reject(new Error('no_ajax'));
     return ajaxPost({ action: 'gexe_refresh_actions_nonce' })
       .then(res => {
@@ -765,33 +773,38 @@
   }
 
   function initExecutorFilter(){
-    if (!glpiAjax || Number(glpiAjax.user_glpi_id) !== 2) return;
-    const block = document.querySelector('.glpi-executor-block');
-    if (!block) return;
-    block.innerHTML = '<select id="glpi-executor-filter" class="glpi-executor-select" disabled><option value="all">no filter</option></select><span class="glpi-executor-badge" hidden></span>';
-    const select = block.querySelector('#glpi-executor-filter');
-    ajaxPost({ action: 'glpi_executors' }).then(res => {
-      if (res && res.ok && Array.isArray(res.data.list)) {
-        res.data.list.forEach(it => {
-          const opt = document.createElement('option');
-          opt.value = String(it.id);
-          opt.textContent = it.name;
-          select.appendChild(opt);
-        });
-        select.disabled = false;
-        select.value = selectedExecutor;
+    try {
+      const rt = window.GLPI_RUNTIME || {};
+      if (!rt.features || !rt.features.executors) return;
+      const block = document.querySelector('.glpi-executor-block');
+      if (!block) return;
+      block.innerHTML = '<select id="glpi-executor-filter" class="glpi-executor-select" disabled><option value="all">no filter</option></select><span class="glpi-executor-badge" hidden></span>';
+      const select = block.querySelector('#glpi-executor-filter');
+      ajaxPost({ action: 'glpi_executors' }).then(res => {
+        if (res && res.ok && Array.isArray(res.data.list)) {
+          res.data.list.forEach(it => {
+            const opt = document.createElement('option');
+            opt.value = String(it.id);
+            opt.textContent = it.name;
+            select.appendChild(opt);
+          });
+          select.disabled = false;
+          select.value = selectedExecutor;
+          updateExecutorBadge(select);
+          if (selectedExecutor !== 'all') loadTicketsForExecutor(selectedExecutor, select);
+        }
+      });
+      select.addEventListener('change', () => {
+        const val = select.value;
+        if (val === selectedExecutor) return;
+        selectedExecutor = val;
+        localStorage.setItem('glpi.executor_id', val);
         updateExecutorBadge(select);
-        if (selectedExecutor !== 'all') loadTicketsForExecutor(selectedExecutor, select);
-      }
-    });
-    select.addEventListener('change', () => {
-      const val = select.value;
-      if (val === selectedExecutor) return;
-      selectedExecutor = val;
-      localStorage.setItem('glpi.executor_id', val);
-      updateExecutorBadge(select);
-      loadTicketsForExecutor(val, select);
-    });
+        loadTicketsForExecutor(val, select);
+      });
+    } catch (e) {
+      if (window._GLPI_DEBUG) console.error(e);
+    }
   }
 
   /* ========================= МОДАЛКА ПРОСМОТРА КАРТОЧКИ ========================= */

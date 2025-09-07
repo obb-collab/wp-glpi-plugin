@@ -130,10 +130,10 @@ function gexe_cat_slug($leaf) {
         <div class="glpi-category-block">
           <button type="button" class="glpi-cat-toggle" aria-expanded="false" aria-controls="glpi-categories-inline">Категории</button>
         </div>
-        <?php if (function_exists('gexe_get_current_glpi_uid') && gexe_get_current_glpi_uid() === 2): ?>
-          <div class="glpi-executor-block">
-            <select id="glpi-executor-filter" class="glpi-executor-select"></select>
-          </div>
+        <?php
+        $show_executors = function_exists('glpi_current_user_id') && glpi_current_user_id() === 2;
+        if ($show_executors): ?>
+          <div class="glpi-executor-block" data-executors-menu></div>
         <?php endif; ?>
       </div>
 
