@@ -584,8 +584,9 @@ function gexe_glpi_ticket_accept_sql() {
     global $glpi_db;
     $start = microtime(true);
 
+    // Проверяем, не был ли тикет уже принят ранее
     $already_comment = $glpi_db->get_var($glpi_db->prepare(
-        "SELECT 1 FROM glpi_itilfollowups WHERE itemtype='Ticket' AND items_id=%d AND content='Принято в работу' AND date > (NOW() - INTERVAL 5 MINUTE) LIMIT 1",
+        "SELECT 1 FROM glpi_itilfollowups WHERE itemtype='Ticket' AND items_id=%d AND content='Принято в работу' LIMIT 1",
         $ticket_id
     )) ? true : false;
 
@@ -600,6 +601,22 @@ function gexe_glpi_ticket_accept_sql() {
     $entities_id = (int) $row['entities_id'];
     $status      = (int) $row['status'];
     $already_status = ($status === 2);
+
+    if (!gexe_can_touch_glpi_ticket($ticket_id)) {
+        error_log('[accept] no_permission ticket=' . $ticket_id . ' wp=' . $wp_uid . ' glpi=' . $author_glpi);
+        wp_send_json([
+            'success' => false,
+            'error'   => ['code' => 'NO_PERMISSION', 'message' => 'Нет прав на заявку'],
+        ]);
+    }
+
+    if ($already_comment) {
+        error_log('[accept] already_accepted ticket=' . $ticket_id . ' wp=' . $wp_uid . ' glpi=' . $author_glpi);
+        wp_send_json([
+            'success' => false,
+            'error'   => ['code' => 'ALREADY_ACCEPTED', 'message' => 'Уже принято'],
+        ]);
+    }
 
     $already_assignment = $glpi_db->get_var($glpi_db->prepare(
         'SELECT 1 FROM glpi_tickets_users WHERE tickets_id=%d AND users_id=%d AND type=2 LIMIT 1',
@@ -621,7 +638,10 @@ function gexe_glpi_ticket_accept_sql() {
             $elapsed = (int) round((microtime(true) - $start) * 1000);
             gexe_log_action(sprintf('[accept.sql] ticket=%d assignee=%d followup=0 status=2 elapsed=%dms result=fail code=sql_error msg="%s"', $ticket_id, $assignee, $elapsed, $err));
             error_log('[accept] sql_error assignee_insert_failed ticket=' . $ticket_id . ' wp=' . $wp_uid . ' glpi=' . $author_glpi . ' sql=' . $err);
-            wp_send_json(['error' => 'sql_error', 'details' => 'assignee_insert_failed'], 500);
+            wp_send_json([
+                'success' => false,
+                'error'   => ['code' => 'SQL_OP_FAILED', 'message' => 'Операция не выполнена'],
+            ]);
         }
     }
 
@@ -632,10 +652,13 @@ function gexe_glpi_ticket_accept_sql() {
             if (($res['code'] ?? '') === 'SQL_ERROR') {
                 gexe_log_action(sprintf('[accept.sql] ticket=%d assignee=%d followup=0 status=2 result=fail code=sql_error msg="%s"', $ticket_id, $assignee, $res['message'] ?? ''));
                 error_log('[accept] sql_error followup_insert_failed ticket=' . $ticket_id . ' wp=' . $wp_uid . ' glpi=' . $author_glpi . ' sql=' . ($res['message'] ?? ''));
-                wp_send_json(['error' => 'sql_error', 'details' => 'followup_insert_failed'], 500);
+            } else {
+                error_log('[accept] ' . ($res['code'] ?? 'error') . ' ticket=' . $ticket_id . ' wp=' . $wp_uid . ' glpi=' . $author_glpi);
             }
-            error_log('[accept] ' . ($res['code'] ?? 'error') . ' ticket=' . $ticket_id . ' wp=' . $wp_uid . ' glpi=' . $author_glpi);
-            wp_send_json(['error' => $res['code'] ?? 'error'], 422);
+            wp_send_json([
+                'success' => false,
+                'error'   => ['code' => 'SQL_OP_FAILED', 'message' => 'Операция не выполнена'],
+            ]);
         }
         $followup_id = (int) ($res['followup_id'] ?? 0);
     }
@@ -648,7 +671,10 @@ function gexe_glpi_ticket_accept_sql() {
             $elapsed = (int) round((microtime(true) - $start) * 1000);
             gexe_log_action(sprintf('[accept.sql] ticket=%d assignee=%d followup=%d status=2 elapsed=%dms result=fail code=sql_error msg="%s"', $ticket_id, $assignee, $followup_id, $elapsed, $err));
             error_log('[accept] sql_error status_update_failed ticket=' . $ticket_id . ' wp=' . $wp_uid . ' glpi=' . $author_glpi . ' sql=' . $err);
-            wp_send_json(['error' => 'sql_error', 'details' => 'status_update_failed'], 500);
+            wp_send_json([
+                'success' => false,
+                'error'   => ['code' => 'SQL_OP_FAILED', 'message' => 'Операция не выполнена'],
+            ]);
         }
     }
 
@@ -673,7 +699,7 @@ function gexe_glpi_ticket_accept_sql() {
     if ($already_comment || $already_status) {
         $payload['already'] = true;
     }
-    wp_send_json(['ok' => true, 'payload' => $payload]);
+    wp_send_json(['success' => true, 'payload' => $payload]);
 }
 
 add_action('wp_ajax_gexe_refresh_actions_nonce', 'gexe_refresh_actions_nonce');
