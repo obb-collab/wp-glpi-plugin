@@ -320,9 +320,9 @@ body {
 #gexe-cmnt-send.glpi-act:hover{background:#334155}
 .glpi-status-btn.glpi-act{background:#475569;border:1px solid #334155;color:#fff;border-radius:10px;font-weight:700;padding:10px 16px;min-width:120px}
 .glpi-status-btn.glpi-act:hover{background:#334155}
-.gexe-status__top{display:flex;gap:12px;margin-bottom:12px}
-.gexe-status__bottom{margin-top:12px;padding-top:12px;border-top:1px solid #334155;display:flex;flex-direction:column;gap:8px}
-.gexe-status__hint{font-size:12px;color:#94a3b8;text-align:center}
+.status-action{display:block;width:100%}
+.gexe-status__actions{display:flex;flex-direction:column;gap:8px}
+.gexe-status__hint{font-size:12px;color:#94a3b8;text-align:center;margin-top:12px;padding-top:12px;border-top:1px solid #334155}
 .gexe-status__alert{margin-top:8px;padding:8px;border-radius:8px;font-size:14px;}
 .gexe-status__alert.error{background:#7f1d1d;color:#fef2f2}
 .gexe-status__alert.success{background:#14532d;color:#ecfdf5}

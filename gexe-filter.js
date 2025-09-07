@@ -987,15 +987,13 @@
           '<button class="gexe-status__close" aria-label="Закрыть"><i class="fa-solid fa-xmark"></i></button>' +
         '</div>' +
         '<div class="gexe-status__body">' +
-          '<div class="gexe-status__top">' +
-            '<button class="glpi-act glpi-status-btn" data-status="2">В работе</button>' +
-            '<button class="glpi-act glpi-status-btn" data-status="3">В плане</button>' +
-            '<button class="glpi-act glpi-status-btn" data-status="4">В стопе</button>' +
+          '<div class="gexe-status__actions">' +
+            '<button id="btn-status-work" class="glpi-act glpi-status-btn status-action" data-status="2">В работе</button>' +
+            '<button id="btn-status-plan" class="glpi-act glpi-status-btn status-action" data-status="3">В плане</button>' +
+            '<button id="btn-status-stop" class="glpi-act glpi-status-btn status-action" data-status="4">В стопе</button>' +
+            '<button id="btn-status-resolved" class="glpi-act glpi-status-btn glpi-status-resolve status-action" data-status="6">Решить</button>' +
           '</div>' +
-          '<div class="gexe-status__bottom">' +
-            '<button class="glpi-act glpi-status-btn glpi-status-resolve" data-status="6">Решить</button>' +
-            '<div class="gexe-status__hint">Требуется двойное подтверждение</div>' +
-          '</div>' +
+          '<p class="gexe-status__hint">Требуется двойное подтверждение</p>' +
           '<div class="gexe-status__alert" aria-live="polite" style="display:none"></div>' +
         '</div>' +
       '</div>';
@@ -1022,13 +1020,34 @@
   function openStatusModal(ticketId) {
     ensureStatusModal();
     statusModal.setAttribute('data-ticket-id', String(ticketId || 0));
-    $$('.glpi-status-btn', statusModal).forEach(resetStatusButton);
+    const btns = $$('.glpi-status-btn', statusModal);
+    btns.forEach(btn => { resetStatusButton(btn); btn.style.display = ''; });
     setStatusAlert('');
+    const card = document.querySelector('.glpi-card[data-ticket-id="'+ticketId+'"]');
+    let current = 0;
+    if (card) current = Number(card.getAttribute('data-status') || '0');
+    statusModal.setAttribute('data-current-status', String(current || 0));
+    if (current) {
+      const map = { 2: 'work', 3: 'plan', 4: 'stop', 6: 'resolved' };
+      const key = map[current];
+      if (key) {
+        const b = $('#btn-status-' + key, statusModal);
+        if (b) b.style.display = 'none';
+      }
+    }
+    const hint = $('.gexe-status__hint', statusModal);
+    if (hint) {
+      const rb = $('#btn-status-resolved', statusModal);
+      hint.style.display = rb && rb.style.display !== 'none' ? '' : 'none';
+    }
     const pre = checkPreflight(false);
-    $$('.glpi-status-btn', statusModal).forEach(btn => {
-      if (pre.ok) clearPreflight(btn); else markPreflight(btn, pre.code);
-    });
+    btns.forEach(btn => { if (pre.ok) clearPreflight(btn); else markPreflight(btn, pre.code); });
+    const visible = btns.filter(btn => btn.style.display !== 'none');
+    if (!visible.length) { closeStatusModal(); return; }
     statusModal.classList.add('is-open'); document.body.classList.add('glpi-modal-open');
+    if (window.__GLPI_DEBUG) {
+      console.log({ ticket_id: ticketId, currentStatus: current });
+    }
   }
   function closeStatusModal() {
     if (!statusModal) return;
@@ -1068,7 +1087,8 @@
       if (btn) setActionLoading(btn, false);
       lockAction(id, 'status', false);
       if (window.__GLPI_DEBUG) {
-        console.log({ ticket_id: id, to_status: status, code: res.code || 'ok' });
+        const cur = Number(statusModal.getAttribute('data-current-status') || '0');
+        console.log({ ticket_id: id, currentStatus: cur, clickedStatus: status, code: res.code || 'ok' });
       }
       if (!res.ok) {
         if (res.code === 'already_done') {
@@ -1118,6 +1138,10 @@
     }).catch(() => {
       if (btn) setActionLoading(btn, false);
       lockAction(id, 'status', false);
+      if (window.__GLPI_DEBUG) {
+        const cur = Number(statusModal.getAttribute('data-current-status') || '0');
+        console.log({ ticket_id: id, currentStatus: cur, clickedStatus: status, code: 'network_error' });
+      }
       showError('network_error');
       resetStatusButton(btn);
     });
