@@ -16,6 +16,7 @@
 
   let successModal = null;
   let successTimer = null;
+  let submitLock = false;
 
   function buildModal(){
     if (modal) return;
@@ -169,9 +170,19 @@
   }
 
   function showSubmitError(message){
+    showSubmitStatus(message, 'error');
+  }
+
+  function showSubmitStatus(message, type){
     const box = modal.querySelector('.gexe-dict-status');
     if (!box) return;
-    box.innerHTML = '<span class="error">' + (message || 'Ошибка создания заявки') + '</span>';
+    const cls = type === 'error' ? 'error' : (type === 'success' ? 'success' : 'loading');
+    box.className = 'gexe-dict-status ' + cls;
+    if (cls === 'loading') {
+      box.innerHTML = '<span class="spinner"></span>' + (message || '');
+    } else {
+      box.textContent = message || '';
+    }
     box.hidden = false;
   }
 
@@ -512,7 +523,9 @@
   }
 
   function submit(){
-    if (!window.gexeAjax) return;
+    if (!window.gexeAjax || submitLock) return;
+    submitLock = true;
+    setTimeout(()=>{ submitLock = false; }, 3000);
     hideLoader();
     const name = modal.querySelector('#gnt-name').value.trim();
     const content = modal.querySelector('#gnt-content').value.trim();
@@ -524,10 +537,8 @@
     const assigneeSel = modal.querySelector('#gnt-assignee');
     const assigneeId = assigneeSel.disabled ? 0 : parseInt(assigneeSel.value,10) || 0;
     const errors = {};
-    if (!name) errors.name = 'Обязательное поле';
-    if (!content) errors.content = 'Обязательное поле';
-    if (!catId) errors.category = 'Обязательное поле';
-    if (!locId) errors.location = 'Обязательное поле';
+    if (name.length < 3 || name.length > 255) errors.name = 'Тема 3-255 символов';
+    if (!content || content.length > 5000) errors.content = 'Описание 1-5000 символов';
     if (!assignMe && !assigneeId) errors.assignee = 'Обязательное поле';
     if (Object.keys(errors).length) {
       Object.keys(errors).forEach(function(f){ setFieldError(f, errors[f]); });
@@ -535,17 +546,26 @@
       return;
     }
     const payload = {
-      name: name,
-      content: content,
+      subject: name,
+      description: content,
       category_id: catId,
       location_id: locId,
       assign_me: assignMe ? 1 : 0,
-      assignee_id: assigneeId
+      executor_id: assigneeId
     };
-    const makeBody = () => 'action=gexe_create_ticket&nonce='+encodeURIComponent(gexeAjax.nonce)+'&payload='+encodeURIComponent(JSON.stringify(payload));
+    const makeBody = () => {
+      const params = new URLSearchParams();
+      params.append('action','glpi_create_ticket');
+      params.append('nonce', gexeAjax.nonce);
+      Object.keys(payload).forEach(k=>{ if(payload[k] !== undefined && payload[k] !== null) params.append(k, payload[k]); });
+      return params.toString();
+    };
     const btn = modal.querySelector('.gnt-submit');
+    const oldText = btn.textContent;
     btn.disabled = true;
     btn.classList.add('is-loading');
+    btn.textContent = 'Создаю...';
+    showSubmitStatus('Создаю...', 'loading');
     const send = (retry) => {
       return fetch(gexeAjax.url, {
         method: 'POST',
@@ -560,22 +580,28 @@
     };
     send(false).then(resp=>{
       const data = resp.data || resp;
-      if (data && data.ok) {
+      if (data && data.success) {
+        showSubmitStatus('Заявка №'+data.id+' создана','success');
         close();
-        if (data.ticket_id) {
-          showSuccessModal(data.ticket_id);
-          window.dispatchEvent(new CustomEvent('gexe:tickets:refresh', {detail:{ticketId:data.ticket_id}}));
+        if (data.id) {
+          showSuccessModal(data.id);
+          window.dispatchEvent(new CustomEvent('gexe:tickets:refresh', {detail:{ticketId:data.id}}));
         }
       } else {
-        showSubmitError(data && data.message ? data.message : 'Ошибка создания заявки');
-        if (data && data.details) {
-          Object.keys(data.details).forEach(function(f){ setFieldError(f, data.details[f]); });
+        const msg = data && data.error && data.error.message ? data.error.message : 'Ошибка создания заявки';
+        showSubmitStatus(msg,'error');
+        if (data && data.error && data.error.details) {
+          Object.keys(data.error.details).forEach(function(f){ setFieldError(f, data.error.details[f]); });
         }
       }
     }).catch(err=>{
       logClientError((err && err.code ? err.code + ': ' : '') + (err && err.message ? err.message : String(err)));
-      showSubmitError(err && err.message ? err.message : 'Ошибка отправки');
-    }).finally(()=>{btn.disabled = false; btn.classList.remove('is-loading');});
+      showSubmitStatus(err && err.message ? err.message : 'Ошибка отправки','error');
+    }).finally(()=>{
+      btn.disabled = false;
+      btn.classList.remove('is-loading');
+      btn.textContent = oldText;
+    });
   }
 
   function updatePaths(){

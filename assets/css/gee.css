@@ -298,6 +298,15 @@ button.disabled{opacity:.5;cursor:not-allowed;}
 }
 .glpi-create-modal .gnt-retry:hover { background: #273447; }
 
+/* Smaller subject field */
+.glpi-create-modal #gnt-name.gnt-textarea{
+  height:60px;
+  min-height:56px;
+  line-height:1.4;
+  padding:8px 12px;
+  resize:vertical;
+}
+
 /* Выпадающие (общие) */
 .glpi-filter-dropdown .glpi-filter-menu{ background:#0f172a; border:1px solid #334155; border-radius:8px; box-shadow:0 6px 12px rgba(0,0,0,.3); }
 
