@@ -41,15 +41,15 @@ register_uninstall_hook(__FILE__, 'gexe_glpi_uninstall');
 
 // ====== СТАТИКА (CSS/JS) с принудительным обновлением версий ======
 add_action('wp_enqueue_scripts', function () {
-    $css_path = plugin_dir_path(__FILE__) . 'gee.css';
-    $js_path  = plugin_dir_path(__FILE__) . 'gexe-filter.js';
+    $css_path = plugin_dir_path(__FILE__) . 'assets/css/gee.css';
+    $js_path  = plugin_dir_path(__FILE__) . 'assets/js/gexe-filter.js';
 
     $css_ver = file_exists($css_path) ? filemtime($css_path) : null;
     $js_ver  = file_exists($js_path)  ? filemtime($js_path)  : null;
 
-    wp_enqueue_style('gexe-gee', plugin_dir_url(__FILE__) . 'gee.css', [], $css_ver);
+    wp_enqueue_style('gexe-gee', plugin_dir_url(__FILE__) . 'assets/css/gee.css', [], $css_ver);
     wp_enqueue_style('gexe-fa', 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css', [], '6.5.0');
-    wp_enqueue_script('gexe-filter', plugin_dir_url(__FILE__) . 'gexe-filter.js', [], $js_ver, true);
+    wp_enqueue_script('gexe-filter', plugin_dir_url(__FILE__) . 'assets/js/gexe-filter.js', [], $js_ver, true);
 
     wp_localize_script('gexe-filter', 'glpiAjax', [
         'url'               => admin_url('admin-ajax.php'),
