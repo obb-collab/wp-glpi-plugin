@@ -38,8 +38,27 @@ function glpi_nt_verify_nonce() {
 add_action('wp_ajax_glpi_get_categories', 'glpi_ajax_get_categories');
 function glpi_ajax_get_categories() {
     glpi_nt_verify_nonce();
+    if (!is_user_logged_in()) {
+        wp_send_json(['ok' => false, 'error' => 'not_logged_in']);
+    }
+    $map = gexe_require_glpi_user(get_current_user_id());
+    if (!$map['ok']) {
+        wp_send_json(['ok' => false, 'error' => 'not_mapped']);
+    }
     global $glpi_db;
-    $res = glpi_db_get_categories();
+    $entity_id = (int)$glpi_db->get_var($glpi_db->prepare(
+        'SELECT entities_id FROM glpi_users WHERE id=%d AND is_deleted=0',
+        $map['id']
+    ));
+    if ($glpi_db->last_error) {
+        error_log('[wp-glpi new-task catalogs] categories SQL error: ' . $glpi_db->last_error);
+        wp_send_json(['ok' => false, 'error' => 'sql', 'which' => 'categories', 'sql' => $glpi_db->last_error]);
+    }
+    if ($entity_id <= 0) {
+        wp_send_json(['ok' => false, 'error' => 'entity_access']);
+    }
+
+    $res = glpi_db_get_categories($entity_id);
     if (!$res['ok']) {
         if ($res['code'] === 'dict_failed') {
             $err = [
@@ -49,7 +68,7 @@ function glpi_ajax_get_categories() {
             ];
             if ($glpi_db->last_error) {
                 $err['sql'] = $glpi_db->last_error;
-                error_log('glpi_get_categories: ' . $glpi_db->last_error);
+                error_log('[wp-glpi new-task catalogs] categories SQL error: ' . $glpi_db->last_error);
             }
             wp_send_json($err);
         }
@@ -63,6 +82,13 @@ function glpi_ajax_get_categories() {
 add_action('wp_ajax_glpi_get_locations', 'glpi_ajax_get_locations');
 function glpi_ajax_get_locations() {
     glpi_nt_verify_nonce();
+    if (!is_user_logged_in()) {
+        wp_send_json(['ok' => false, 'error' => 'not_logged_in']);
+    }
+    $map = gexe_require_glpi_user(get_current_user_id());
+    if (!$map['ok']) {
+        wp_send_json(['ok' => false, 'error' => 'not_mapped']);
+    }
     global $glpi_db;
     $res = glpi_db_get_locations();
     if (!$res['ok']) {
@@ -74,7 +100,7 @@ function glpi_ajax_get_locations() {
             ];
             if ($glpi_db->last_error) {
                 $err['sql'] = $glpi_db->last_error;
-                error_log('glpi_get_locations: ' . $glpi_db->last_error);
+                error_log('[wp-glpi new-task catalogs] locations SQL error: ' . $glpi_db->last_error);
             }
             wp_send_json($err);
         }
@@ -106,7 +132,7 @@ function glpi_ajax_get_executors() {
             ];
             if ($glpi_db->last_error) {
                 $err['sql'] = $glpi_db->last_error;
-                error_log('glpi_get_executors: ' . $glpi_db->last_error);
+                error_log('[wp-glpi new-task catalogs] executors SQL error: ' . $glpi_db->last_error);
             }
             wp_send_json($err);
         }

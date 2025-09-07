@@ -207,28 +207,18 @@ function sql_insert_followup($ticket_id, $glpi_user_id, $content) {
  *
  * @return array{ok:bool,code?:string,which?:string,list?:array<int,array{id:int,name:string}>}
  */
-function glpi_db_get_categories() {
+function glpi_db_get_categories($entity_id = 0) {
     global $glpi_db;
 
-    $sql = "SELECT c.id, c.completename, c.name\n"
+    $sql = "SELECT c.id, c.name, c.completename, c.level, c.ancestors_cache\n"
          . "FROM glpi_itilcategories c\n"
-         . "WHERE c.is_active=1 AND c.is_helpdeskvisible=1\n"
-         . "  AND NOT EXISTS (\n"
-         . "    SELECT 1 FROM glpi_itilcategories ch\n"
-         . "    WHERE ch.is_active=1\n"
-         . "      AND ch.completename LIKE CONCAT(c.completename, ' > %')\n"
-         . "  )\n"
-         . "UNION\n"
-         . "SELECT p.id, p.completename, p.name\n"
-         . "FROM glpi_itilcategories p\n"
-         . "WHERE p.is_active=1 AND p.is_helpdeskvisible=1\n"
-         . "  AND EXISTS (\n"
-         . "    SELECT 1 FROM glpi_itilcategories ch\n"
-         . "    WHERE ch.is_active=1\n"
-         . "      AND ch.completename LIKE CONCAT(p.completename, ' > %')\n"
-         . "      AND ch.name = p.name\n"
-         . "  )\n"
-         . "ORDER BY completename";
+         . "WHERE c.is_deleted = 0 AND c.is_helpdeskvisible = 1";
+
+    if ($entity_id > 0) {
+        $sql .= $glpi_db->prepare(" AND (c.entities_id = %d OR c.is_recursive = 1)", $entity_id);
+    }
+
+    $sql .= "\nORDER BY c.completename ASC";
 
     $rows = $glpi_db->get_results($sql, ARRAY_A);
     if ($glpi_db->last_error) {
@@ -240,9 +230,11 @@ function glpi_db_get_categories() {
 
     $list = array_map(function ($r) {
         return [
-            'id'          => (int) $r['id'],
-            'name'        => $r['name'],
-            'completename'=> $r['completename'],
+            'id'              => (int) ($r['id'] ?? 0),
+            'name'            => $r['name'] ?? '',
+            'completename'    => $r['completename'] ?? '',
+            'level'           => isset($r['level']) ? (int) $r['level'] : null,
+            'ancestors_cache' => $r['ancestors_cache'] ?? '',
         ];
     }, $rows);
 
@@ -257,25 +249,10 @@ function glpi_db_get_categories() {
 function glpi_db_get_locations() {
     global $glpi_db;
 
-    $sql = "SELECT l.id, l.completename, l.name\n"
+    $sql = "SELECT l.id, l.name, l.completename\n"
          . "FROM glpi_locations l\n"
-         . "WHERE l.is_active=1\n"
-         . "  AND NOT EXISTS (\n"
-         . "    SELECT 1 FROM glpi_locations ch\n"
-         . "    WHERE ch.is_active=1\n"
-         . "      AND ch.completename LIKE CONCAT(l.completename, ' > %')\n"
-         . "  )\n"
-         . "UNION\n"
-         . "SELECT p.id, p.completename, p.name\n"
-         . "FROM glpi_locations p\n"
-         . "WHERE p.is_active=1\n"
-         . "  AND EXISTS (\n"
-         . "    SELECT 1 FROM glpi_locations ch\n"
-         . "    WHERE ch.is_active=1\n"
-         . "      AND ch.completename LIKE CONCAT(p.completename, ' > %')\n"
-         . "      AND ch.name = p.name\n"
-         . "  )\n"
-         . "ORDER BY completename";
+         . "WHERE l.is_deleted = 0\n"
+         . "ORDER BY l.completename ASC";
 
     $rows = $glpi_db->get_results($sql, ARRAY_A);
     if ($glpi_db->last_error) {
@@ -287,9 +264,9 @@ function glpi_db_get_locations() {
 
     $list = array_map(function ($r) {
         return [
-            'id'          => (int) $r['id'],
-            'name'        => $r['name'],
-            'completename'=> $r['completename'],
+            'id'           => (int) ($r['id'] ?? 0),
+            'name'         => $r['name'] ?? '',
+            'completename' => $r['completename'] ?? '',
         ];
     }, $rows);
 
@@ -332,7 +309,7 @@ function glpi_db_create_ticket(array $payload) {
     $glpi_db->query('START TRANSACTION');
 
     $is_leaf = (int)$glpi_db->get_var($glpi_db->prepare(
-        "SELECT COUNT(*) FROM glpi_itilcategories c WHERE c.id=%d AND c.is_active=1 AND NOT EXISTS (SELECT 1 FROM glpi_itilcategories ch WHERE ch.is_active=1 AND ch.completename LIKE CONCAT(c.completename, ' > %%'))",
+        "SELECT COUNT(*) FROM glpi_itilcategories c WHERE c.id=%d AND c.is_deleted=0 AND c.is_helpdeskvisible=1 AND NOT EXISTS (SELECT 1 FROM glpi_itilcategories ch WHERE ch.is_deleted=0 AND ch.completename LIKE CONCAT(c.completename, ' > %%'))",
         $cat
     ));
     if (!$is_leaf) {
@@ -342,7 +319,7 @@ function glpi_db_create_ticket(array $payload) {
 
     if ($loc > 0) {
         $loc_leaf = (int)$glpi_db->get_var($glpi_db->prepare(
-            "SELECT COUNT(*) FROM glpi_locations l WHERE l.id=%d AND l.is_active=1 AND NOT EXISTS (SELECT 1 FROM glpi_locations ch WHERE ch.is_active=1 AND ch.completename LIKE CONCAT(l.completename, ' > %%'))",
+            "SELECT COUNT(*) FROM glpi_locations l WHERE l.id=%d AND l.is_deleted=0 AND NOT EXISTS (SELECT 1 FROM glpi_locations ch WHERE ch.is_deleted=0 AND ch.completename LIKE CONCAT(l.completename, ' > %%'))",
             $loc
         ));
         if (!$loc_leaf) {
@@ -355,7 +332,7 @@ function glpi_db_create_ticket(array $payload) {
 
     $assigned = $assign_me ? $author : $exec;
     $user_row = $glpi_db->get_row($glpi_db->prepare(
-        'SELECT id, entities_id FROM glpi_users WHERE id=%d AND is_active=1',
+        'SELECT id, entities_id FROM glpi_users WHERE id=%d AND is_deleted=0',
         $assigned
     ), ARRAY_A);
     if (!$user_row) {
