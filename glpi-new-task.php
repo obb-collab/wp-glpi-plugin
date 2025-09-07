@@ -58,14 +58,6 @@ function glpi_db_get_executors() { old implementation }
 
 add_action('wp_ajax_glpi_load_dicts', 'glpi_ajax_load_dicts');
 
-class CatalogEmpty extends Exception {
-    public $scope;
-    public function __construct($scope) {
-        $this->scope = $scope;
-        parent::__construct($scope);
-    }
-}
-
 function glpi_get_wp_executors(): array {
     global $wpdb;
     $um = $wpdb->usermeta;
@@ -101,10 +93,10 @@ function glpi_ajax_load_dicts() {
 
     $user_id = get_current_user_id();
     $raw_map = get_user_meta($user_id, 'glpi_user_id', true);
-    $skip_map = defined('WP_GLPI_DISABLE_MAPPING_CHECK') && WP_GLPI_DISABLE_MAPPING_CHECK;
-    $skip_entity = defined('WP_GLPI_DISABLE_ENTITY_CHECK') && WP_GLPI_DISABLE_ENTITY_CHECK;
+    $skip_map  = defined('WP_GLPI_DISABLE_MAPPING_CHECK') && WP_GLPI_DISABLE_MAPPING_CHECK;
+    $no_filter = defined('WP_GLPI_DISABLE_ENTITY_FILTER') && WP_GLPI_DISABLE_ENTITY_FILTER;
     if ($skip_map) {
-        $skip_entity = true;
+        $no_filter = true;
     }
 
     if (!$skip_map) {
@@ -151,12 +143,12 @@ function glpi_ajax_load_dicts() {
         $pdo = glpi_get_pdo();
         $pdo->beginTransaction();
 
-        $default_entity = 0;
+        $user_entity = 0;
         if (!$skip_map && $glpi_user_id > 0) {
-            $stmt = $pdo->prepare('SELECT id, entities_id FROM glpi_users WHERE id = :id');
+            $stmt = $pdo->prepare('SELECT id, entities_id, is_active FROM glpi_users WHERE id = :id LIMIT 1');
             $stmt->execute([':id' => $glpi_user_id]);
             $user_row = $stmt->fetch();
-            if (!$user_row) {
+            if (!$user_row || (int)($user_row['is_active'] ?? 0) !== 1) {
                 $pdo->rollBack();
                 error_log('[wp-glpi:mapping] type=MAPPING_BROKEN wp=' . $user_id . ' glpi_id=' . $glpi_user_id);
                 wp_send_json_error([
@@ -169,47 +161,70 @@ function glpi_ajax_load_dicts() {
                     ]
                 ]);
             }
-            $default_entity = (int) ($user_row['entities_id'] ?? 0);
+            $user_entity = (int) ($user_row['entities_id'] ?? 0);
         }
 
         $allowed = [];
         $profiles = [];
-        if (!$skip_entity && $glpi_user_id > 0) {
-            $stmtP = $pdo->prepare('SELECT entities_id, is_recursive FROM glpi_profiles_users WHERE users_id = :uid');
-            $stmtP->execute([':uid' => $glpi_user_id]);
-            $profiles = $stmtP->fetchAll();
-            foreach ($profiles as $p) {
-                $eid = (int) ($p['entities_id'] ?? 0);
-                if ($eid <= 0) continue;
-                if ((int) ($p['is_recursive'] ?? 0) === 1) {
+        $source  = 'profiles';
+        if (!$no_filter && $glpi_user_id > 0) {
+            $cache_key = 'wp_glpi_allowed_' . $glpi_user_id;
+            $cached = get_transient($cache_key);
+            if (is_array($cached) && $cached) {
+                $allowed = array_map('intval', $cached);
+                $source  = 'cache';
+            } else {
+                $stmtP = $pdo->prepare('SELECT entities_id, is_recursive FROM glpi_profiles_users WHERE users_id = :uid');
+                $stmtP->execute([':uid' => $glpi_user_id]);
+                $profiles = $stmtP->fetchAll();
+                foreach ($profiles as $p) {
+                    $eid = (int) ($p['entities_id'] ?? 0);
+                    if ($eid <= 0) continue;
+                    if ((int) ($p['is_recursive'] ?? 0) === 1) {
+                        $stmtE = $pdo->prepare('SELECT e2.id FROM glpi_entities e2 WHERE e2.id = :id OR FIND_IN_SET(:id, e2.ancestors_cache)');
+                        $stmtE->execute([':id' => $eid]);
+                        $allowed = array_merge($allowed, array_map('intval', $stmtE->fetchAll(PDO::FETCH_COLUMN)));
+                    } else {
+                        $allowed[] = $eid;
+                    }
+                }
+                if (empty($allowed) && WP_GLPI_ALLOW_FALLBACK_USER_ENTITY && $user_entity > 0) {
                     $stmtE = $pdo->prepare('SELECT e2.id FROM glpi_entities e2 WHERE e2.id = :id OR FIND_IN_SET(:id, e2.ancestors_cache)');
-                    $stmtE->execute([':id' => $eid]);
-                    $allowed = array_merge($allowed, array_map('intval', $stmtE->fetchAll(PDO::FETCH_COLUMN)));
-                } else {
-                    $allowed[] = $eid;
+                    $stmtE->execute([':id' => $user_entity]);
+                    $allowed = array_map('intval', $stmtE->fetchAll(PDO::FETCH_COLUMN));
+                    $source  = 'user_entity';
+                }
+                if (!empty($allowed)) {
+                    $allowed = array_values(array_unique($allowed));
+                    set_transient($cache_key, $allowed, 5 * MINUTE_IN_SECONDS);
                 }
             }
-            if (empty($allowed) && $default_entity > 0) {
-                $allowed[] = $default_entity;
-            }
-            $allowed = array_values(array_unique(array_map('intval', $allowed)));
             if (empty($allowed)) {
                 $pdo->rollBack();
-                error_log('[wp-glpi:new-task] ENTITY_ACCESS user=' . $user_id . ' glpi=' . $glpi_user_id . ' allowed=0');
+                error_log('[wp-glpi:new-task] ENTITY allowed=0 user=' . $glpi_user_id . ' src=' . $source);
                 wp_send_json_error([
                     'error' => [
                         'type'    => 'ENTITY_ACCESS',
                         'scope'   => 'all',
                         'code'    => 'NO_ENTITY',
                         'message' => 'Нет доступа к сущности',
-                        'details' => WP_GLPI_DEBUG ? ['glpi_user_id' => $glpi_user_id, 'profiles_count' => count($profiles)] : null,
+                        'details' => WP_GLPI_DEBUG ? [
+                            'glpi_user_id'     => $glpi_user_id,
+                            'user_entity'      => $user_entity,
+                            'profiles'         => count($profiles),
+                            'allowed_entities' => $allowed,
+                        ] : null,
                     ]
                 ]);
             }
+        } else {
+            $source = 'disabled';
         }
 
+        error_log('[wp-glpi:new-task] ENTITY allowed=' . count($allowed) . ' user=' . $glpi_user_id . ' src=' . $source);
+
         $scope = 'categories';
-        if ($skip_entity) {
+        if ($no_filter) {
             $stmtC = $pdo->prepare('SELECT c.id, c.name, c.completename, c.level, c.ancestors_cache FROM glpi_itilcategories c WHERE c.is_deleted = 0 AND c.is_helpdeskvisible = 1 ORDER BY c.completename ASC');
             $stmtC->execute();
         } else {
@@ -219,12 +234,10 @@ function glpi_ajax_load_dicts() {
             $stmtC->execute($allowed);
         }
         $categories = $stmtC->fetchAll();
-        if (!$categories) {
-            throw new CatalogEmpty('categories');
-        }
+        $meta_empty = ['categories' => empty($categories), 'locations' => false];
 
         $scope = 'locations';
-        if ($skip_entity) {
+        if ($no_filter) {
             $stmtL = $pdo->prepare('SELECT l.id, l.name, l.completename FROM glpi_locations l WHERE l.is_deleted = 0 ORDER BY l.completename ASC');
             $stmtL->execute();
         } else {
@@ -234,38 +247,26 @@ function glpi_ajax_load_dicts() {
             $stmtL->execute($allowed);
         }
         $locations = $stmtL->fetchAll();
-        if (!$locations) {
-            throw new CatalogEmpty('locations');
-        }
-
-        $scope      = 'executors';
-        $executors  = glpi_get_wp_executors();
-        if (!$executors) {
-            throw new CatalogEmpty('executors');
-        }
+        $meta_empty['locations'] = empty($locations);
 
         $pdo->commit();
+
+        $executors = glpi_get_wp_executors();
+
+        $meta = ['empty' => $meta_empty];
+        if (WP_GLPI_DEBUG) {
+            $meta['allowed_entities'] = $allowed;
+            $meta['source'] = $source;
+        }
+
         $resp = [
             'categories' => $categories,
             'locations'  => $locations,
             'executors'  => $executors,
+            'meta'       => $meta,
         ];
-        if (WP_GLPI_DEBUG) {
-            $resp['meta'] = ['allowed_entities' => $allowed];
-        }
+
         wp_send_json_success($resp);
-    } catch (CatalogEmpty $e) {
-        if (isset($pdo) && $pdo->inTransaction()) {
-            $pdo->rollBack();
-        }
-        wp_send_json_error([
-            'error' => [
-                'type'    => 'EMPTY',
-                'scope'   => $e->scope,
-                'code'    => 'EMPTY_CATALOG',
-                'message' => 'Справочник «' . ($e->scope === 'categories' ? 'Категории' : ($e->scope === 'locations' ? 'Местоположения' : 'Исполнители')) . '» пуст',
-            ]
-        ]);
     } catch (PDOException $e) {
         if (isset($pdo) && $pdo->inTransaction()) {
             $pdo->rollBack();
@@ -276,7 +277,7 @@ function glpi_ajax_load_dicts() {
                 'type'    => 'SQL',
                 'scope'   => $scope ?? 'all',
                 'code'    => $e->getCode(),
-                'message' => 'Ошибка SQL при загрузке ' . ($scope === 'categories' ? 'категорий' : ($scope === 'locations' ? 'местоположений' : 'исполнителей')),
+                'message' => 'Ошибка SQL при загрузке ' . ($scope === 'categories' ? 'категорий' : ($scope === 'locations' ? 'местоположений' : 'справочников')),
                 'details' => WP_GLPI_DEBUG ? $e->getMessage() : null,
             ]
         ]);
