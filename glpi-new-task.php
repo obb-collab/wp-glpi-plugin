@@ -105,7 +105,7 @@ function glpi_ajax_load_dicts() {
         */
 
         $categories = $pdo->query(
-            "SELECT c.id, c.name, c.completename FROM glpi_itilcategories AS c WHERE c.is_deleted = 0 AND c.is_helpdeskvisible = 1 ORDER BY c.completename ASC"
+            "SELECT c.id, c.name, c.completename FROM glpi_itilcategories AS c WHERE c.is_helpdeskvisible = 1 ORDER BY c.completename ASC"
         )->fetchAll(PDO::FETCH_ASSOC);
 
         $scope = 'locations';
@@ -118,7 +118,7 @@ function glpi_ajax_load_dicts() {
         $executors = glpi_get_wp_executors();
         $meta = ['empty' => ['categories' => empty($categories), 'locations' => empty($locations)]];
 
-        error_log('[wp-glpi:new-task] catalogs cats=' . count($categories) . ' locs=' . count($locations) . ')');
+        error_log('[wp-glpi:new-task] catalogs: cats=' . count($categories) . ', locs=' . count($locations));
 
         wp_send_json_success([
             'categories' => $categories,
@@ -130,7 +130,7 @@ function glpi_ajax_load_dicts() {
         if (isset($pdo) && $pdo->inTransaction()) {
             $pdo->rollBack();
         }
-        error_log('[wp-glpi:new-task] SQL ERROR (' . ($scope ?? 'all') . '): ' . $e->getMessage());
+        error_log('[wp-glpi:new-task] SQL ' . ($scope ?? 'unknown') . ': ' . $e->getMessage());
         wp_send_json_error([
             'type'    => 'SQL',
             'scope'   => $scope ?? 'all',
