@@ -71,6 +71,21 @@ function gexe_compose_short_name($realname, $firstname) {
     return '';
 }
 
+/** Список доступных исполнителей (GLPI user id + short name) */
+function gexe_get_assignee_options() {
+    $users = get_users(['meta_key' => 'glpi_user_id']);
+    $out   = [];
+    foreach ($users as $u) {
+        $gid = (int) get_user_meta($u->ID, 'glpi_user_id', true);
+        if ($gid <= 0) continue;
+        $out[] = [
+            'id'   => $gid,
+            'name' => gexe_compose_short_name($u->last_name ?? '', $u->first_name ?? ''),
+        ];
+    }
+    return $out;
+}
+
 /** Очистка HTML комментария (текст в карточке модалки) */
 function gexe_clean_comment_html($html) {
     if (!is_string($html) || $html === '') return '';
@@ -687,4 +702,96 @@ function gexe_glpi_comment_add($action = 'comment', $content_override = null) {
     $glpi_db->query('COMMIT');
     gexe_clear_comments_cache($ticket_id);
     gexe_action_response(true, 'ok', $ticket_id, $action, '', ['extra' => ['followup' => $res['followup']]]);
+}
+
+/* -------- AJAX: смена исполнителя -------- */
+add_action('wp_ajax_gexe_change_assignee_sql', 'gexe_change_assignee_sql');
+function gexe_change_assignee_sql() {
+    $ticket_id = isset($_POST['ticket_id']) ? intval($_POST['ticket_id']) : 0;
+    $target_id = isset($_POST['target_glpi_user_id']) ? intval($_POST['target_glpi_user_id']) : 0;
+    $action    = 'change_assignee';
+
+    if (!check_ajax_referer('gexe_actions', 'nonce', false)) {
+        gexe_action_response(false, 'csrf', $ticket_id, $action);
+    }
+    if (!is_user_logged_in()) {
+        gexe_action_response(false, 'not_logged_in', $ticket_id, $action);
+    }
+    $actor_glpi_id = gexe_get_current_glpi_user_id(get_current_user_id());
+    if ($actor_glpi_id <= 0) {
+        gexe_action_response(false, 'not_mapped', $ticket_id, $action);
+    }
+    if ($ticket_id <= 0 || $target_id <= 0) {
+        gexe_action_response(false, 'validation', $ticket_id, $action);
+    }
+
+    $allowed = wp_list_pluck(gexe_get_assignee_options(), 'id');
+    if (!in_array($target_id, $allowed, true)) {
+        gexe_action_response(false, 'invalid_target', $ticket_id, $action);
+    }
+
+    global $glpi_db;
+    $glpi_db->query('START TRANSACTION');
+
+    $current = $glpi_db->get_var($glpi_db->prepare(
+        'SELECT users_id FROM glpi_tickets_users WHERE tickets_id=%d AND type=2 FOR UPDATE',
+        $ticket_id
+    ));
+    if ($current === null) {
+        $glpi_db->query('ROLLBACK');
+        gexe_action_response(false, 'not_found', $ticket_id, $action);
+    }
+    if ((int) $current !== $actor_glpi_id) {
+        $glpi_db->query('ROLLBACK');
+        gexe_action_response(false, 'forbidden', $ticket_id, $action);
+    }
+
+    $row = $glpi_db->get_row($glpi_db->prepare(
+        'SELECT id, realname, firstname FROM glpi_users WHERE id=%d LIMIT 1',
+        $target_id
+    ), ARRAY_A);
+    if (!$row) {
+        $glpi_db->query('ROLLBACK');
+        gexe_action_response(false, 'invalid_target', $ticket_id, $action);
+    }
+    if ((int) $current === $target_id) {
+        $glpi_db->query('ROLLBACK');
+        gexe_action_response(false, 'already_assigned', $ticket_id, $action);
+    }
+
+    $sql = $glpi_db->prepare(
+        'UPDATE glpi_tickets_users SET users_id=%d WHERE tickets_id=%d AND type=2',
+        $target_id,
+        $ticket_id
+    );
+    if (!$glpi_db->query($sql)) {
+        $err = $glpi_db->last_error;
+        $glpi_db->query('ROLLBACK');
+        gexe_action_response(false, 'sql_error', $ticket_id, $action, $err);
+    }
+
+    $short = gexe_compose_short_name($row['realname'] ?? '', $row['firstname'] ?? '');
+    $content = 'Смена исполнителя на ' . $short;
+    $sql = $glpi_db->prepare(
+        "INSERT INTO glpi_itilfollowups (itemtype,items_id,date,users_id,content,is_private) VALUES ('Ticket',%d,NOW(),%d,%s,0)",
+        $ticket_id,
+        $actor_glpi_id,
+        $content
+    );
+    if (!$glpi_db->query($sql)) {
+        $err = $glpi_db->last_error;
+        $glpi_db->query('ROLLBACK');
+        gexe_action_response(false, 'sql_error', $ticket_id, $action, $err);
+    }
+    $fid  = (int) $glpi_db->insert_id;
+    $date = $glpi_db->get_var($glpi_db->prepare('SELECT date FROM glpi_itilfollowups WHERE id=%d', $fid));
+
+    $glpi_db->query('COMMIT');
+    gexe_clear_comments_cache($ticket_id);
+    gexe_action_response(true, 'ok', $ticket_id, $action, '', [
+        'extra' => [
+            'new_assignee' => ['id' => $target_id, 'name' => $short],
+            'followup'     => ['id' => $fid, 'content' => $content, 'date' => $date],
+        ],
+    ]);
 }

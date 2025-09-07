@@ -344,6 +344,11 @@ button.disabled{opacity:.5;cursor:not-allowed;}
 #gexe-cmnt-send.glpi-act:hover{background:#334155}
 .glpi-status-btn.glpi-act{background:#475569;border:1px solid #334155;color:#fff;border-radius:10px;font-weight:700;padding:10px 16px;min-width:120px}
 .glpi-status-btn.glpi-act:hover{background:#334155}
+.gexe-assignee-block{display:flex;gap:8px;align-items:center}
+.gexe-assignee-select{flex:1;padding:8px 10px;border-radius:10px;background:#1e293b;color:#e5e7eb;border:1px solid #334155}
+.gexe-assignee-select:disabled{opacity:.5}
+.gexe-assignee-btn.glpi-act{background:#475569;border:1px solid #334155;color:#fff;border-radius:10px;font-weight:700;padding:10px 16px;min-width:80px}
+.gexe-assignee-btn.glpi-act:hover{background:#334155}
 .status-action{display:block;width:100%}
 .gexe-status__actions{display:flex;flex-direction:column;gap:8px}
 .gexe-status__hint{font-size:12px;color:#94a3b8;text-align:center;margin-top:12px;padding-top:12px;border-top:1px solid #334155}

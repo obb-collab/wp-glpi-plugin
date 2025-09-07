@@ -28,6 +28,9 @@
     rate_limit_client: 'Слишком часто. Повторите через пару секунд.',
     bad_response: 'Ошибка соединения. Повторите позже.',
     network_error: 'Ошибка соединения. Повторите позже.',
+    already_assigned: 'Исполнитель уже назначен.',
+    forbidden: 'Нет прав сменить исполнителя.',
+    invalid_target: 'Некорректный исполнитель.',
   };
 
   function normalizeResponse(res) {
@@ -1068,8 +1071,9 @@
   }
 
   /* ========================= МОДАЛКА СМЕНЫ СТАТУСА ========================= */
-  const STATUS_NAMES = { 2: 'в работе', 3: 'в плане', 4: 'в стопе', 6: 'решено' };
+  const STATUS_NAMES = { 2: 'взять в работу', 4: 'в ожидание', 6: 'задача выполнена' };
   const statusConfirmTimers = {};
+  let assigneeConfirmTimer = null;
   function ensureStatusModal() {
     if (statusModal) return statusModal;
     statusModal = document.createElement('div');
@@ -1083,10 +1087,10 @@
         '</div>' +
         '<div class="gexe-status__body">' +
           '<div class="gexe-status__actions">' +
-            '<button id="btn-status-work" class="glpi-act glpi-status-btn status-action" data-status="2">В работе</button>' +
-            '<button id="btn-status-plan" class="glpi-act glpi-status-btn status-action" data-status="3">В плане</button>' +
-            '<button id="btn-status-stop" class="glpi-act glpi-status-btn status-action" data-status="4">В стопе</button>' +
-            '<button id="btn-status-resolved" class="glpi-act glpi-status-btn glpi-status-resolve status-action" data-status="6">Решить</button>' +
+            '<button id="btn-status-work" class="glpi-act glpi-status-btn status-action" data-status="2">Взять в работу</button>' +
+            '<button id="btn-status-stop" class="glpi-act glpi-status-btn status-action" data-status="4">В ожидание</button>' +
+            '<div class="gexe-assignee-block"><select class="gexe-assignee-select"><option value="">Сменить исполнителя</option></select><button class="glpi-act gexe-assignee-btn">Да</button></div>' +
+            '<button id="btn-status-resolved" class="glpi-act glpi-status-btn glpi-status-resolve status-action" data-status="6">Задача выполнена</button>' +
           '</div>' +
           '<p class="gexe-status__hint">Требуется двойное подтверждение</p>' +
           '<div class="gexe-status__alert" aria-live="polite" style="display:none"></div>' +
@@ -1098,6 +1102,15 @@
     $$('.glpi-status-btn', statusModal).forEach(btn => {
       btn.addEventListener('click', () => handleStatusClick(btn));
     });
+    const assSel = $('.gexe-assignee-select', statusModal);
+    if (assSel) {
+      fillAssigneeOptions(assSel);
+      assSel.addEventListener('change', handleAssigneeSelectChange);
+    }
+    const assBtn = $('.gexe-assignee-btn', statusModal);
+    if (assBtn) {
+      assBtn.addEventListener('click', () => handleAssigneeClick(assBtn));
+    }
     return statusModal;
   }
   function resetStatusButton(btn) {
@@ -1123,11 +1136,27 @@
     if (card) current = Number(card.getAttribute('data-status') || '0');
     statusModal.setAttribute('data-current-status', String(current || 0));
     if (current) {
-      const map = { 2: 'work', 3: 'plan', 4: 'stop', 6: 'resolved' };
+      const map = { 2: 'work', 4: 'stop', 6: 'resolved' };
       const key = map[current];
       if (key) {
         const b = $('#btn-status-' + key, statusModal);
         if (b) b.style.display = 'none';
+      }
+    }
+    const assBlock = $('.gexe-assignee-block', statusModal);
+    if (assBlock) {
+      const assSel = $('.gexe-assignee-select', statusModal);
+      const assBtn = $('.gexe-assignee-btn', statusModal);
+      const assData = card ? (card.getAttribute('data-assignees') || '') : '';
+      const arr = assData.split(',').map(s => parseInt(s.trim(),10)).filter(Boolean);
+      const myId = Number(glpiAjax && glpiAjax.user_glpi_id) || 0;
+      if (!arr.includes(myId) || myId <= 0) {
+        assBlock.style.display = 'none';
+      } else {
+        assBlock.style.display = '';
+        if (assSel) assSel.value = '';
+        resetAssigneeButton(assBtn);
+        handleAssigneeSelectChange();
       }
     }
     const hint = $('.gexe-status__hint', statusModal);
@@ -1148,6 +1177,8 @@
     if (!statusModal) return;
     statusModal.classList.remove('is-open'); document.body.classList.remove('glpi-modal-open');
     $$('.glpi-status-btn', statusModal).forEach(resetStatusButton);
+    const assBtn = $('.gexe-assignee-btn', statusModal);
+    if (assBtn) resetAssigneeButton(assBtn);
   }
   function setStatusAlert(code) {
     const box = $('.gexe-status__alert', statusModal);
@@ -1172,6 +1203,90 @@
       }, 10000);
     }
   }
+
+  function fillAssigneeOptions(sel) {
+    if (!sel) return;
+    const list = (window.gexeAjax || window.glpiAjax || {}).assignees || [];
+    sel.innerHTML = '<option value="">Сменить исполнителя</option>';
+    list.forEach(a => {
+      const opt = document.createElement('option');
+      opt.value = String(a.id);
+      opt.textContent = a.name;
+      sel.appendChild(opt);
+    });
+  }
+
+  function resetAssigneeButton(btn) {
+    if (!btn) return;
+    if (assigneeConfirmTimer) {
+      clearTimeout(assigneeConfirmTimer);
+      assigneeConfirmTimer = null;
+    }
+    btn.classList.remove('is-confirm');
+    btn.textContent = 'Да';
+    btn.disabled = false;
+  }
+
+  function handleAssigneeSelectChange() {
+    const btn = $('.gexe-assignee-btn', statusModal);
+    if (!btn) return;
+    resetAssigneeButton(btn);
+    const sel = $('.gexe-assignee-select', statusModal);
+    const val = parseInt(sel && sel.value ? sel.value : '0', 10);
+    const card = document.querySelector('.glpi-card[data-ticket-id="'+statusModal.getAttribute('data-ticket-id')+'"]');
+    const current = card ? parseInt((card.getAttribute('data-assignees') || '0').split(',')[0] || '0', 10) : 0;
+    btn.disabled = !val || val === current;
+  }
+
+  function handleAssigneeClick(btn) {
+    const sel = $('.gexe-assignee-select', statusModal);
+    const val = parseInt(sel && sel.value ? sel.value : '0', 10);
+    if (!val) return;
+    if (btn.classList.contains('is-confirm')) {
+      resetAssigneeButton(btn);
+      sendAssigneeChange(val, btn);
+    } else {
+      btn.classList.add('is-confirm');
+      btn.textContent = 'Подтвердить?';
+      assigneeConfirmTimer = setTimeout(() => resetAssigneeButton(btn), 10000);
+    }
+  }
+
+  function sendAssigneeChange(target, btn) {
+    const id = Number(statusModal.getAttribute('data-ticket-id') || '0');
+    if (!id) return;
+    if (isActionLocked(id, 'assignee')) return;
+    setActionLoading(btn, true);
+    lockAction(id, 'assignee', true);
+    ajaxPost({ action: 'gexe_change_assignee_sql', ticket_id: String(id), target_glpi_user_id: String(target) }).then(res => {
+      setActionLoading(btn, false);
+      lockAction(id, 'assignee', false);
+      if (!res.ok) {
+        if (res.code === 'already_assigned') {
+          btn.disabled = true;
+          setTimeout(() => { btn.disabled = false; }, 2000);
+        }
+        showError(res.code);
+        return;
+      }
+      closeStatusModal();
+      const card = document.querySelector('.glpi-card[data-ticket-id="'+id+'"]');
+      if (card) {
+        card.setAttribute('data-assignees', String(target));
+        const foot = card.querySelector('.glpi-executor-footer .glpi-executors');
+        if (foot && res.data && res.data.extra && res.data.extra.new_assignee) {
+          foot.textContent = 'Исполнитель: ' + res.data.extra.new_assignee.name;
+        }
+      }
+      insertFollowup(id, res.data && res.data.extra && res.data.extra.followup);
+      showNotice('success', 'Исполнитель изменён');
+    }).catch(() => {
+      setActionLoading(btn, false);
+      lockAction(id, 'assignee', false);
+      showError('network_error');
+    });
+  }
+
   function sendStatus(status, btn) {
     const id = Number(statusModal.getAttribute('data-ticket-id') || '0');
     if (!id) return;

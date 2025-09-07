@@ -60,6 +60,7 @@ add_action('wp_enqueue_scripts', function () {
         'restNonce'         => wp_create_nonce('wp_rest'),
         'solvedStatus'      => (int) get_option('glpi_solved_status', 6),
         'webBase'           => gexe_glpi_web_base(),
+        'assignees'         => gexe_get_assignee_options(),
     ]);
 });
 
