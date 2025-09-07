@@ -210,6 +210,12 @@ body {
 .glpi-category-block{position:relative;}
 .glpi-cat-toggle{display:flex;align-items:center;gap:8px;padding:10px 16px;border-radius:6px;background:#1f2937;color:#e5e7eb;border:1px solid #334155;cursor:pointer;transition:background-color .15s ease;}
 .glpi-cat-toggle:hover{background:#273447;}
+.glpi-executors{position:relative;}
+.glpi-executors__btn{display:flex;align-items:center;gap:8px;padding:10px 16px;border-radius:6px;background:#1f2937;color:#e5e7eb;border:1px solid #334155;cursor:pointer;transition:background-color .15s ease;white-space:nowrap;}
+.glpi-executors__btn:hover{background:#273447;}
+.glpi-executors.loading .glpi-executors__btn{opacity:.6;pointer-events:none;}
+.glpi-executors__menu{position:absolute;top:100%;left:0;margin-top:4px;min-width:180px;padding:4px 0;background:#0f172a;border:1px solid #334155;border-radius:8px;box-shadow:0 6px 12px rgba(0,0,0,.3);display:none;z-index:50;}
+.glpi-executors__menu.open{display:block;}
 
 /* Inline statuses for "New ticket" modal */
 .gnt-inline-status{font-size:12px;margin-top:4px;color:#94a3b8;}

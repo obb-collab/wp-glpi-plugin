@@ -198,6 +198,72 @@
     }
   }
 
+  // [manager-switcher] dropdown for selecting executor
+  function initExecutorDropdown() {
+    const ajax = window.glpiAjax || {};
+    if (!ajax || String(ajax.is_manager) !== '1') return;
+    const host = document.querySelector('.glpi-top-left');
+    if (!host) return;
+
+    const wrap = document.createElement('div');
+    wrap.className = 'glpi-executors';
+
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'glpi-executors__btn';
+    btn.textContent = 'Исполнители';
+    wrap.appendChild(btn);
+
+    const menu = document.createElement('div');
+    menu.className = 'glpi-executors__menu';
+
+    const addItem = (value, label) => {
+      const item = document.createElement('button');
+      item.type = 'button';
+      item.className = 'glpi-filter-btn';
+      item.textContent = label;
+      item.dataset.value = value;
+      item.addEventListener('click', () => {
+        wrap.classList.add('loading');
+        btn.disabled = true;
+        menu.querySelectorAll('button').forEach(b => b.disabled = true);
+        const url = new URL(location.href);
+        url.searchParams.set('view_as', value);
+        location.assign(url.toString());
+      });
+      menu.appendChild(item);
+    };
+
+    addItem('all', 'Без фильтров');
+    (ajax.executors || []).forEach(ex => {
+      if (!ex) return;
+      const val = typeof ex.id !== 'undefined' ? String(ex.id) : '';
+      const label = typeof ex.name === 'string' ? ex.name : '';
+      if (val) addItem(val, label);
+    });
+
+    wrap.appendChild(menu);
+    host.appendChild(wrap);
+
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      menu.classList.toggle('open');
+    });
+
+    document.addEventListener('click', (e) => {
+      if (!wrap.contains(e.target)) {
+        menu.classList.remove('open');
+      }
+    });
+  }
+
+  function clearViewAsParam() {
+    const params = new URLSearchParams(location.search);
+    if (params.has('view_as')) {
+      history.replaceState(null, '', location.pathname + location.hash);
+    }
+  }
+
 
   function debugRequest(url, payload) {
     if (!window.GEXE_DEBUG) return;
@@ -1799,9 +1865,11 @@
 
   /* ========================= ИНИЦИАЛИЗАЦИЯ ========================= */
   document.addEventListener('DOMContentLoaded', function () {
+    clearViewAsParam();
     ensureOverdueBlock();
     initCategoryToggle();
     bindNewTaskButton();
+    initExecutorDropdown();
 
     injectCardActionButtons();
     applyActionVisibility();
