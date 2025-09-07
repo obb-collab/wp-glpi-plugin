@@ -9,30 +9,6 @@ require_once __DIR__ . '/glpi-utils.php';
 require_once __DIR__ . '/includes/glpi-sql.php';
 require_once __DIR__ . '/includes/glpi-auth-map.php';
 
-// Localize runtime configuration for front-end scripts.
-add_action('wp_enqueue_scripts', 'gexe_glpi_localize_runtime', 20);
-function gexe_glpi_localize_runtime() {
-    if (!function_exists('wp_localize_script')) return;
-    if (!wp_script_is('gexe-filter', 'enqueued')) return;
-
-    $current = function_exists('glpi_current_user_id') ? glpi_current_user_id() : 0;
-    $can_view_all = false;
-    if (is_user_logged_in() && function_exists('get_current_user_id')) {
-        $can_view_all = (get_user_meta(get_current_user_id(), 'glpi_show_all_cards', true) === '1');
-    }
-    $features = [
-        'executors' => ($current === 2),
-    ];
-
-    wp_localize_script('gexe-filter', 'GLPI_RUNTIME', [
-        'ajax_url' => admin_url('admin-ajax.php'),
-        'nonce'    => wp_create_nonce('gexe_actions'),
-        'current_glpi_user_id' => $current,
-        'can_view_all' => $can_view_all,
-        'features' => $features,
-    ]);
-}
-
 function gexe_action_response($ok, $code, $ticket_id, $action, $msg = '', $extra = []) {
     $payload = array_merge([
         'ok'        => (bool) $ok,
@@ -764,20 +740,10 @@ gexe_action_response(true, 'ok', $ticket_id, $action, '', ['extra' => ['followup
 }
 
 function gexe_glpi_executors() {
-    if (function_exists('glpi_current_user_id') ? glpi_current_user_id() !== 2 : true) {
+    if (gexe_get_current_glpi_uid() !== 2) {
         wp_send_json_error(['ok' => false, 'code' => 'no_rights'], 403);
     }
-    try {
-        $rows = glpi_db_get_executors();
-    } catch (Throwable $e) {
-        if (defined('WP_DEBUG') && WP_DEBUG) {
-            error_log('gexe_glpi_executors: ' . $e->getMessage());
-        }
-        wp_send_json_error(['ok' => false, 'code' => 'db'], 500);
-    }
-    if (!is_array($rows)) {
-        wp_send_json_error(['ok' => false, 'code' => 'db'], 500);
-    }
+    $rows = glpi_db_get_executors();
     $list = [];
     foreach ($rows as $r) {
         $list[] = [
@@ -793,26 +759,21 @@ function gexe_glpi_filter_tickets() {
         wp_send_json_error(['ok' => false, 'code' => 'not_logged_in'], 403);
     }
     $executor = isset($_POST['executor_id']) ? trim((string) wp_unslash($_POST['executor_id'])) : '';
-    $current  = function_exists('glpi_current_user_id') ? glpi_current_user_id() : 0;
+    $current  = gexe_get_current_glpi_uid();
     if ($executor === '' || $executor === 'all') {
-        $executor = ($current === 2) ? 'all' : $current;
+        if ($current !== 2) {
+            $executor = $current;
+        } else {
+            $executor = 'all';
+        }
     } elseif (!ctype_digit($executor) || (int) $executor <= 0) {
         wp_send_json_error(['ok' => false, 'code' => 'validation'], 400);
     }
     if ($executor === 'all' && $current !== 2) {
         wp_send_json_error(['ok' => false, 'code' => 'no_rights'], 403);
     }
-    try {
-        $rows = glpi_db_get_tickets_by_executor($executor, $current);
-    } catch (Throwable $e) {
-        if (defined('WP_DEBUG') && WP_DEBUG) {
-            error_log('gexe_glpi_filter_tickets: ' . $e->getMessage());
-        }
-        wp_send_json_error(['ok' => false, 'code' => 'db'], 500);
-    }
-    if (!is_array($rows)) {
-        wp_send_json_error(['ok' => false, 'code' => 'db'], 500);
-    }
+    $rows = glpi_db_get_tickets_by_executor($executor, $current);
+    if (!is_array($rows)) $rows = [];
     $tickets = [];
     foreach ($rows as $r) {
         $id = (int) ($r['id'] ?? 0);
