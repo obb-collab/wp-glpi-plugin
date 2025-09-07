@@ -25,6 +25,8 @@
     empty_comment: 'Введите комментарий',
     bad_response: 'Не удалось обработать ответ сервера.',
     network_error: 'Ошибка сети',
+    NO_PERMISSION: 'Нет прав на заявку',
+    SQL_OP_FAILED: 'Операция не выполнена',
   };
 
   function ensureNoticeHost() {
@@ -118,6 +120,49 @@
     }
   }
 
+  function markAccepted(ticketId, btn, payload) {
+    if (!btn) return;
+    btn.innerHTML = '<i class="fa-solid fa-check"></i>';
+    btn.disabled = true;
+    btn.setAttribute('aria-disabled', 'true');
+    btn.setAttribute('title', 'Уже принято');
+
+    const cardEl = document.querySelector('.glpi-card[data-ticket-id="' + ticketId + '"]');
+    if (cardEl) {
+      cardEl.setAttribute('data-status', '2');
+      cardEl.setAttribute('data-unassigned', '0');
+      if (payload && payload.assigned_glpi_id) {
+        cardEl.setAttribute('data-assignees', String(payload.assigned_glpi_id));
+      }
+      const cardBtn = cardEl.querySelector('.gexe-open-accept');
+      if (cardBtn && cardBtn !== btn) {
+        setActionLoading(cardBtn, false);
+        cardBtn.disabled = true;
+        cardBtn.innerHTML = '<i class="fa-solid fa-check"></i>';
+        cardBtn.setAttribute('aria-disabled', 'true');
+        cardBtn.setAttribute('title', 'Уже принято');
+      }
+      const footer = cardEl.querySelector('.glpi-executor-footer');
+      if (footer && !footer.querySelector('.glpi-executors')) {
+        const span = document.createElement('span');
+        span.className = 'glpi-executors';
+        span.innerHTML = '<i class="fa-solid fa-user-tie glpi-executor"></i> Вы';
+        footer.appendChild(span);
+      }
+    }
+
+    if (modalEl && modalEl.getAttribute('data-ticket-id') === String(ticketId)) {
+      const mb = modalEl.querySelector('.gexe-open-accept');
+      if (mb && mb !== btn) {
+        setActionLoading(mb, false);
+        mb.disabled = true;
+        mb.innerHTML = '<i class="fa-solid fa-check"></i>';
+        mb.setAttribute('aria-disabled', 'true');
+        mb.setAttribute('title', 'Уже принято');
+      }
+    }
+  }
+
   function debugRequest(url, payload) {
     if (!window.GEXE_DEBUG) return;
     const safe = {};
@@ -187,6 +232,12 @@
     if (!btn.classList.contains('gexe-open-accept')) return;
     if (btn.disabled || isActionLocked(ticketId, 'accept')) return;
 
+    if (btn.classList.contains('is-error')) {
+      btn.classList.remove('is-error');
+      btn.innerHTML = '<i class="fa-solid fa-play"></i>';
+      btn.setAttribute('title', 'Принять в работу');
+    }
+
     const ajax = window.gexeAjax || window.glpiAjax;
     if (!ajax || !ajax.url) return;
     lockAction(ticketId, 'accept', true);
@@ -225,51 +276,39 @@
     send(false).then(({ res, data }) => {
       setActionLoading(btn, false);
       if (!res.ok) {
-        showError(data && data.error ? data.error : 'bad_response', data && data.details, res.status);
+        const errCode = data && data.error && data.error.code ? data.error.code : (data && data.error) ? data.error : 'bad_response';
+        showError(errCode, data && data.details, res.status);
         return;
       }
       if (!data) {
         showError('bad_response', null, res.status);
         return;
       }
-      if (!data.ok) {
-        showError(data.error, data.details, res.status);
+      const ok = data.ok || data.success;
+      if (!ok) {
+        const err = data.error || {};
+        const code = err.code || err;
+        if (code === 'ALREADY_ACCEPTED') {
+          markAccepted(ticketId, btn);
+          refreshTicketMeta(ticketId);
+          recalcStatusCounts(); filterCards();
+          showNotice('success', 'Уже в работе');
+          return;
+        }
+        if (code === 'NO_PERMISSION') {
+          showNotice('error', 'Нет прав на заявку');
+          return;
+        }
+        if (code === 'SQL_OP_FAILED') {
+          showNotice('error', 'Операция не выполнена');
+          btn.classList.add('is-error');
+          btn.innerHTML = 'Повторить';
+          return;
+        }
+        showError(code, err.details, res.status);
         return;
       }
-      btn.innerHTML = '<i class="fa-solid fa-check"></i>';
-      btn.disabled = true;
-      btn.setAttribute('aria-disabled', 'true');
-      const cardEl = document.querySelector('.glpi-card[data-ticket-id="'+ticketId+'"]');
-      if (cardEl) {
-        cardEl.setAttribute('data-status', '2');
-        cardEl.setAttribute('data-unassigned', '0');
-        if (data.payload && data.payload.assigned_glpi_id) {
-          cardEl.setAttribute('data-assignees', String(data.payload.assigned_glpi_id));
-        }
-        const cardBtn = cardEl.querySelector('.gexe-open-accept');
-        if (cardBtn && cardBtn !== btn) {
-          setActionLoading(cardBtn, false);
-          cardBtn.disabled = true;
-          cardBtn.innerHTML = '<i class="fa-solid fa-check"></i>';
-          cardBtn.setAttribute('aria-disabled', 'true');
-        }
-        const footer = cardEl.querySelector('.glpi-executor-footer');
-        if (footer && !footer.querySelector('.glpi-executors')) {
-          const span = document.createElement('span');
-          span.className = 'glpi-executors';
-          span.innerHTML = '<i class="fa-solid fa-user-tie glpi-executor"></i> Вы';
-          footer.appendChild(span);
-        }
-      }
-      if (modalEl && modalEl.getAttribute('data-ticket-id') === String(ticketId)) {
-        const mb = modalEl.querySelector('.gexe-open-accept');
-        if (mb && mb !== btn) {
-          setActionLoading(mb, false);
-          mb.disabled = true;
-          mb.innerHTML = '<i class="fa-solid fa-check"></i>';
-          mb.setAttribute('aria-disabled', 'true');
-        }
-      }
+      markAccepted(ticketId, btn, data.payload);
       insertFollowup(ticketId, data.payload && data.payload.followup);
       refreshTicketMeta(ticketId);
       recalcStatusCounts(); filterCards();
