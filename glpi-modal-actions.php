@@ -795,3 +795,60 @@ function gexe_change_assignee_sql() {
         ],
     ]);
 }
+
+/**
+ * AJAX: load GLPI dictionaries (categories and locations).
+ * Returns cached result for 5 minutes to reduce database load.
+ */
+add_action('wp_ajax_glpi_get_dicts', 'gexe_glpi_get_dicts');
+function gexe_glpi_get_dicts() {
+    if (!is_user_logged_in()) {
+        wp_send_json(['ok' => false, 'error' => 'unauthorized'], 401);
+    }
+
+    $cached = wp_cache_get('glpi_dict_v1', 'glpi');
+    if (is_array($cached)) {
+        wp_send_json(array_merge(['ok' => true], $cached));
+    }
+
+    global $glpi_db;
+
+    $cats = $glpi_db->get_results(
+        "SELECT id, name, itilcategories_id AS parent_id FROM glpi_itilcategories WHERE is_active=1 ORDER BY name",
+        ARRAY_A
+    );
+    if ($glpi_db->last_error) {
+        $err = defined('WP_DEBUG') && WP_DEBUG ? $glpi_db->last_error : '';
+        wp_send_json(['ok' => false, 'error' => 'dict_fetch_failed', 'details' => $err], 500);
+    }
+
+    $locs = $glpi_db->get_results(
+        "SELECT id, name, locations_id AS parent_id FROM glpi_locations WHERE is_active=1 ORDER BY name",
+        ARRAY_A
+    );
+    if ($glpi_db->last_error) {
+        $err = defined('WP_DEBUG') && WP_DEBUG ? $glpi_db->last_error : '';
+        wp_send_json(['ok' => false, 'error' => 'dict_fetch_failed', 'details' => $err], 500);
+    }
+
+    $data = [
+        'categories' => array_map(function ($r) {
+            return [
+                'id'        => (int) ($r['id'] ?? 0),
+                'name'      => (string) ($r['name'] ?? ''),
+                'parent_id' => (int) ($r['parent_id'] ?? 0),
+            ];
+        }, $cats ?: []),
+        'locations' => array_map(function ($r) {
+            return [
+                'id'        => (int) ($r['id'] ?? 0),
+                'name'      => (string) ($r['name'] ?? ''),
+                'parent_id' => (int) ($r['parent_id'] ?? 0),
+            ];
+        }, $locs ?: []),
+    ];
+
+    wp_cache_set('glpi_dict_v1', $data, 'glpi', 5 * MINUTE_IN_SECONDS);
+
+    wp_send_json(array_merge(['ok' => true], $data));
+}

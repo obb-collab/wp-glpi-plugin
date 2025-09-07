@@ -420,6 +420,9 @@
   }
 
   // -------- Загрузка справочников для модалки --------
+  let dictCache = null;
+  let dictCacheTs = 0;
+
   function fetchDict(which) {
     const ajax = window.gexeAjax || window.glpiAjax;
     if (!ajax || !ajax.url) return Promise.resolve({ ok: false, code: 'network_error' });
@@ -429,6 +432,30 @@
     return fetch(ajax.url, { method: 'POST', body: fd })
       .then(r => r.json())
       .catch(() => ({ ok: false, code: 'network_error' }));
+  }
+
+  function fetchDictsCombined() {
+    const ajax = window.gexeAjax || window.glpiAjax;
+    if (!ajax || !ajax.url) return Promise.reject({ code: 'network_error' });
+    const fd = new FormData();
+    fd.append('action', 'glpi_get_dicts');
+    if (ajax.nonce) fd.append('nonce', ajax.nonce);
+    const controller = new AbortController();
+    const t = setTimeout(() => controller.abort(), 10000);
+    return fetch(ajax.url, { method: 'POST', body: fd, signal: controller.signal })
+      .then(r => r.json().then(data => ({ status: r.status, data })))
+      .then(({ status, data }) => {
+        clearTimeout(t);
+        if (status >= 400 || !data || data.ok === false) {
+          const code = (data && (data.error || data.code)) || 'dict_fetch_failed';
+          return Promise.reject({ code });
+        }
+        return data;
+      }).catch(err => {
+        clearTimeout(t);
+        if (err.name === 'AbortError') return Promise.reject({ code: 'timeout' });
+        return Promise.reject(err);
+      });
   }
 
   function fillSelect(sel, list) {
@@ -464,74 +491,51 @@
     const locSel = modal.querySelector('#gnt-location');
     const execSel = modal.querySelector('#gnt-assignee');
     const submit = modal.querySelector('.gnt-submit');
-    const loader = modal.querySelector('.glpi-form-loader');
+    const loader = modal.querySelector('.gexe-dict-status');
+
+    const controls = $$('input,select,textarea,button.gnt-submit', modal);
+    controls.forEach(el => { el.disabled = true; el.classList.add('disabled'); });
+
+    const applyData = (data) => {
+      fillSelect('#gnt-category', data.categories || []);
+      fillSelect('#gnt-location', data.locations || []);
+      controls.forEach(el => { el.disabled = false; el.classList.remove('disabled'); });
+      if (submit) { submit.disabled = false; submit.classList.remove('disabled'); }
+      if (loader) { loader.hidden = true; loader.innerHTML = ''; }
+      dictCache = data;
+      dictCacheTs = Date.now();
+      bindNewTaskForm(modal);
+    };
+
+    const showDictError = (code) => {
+      let msg = 'Не удалось загрузить справочники. Повторите попытку.';
+      if (code === 'timeout') msg = "Справочники загружаются слишком долго. Нажмите «Повторить».";
+      if (code === 'unauthorized') msg = 'Сессия истекла. Войдите в систему и попробуйте снова.';
+      if (loader) {
+        loader.innerHTML = '<span class="error">' + msg + '</span><button type="button" class="gnt-retry">Повторить</button>';
+        loader.hidden = false;
+        const btn = loader.querySelector('.gnt-retry');
+        if (btn) btn.addEventListener('click', loadNewTaskDicts);
+      }
+    };
+
+    if (dictCache && (Date.now() - dictCacheTs < 5 * 60 * 1000)) {
+      applyData(dictCache);
+      fetchDict('executors').then(res => { if (res && res.ok) { fillSelect('#gnt-assignee', res.list); } });
+      return;
+    }
 
     if (loader) {
-      loader.innerHTML = '<span class="spinner"></span><span>Загрузка…</span>';
+      loader.innerHTML = '<span class="spinner"></span><span>Загрузка справочников…</span>';
       loader.hidden = false;
     }
 
-    // Disable all form controls until dictionaries are loaded.
-    $$('input,select,textarea,button.gnt-submit', modal).forEach(el => {
-      el.classList.add('disabled');
-      el.disabled = true;
-    });
-
-    const setStatus = (el, type, text, retry) => {
-      if (!el) return;
-      const st = modal.querySelector('#' + el.id + '-status');
-      if (st) {
-        st.className = 'gnt-inline-status dict-helper' + (type ? ' dict-' + type : '');
-        if (type === 'error' && retry) {
-          st.innerHTML = text + ' <button type="button" class="gnt-retry">Повторить</button>';
-          const btn = st.querySelector('.gnt-retry');
-          if (btn) btn.addEventListener('click', retry);
-        } else {
-          st.textContent = text || '';
-        }
-      }
-    };
-
-    const loadOne = (which, el) => {
-      if (!el) return Promise.resolve(null);
-      setStatus(el, 'loading', 'Загрузка…');
-      return fetchDict(which).then(res => {
-        if (res && res.ok) {
-          if (which === 'executors') fillSelect('#gnt-assignee', res.list);
-          else if (which === 'categories') fillSelect('#gnt-category', res.list);
-          else if (which === 'locations') fillSelect('#gnt-location', res.list);
-          el.disabled = false;
-          el.classList.remove('disabled');
-          setStatus(el, '', '');
-        } else if (res && res.code === 'dict_empty') {
-          el.disabled = false;
-          el.classList.remove('disabled');
-          setStatus(el, 'empty', 'Нет данных');
-        } else {
-          setStatus(el, 'error', 'Не удалось загрузить', () => loadOne(which, el));
-        }
-        return res;
-      });
-    };
-
-    Promise.all([
-      loadOne('categories', catSel),
-      loadOne('locations', locSel),
-      loadOne('executors', execSel)
-    ]).then(([cat, loc]) => {
-      // Enable common fields once dictionaries have finished loading
-      $$('input,select,textarea', modal).forEach(el => {
-        if (el === catSel || el === locSel || el === execSel) return; // handled above
-        el.disabled = false;
-        el.classList.remove('disabled');
-      });
-      if (submit && cat && cat.ok && loc && loc.ok) {
-        submit.disabled = false;
-        submit.classList.remove('disabled');
-      }
-    }).finally(() => {
-      if (loader) { loader.hidden = true; loader.innerHTML = ''; }
-      bindNewTaskForm(modal);
+    fetchDictsCombined().then(data => {
+      applyData({ categories: data.categories || [], locations: data.locations || [] });
+      return fetchDict('executors').then(res => { if (res && res.ok) { fillSelect('#gnt-assignee', res.list); } });
+    }).catch(err => {
+      const code = err && err.code ? err.code : 'dict_fetch_failed';
+      showDictError(code);
     });
 
     const updatePath = (input, pathId) => {

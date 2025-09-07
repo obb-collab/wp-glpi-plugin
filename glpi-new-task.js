@@ -27,7 +27,7 @@
         <button type="button" class="gnt-close" aria-label="Закрыть">×</button>
       </div>
         <div class="gnt-body">
-          <div class="glpi-form-loader" role="status" aria-live="polite" hidden></div>
+          <div class="gexe-dict-status glpi-form-loader" role="status" aria-live="polite" hidden></div>
           <label for="gnt-name" class="gnt-label">Тема</label>
           <input id="gnt-name" type="text" class="gnt-input" />
           <div id="gnt-name-err" class="gnt-field-error" hidden></div>
@@ -63,7 +63,7 @@
           </div>
         </div>
         <div class="gnt-footer">
-          <button type="button" class="gnt-submit">Создать</button>
+          <button type="button" class="gnt-submit">Создать заявку</button>
         </div>
       </div>
     `;
@@ -119,21 +119,21 @@
   }
 
   function showLoading(){
-    const box = modal.querySelector('.glpi-form-loader');
+    const box = modal.querySelector('.gexe-dict-status');
     if (!box) return;
     box.innerHTML = '<span class="spinner"></span><span>Загружаем справочники…</span>';
     box.hidden = false;
   }
 
   function hideLoader(){
-    const box = modal.querySelector('.glpi-form-loader');
+    const box = modal.querySelector('.gexe-dict-status');
     if (!box) return;
     box.hidden = true;
     box.innerHTML = '';
   }
 
   function showError(message){
-    const box = modal.querySelector('.glpi-form-loader');
+    const box = modal.querySelector('.gexe-dict-status');
     if (!box) return;
     const msg = 'Не удалось загрузить справочники категорий и местоположений. ' + (message || 'Попробуйте ещё раз.');
     box.innerHTML = '<span class="error">' + msg + '</span><button type="button" class="gnt-retry">Повторить</button>';
@@ -146,7 +146,7 @@
   }
 
   function showSubmitError(message){
-    const box = modal.querySelector('.glpi-form-loader');
+    const box = modal.querySelector('.gexe-dict-status');
     if (!box) return;
     box.innerHTML = '<span class="error">' + (message || 'Ошибка создания заявки') + '</span>';
     box.hidden = false;
@@ -199,7 +199,8 @@
     buildModal();
     modal.classList.add('open');
     document.body.classList.add('glpi-modal-open');
-    lockForm(false);
+    lockForm(true);
+    window.dispatchEvent(new CustomEvent('gexe:newtask:open'));
     updatePaths();
   }
 

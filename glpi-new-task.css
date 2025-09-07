@@ -12,12 +12,17 @@
 .glpi-create-modal .gnt-input,
 .glpi-create-modal .gnt-textarea,
 .glpi-create-modal .gnt-select { width: 100%; background: #0b1220; border: 1px solid #1f2937; border-radius: 10px; color: #e5e7eb; padding: 10px 12px; }
-.glpi-create-modal .gnt-textarea { resize: vertical; min-height: 120px; }
+.glpi-create-modal #gnt-name,
+.glpi-create-modal #gnt-content { height:130px; }
+.glpi-create-modal #gnt-content { resize:none; }
 .glpi-create-modal .gnt-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 8px; }
 .glpi-create-modal .gnt-check { display: flex; align-items: center; gap: 8px; margin: 12px auto 0; font-size: 14px; color: #e5e7eb; }
 .glpi-create-modal .gnt-footer { padding: 14px 16px; background: #0b1220; }
 .glpi-create-modal .gnt-submit { width: 100%; background: #2563eb; border: 0; color: #fff; padding: 10px 14px; border-radius: 10px; cursor: pointer; display: block; }
 .glpi-create-modal .gnt-submit:disabled { opacity: .7; cursor: default; }
+.glpi-create-modal .gnt-input:disabled,
+.glpi-create-modal .gnt-textarea:disabled,
+.glpi-create-modal .gnt-select:disabled { opacity:.6; cursor:not-allowed; }
 .glpi-create-modal .gnt-path { margin-top: 4px; font-size: 12px; color: #94a3b8; }
 .glpi-create-modal .gnt-field-error { color:#f87171; font-size:12px; margin-top:4px; }
 .glpi-create-modal .gnt-input.gnt-invalid,
@@ -30,10 +35,10 @@
 /* Loader and busy state */
 .glpi-create-modal .gnt-dialog[aria-busy="true"] { cursor: wait; }
 .glpi-create-modal .gnt-dialog[aria-busy="true"] .gnt-body { opacity: .6; }
-.glpi-create-modal .glpi-form-loader { display: flex; align-items: center; gap: 8px; justify-content: center; margin-bottom: 12px; }
-.glpi-create-modal .glpi-form-loader .spinner { width:16px; height:16px; border:2px solid #94a3b8; border-top-color:#2563eb; border-radius:50%; animation: gnt-spin .6s linear infinite; }
-.glpi-create-modal .glpi-form-loader .error { color:#f87171; }
-.glpi-create-modal .glpi-form-loader .gnt-retry { background:#2563eb; border:0; color:#fff; padding:4px 8px; border-radius:6px; cursor:pointer; }
+.glpi-create-modal .gexe-dict-status { display:flex; align-items:center; gap:8px; justify-content:center; margin-bottom:12px; }
+.glpi-create-modal .gexe-dict-status .spinner { width:16px; height:16px; border:2px solid #94a3b8; border-top-color:#2563eb; border-radius:50%; animation:gnt-spin .6s linear infinite; }
+.glpi-create-modal .gexe-dict-status .error { color:#f87171; }
+.glpi-create-modal .gexe-dict-status .gnt-retry { background:#2563eb; border:0; color:#fff; padding:4px 8px; border-radius:6px; cursor:pointer; }
 @keyframes gnt-spin { to { transform: rotate(360deg); } }
 
 /* Success modal */
