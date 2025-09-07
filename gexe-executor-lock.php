@@ -11,8 +11,8 @@
  * - Добавлены консольные логи для отладки TOKENS (можно убрать).
  *
  * ДОПОЛНЕНО:
- * - Поддержка авторской фильтрации: в профиле WP в мета-ключе 'glpi_token' хранится
- *   числовой ID автора в GLPI (из glpi_users). Если не задан, пробуем 'glpi_executor_id'.
+ * - Поддержка авторской фильтрации: в профиле WP в мета-ключе 'glpi_user_id' хранится
+ *   числовой ID автора в GLPI (из glpi_users).
  *   На фронте фильтрация идёт по data-author карточки.
  */
 
@@ -33,12 +33,8 @@ add_action('wp_footer', function () {
   $skip     = ($show_all || get_user_meta($u->ID, 'glpi_executor_lock_disable', true) === '1');
   if ($skip) return;
 
-  // Ключ пользователя GLPI: мета-ключ 'glpi_user_key' (только числовой users.id)
-  $raw_key = trim((string) get_user_meta($u->ID, 'glpi_user_key', true));
-
-  // Фоллбеки на старые мета-ключи для совместимости
-  if ($raw_key === '') { $raw_key = trim((string) get_user_meta($u->ID, 'glpi_token', true)); }
-  if ($raw_key === '') { $raw_key = trim((string) get_user_meta($u->ID, 'glpi_executor_id', true)); }
+  // Ключ пользователя GLPI: мета-ключ 'glpi_user_id' (только числовой users.id)
+  $raw_key = trim((string) get_user_meta($u->ID, 'glpi_user_id', true));
 
   if ($raw_key === '' || !ctype_digit($raw_key)) {
     return; // не удалось распознать ключ
