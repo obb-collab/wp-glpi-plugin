@@ -126,8 +126,15 @@ function gexe_cat_slug($leaf) {
   <div class="glpi-filtering-panel">
     <div class="glpi-header-row">
 
-      <div class="glpi-header-left glpi-category-block">
-        <button type="button" class="glpi-cat-toggle" aria-expanded="false" aria-controls="glpi-categories-inline">Категории</button>
+      <div class="glpi-header-left">
+        <div class="glpi-category-block">
+          <button type="button" class="glpi-cat-toggle" aria-expanded="false" aria-controls="glpi-categories-inline">Категории</button>
+        </div>
+        <?php if (function_exists('gexe_get_current_glpi_uid') && gexe_get_current_glpi_uid() === 2): ?>
+          <div class="glpi-executor-block">
+            <select id="glpi-executor-filter" class="glpi-executor-select"></select>
+          </div>
+        <?php endif; ?>
       </div>
 
       <div class="glpi-header-center">
