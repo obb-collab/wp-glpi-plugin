@@ -712,25 +712,8 @@ function gexe_check_mapping() {
         gexe_ajax_error('not_logged_in', 'User not logged in', 401);
     }
 
-    $wp_user_id = get_current_user_id();
-    $glpi_user_key = get_user_meta($wp_user_id, 'glpi_user_key', true);
-    $glpi_user_key = is_string($glpi_user_key) ? trim($glpi_user_key) : '';
-    $source = 'none';
-    if ($glpi_user_key !== '') {
-        if (preg_match('/^\d+$/', $glpi_user_key)) {
-            $source = 'numeric';
-        } elseif (preg_match('/^[a-f0-9]{32}$/i', $glpi_user_key)) {
-            $source = 'md5';
-        }
-    }
-    $glpi_user_id = gexe_get_current_glpi_user_id($wp_user_id);
-
-    gexe_ajax_success([
-        'wp_user_id'    => $wp_user_id,
-        'glpi_user_key' => $glpi_user_key,
-        'glpi_user_id'  => $glpi_user_id,
-        'source'        => $source,
-    ]);
+    $info = gexe_resolve_glpi_mapping(get_current_user_id());
+    gexe_ajax_success($info);
 }
 
 /* -------- AJAX: добавить комментарий -------- */

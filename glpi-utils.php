@@ -6,12 +6,49 @@
 require_once __DIR__ . '/includes/logger.php';
 
 /**
+ * Resolve mapping between a WordPress user and GLPI.
+ *
+ * @param int $wp_user_id WordPress user identifier.
+ * @return array{wp_user_id:int,glpi_user_key:string,glpi_user_id:int,source:string}
+ *         Mapping data including source type.
+ */
+function gexe_resolve_glpi_mapping($wp_user_id) {
+    $wp_user_id = (int) $wp_user_id;
+    $key = get_user_meta($wp_user_id, 'glpi_user_key', true);
+    $key = is_string($key) ? trim($key) : '';
+
+    $glpi   = 0;
+    $source = 'none';
+
+    if ($key !== '' && ctype_digit($key)) {
+        $glpi   = (int) $key;
+        $source = 'numeric';
+    } elseif (strlen($key) === 32 && preg_match('/^[a-f0-9]{32}$/i', $key)) {
+        $source = 'md5';
+        global $glpi_db;
+        if ($glpi_db instanceof wpdb) {
+            $sql  = $glpi_db->prepare(
+                "SELECT id FROM glpi_users WHERE MD5(CONCAT(realname,' ',LEFT(firstname,1),'.')) = %s LIMIT 1",
+                $key
+            );
+            $glpi = (int) $glpi_db->get_var($sql);
+        }
+    }
+
+    return [
+        'wp_user_id'    => $wp_user_id,
+        'glpi_user_key' => $key,
+        'glpi_user_id'  => $glpi,
+        'source'        => $source,
+    ];
+}
+
+/**
  * Determine GLPI user ID for a WordPress user based on stored meta.
  *
- * The primary source of mapping is the `glpi_user_key` user meta which may
- * contain either a numeric `users_id` or an MD5 hash composed from the user's
- * realname and firstname (as used by GLPI 9.5.x). When the resulting identifier
- * is numeric it is cached in `glpi_user_id` for faster subsequent lookups.
+ * The mapping is always derived from the `glpi_user_key` meta which may contain
+ * a numeric identifier or an MD5 hash of the user's name. Numeric identifiers
+ * are trusted as-is without checking the GLPI database.
  *
  * @param int $wp_user_id WordPress user identifier.
  * @return int GLPI `users.id` or 0 when not found.
@@ -22,44 +59,14 @@ function gexe_get_current_glpi_user_id($wp_user_id) {
         return 0;
     }
 
-    // Cached numeric value takes precedence. Only accept positive integers.
-    $cached = get_user_meta($wp_user_id, 'glpi_user_id', true);
-    if (is_string($cached)) {
-        $cached = trim($cached);
-    }
-    if (preg_match('/^\d+$/', (string) $cached)) {
-        return (int) $cached;
-    }
-    // Remove non-numeric cache to keep meta clean.
-    delete_user_meta($wp_user_id, 'glpi_user_id');
-
-    // Read user-provided key and normalize.
-    $key  = get_user_meta($wp_user_id, 'glpi_user_key', true);
-    $key  = is_string($key) ? trim($key) : '';
-    $glpi = 0;
-
-    if ($key !== '' && preg_match('/^\d+$/', $key)) {
-        // Direct numeric mapping.
-        $glpi = (int) $key;
-    } elseif (preg_match('/^[a-f0-9]{32}$/i', $key)) {
-        // MD5 hash -> lookup in glpi_users.
-        global $glpi_db;
-        if ($glpi_db instanceof wpdb) {
-            $sql = $glpi_db->prepare(
-                "SELECT id FROM glpi_users WHERE MD5(CONCAT(realname,' ',LEFT(firstname,1),'.')) = %s LIMIT 1",
-                $key
-            );
-            $glpi = (int) $glpi_db->get_var($sql);
-        }
-    }
+    $map  = gexe_resolve_glpi_mapping($wp_user_id);
+    $glpi = (int) $map['glpi_user_id'];
 
     if ($glpi > 0) {
-        // Cache numeric identifiers for faster future lookups.
         update_user_meta($wp_user_id, 'glpi_user_id', $glpi);
         return $glpi;
     }
 
-    // Ensure non-numeric values are not stored.
     delete_user_meta($wp_user_id, 'glpi_user_id');
     return 0;
 }
