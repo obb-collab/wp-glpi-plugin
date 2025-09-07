@@ -72,18 +72,20 @@ function gexe_compose_short_name($realname, $firstname) {
 }
 
 /** Список доступных исполнителей (GLPI user id + short name) */
-function gexe_get_assignee_options() {
-    $users = get_users(['meta_key' => 'glpi_user_id']);
-    $out   = [];
-    foreach ($users as $u) {
-        $gid = (int) get_user_meta($u->ID, 'glpi_user_id', true);
-        if ($gid <= 0) continue;
-        $out[] = [
-            'id'   => $gid,
-            'name' => gexe_compose_short_name($u->last_name ?? '', $u->first_name ?? ''),
-        ];
+if (!function_exists('gexe_get_assignee_options')) {
+    function gexe_get_assignee_options() {
+        $users = get_users(['meta_key' => 'glpi_user_id']);
+        $out   = [];
+        foreach ($users as $u) {
+            $gid = (int) get_user_meta($u->ID, 'glpi_user_id', true);
+            if ($gid <= 0) continue;
+            $out[] = [
+                'id'   => $gid,
+                'name' => gexe_compose_short_name($u->last_name ?? '', $u->first_name ?? ''),
+            ];
+        }
+        return $out;
     }
-    return $out;
 }
 
 /** Очистка HTML комментария (текст в карточке модалки) */
