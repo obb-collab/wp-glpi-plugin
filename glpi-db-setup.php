@@ -15,16 +15,9 @@ if (!defined('WP_GLPI_DEBUG')) {
     define('WP_GLPI_DEBUG', false);
 }
 
-if (!defined('WP_GLPI_ALLOW_FALLBACK_USER_ENTITY')) {
-    define('WP_GLPI_ALLOW_FALLBACK_USER_ENTITY', true);
-}
-
-if (!defined('WP_GLPI_DISABLE_ENTITY_FILTER')) {
-    define('WP_GLPI_DISABLE_ENTITY_FILTER', false);
-}
-
-if (!defined('WP_GLPI_DISABLE_MAPPING_CHECK')) {
-    define('WP_GLPI_DISABLE_MAPPING_CHECK', false);
+// Entity filtering mode: 'profiles', 'user_fallback' or 'all'
+if (!defined('WP_GLPI_ENTITY_MODE')) {
+    define('WP_GLPI_ENTITY_MODE', 'user_fallback');
 }
 
 function glpi_get_pdo(): PDO {

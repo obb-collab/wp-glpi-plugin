@@ -162,7 +162,7 @@
       if (btn) btn.addEventListener('click', function(){
         box.innerHTML = '';
         box.hidden = true;
-        setTimeout(retry, 500);
+        setTimeout(retry, 400);
       });
     }
   }
