@@ -147,7 +147,7 @@ body {
  .glpi-status-row{display:flex;justify-content:center;}
  .glpi-status-blocks{display:flex;flex-wrap:nowrap;gap:12px;}
  .glpi-status-block,
-.glpi-newfilter-block{display:flex;flex-direction:column;justify-content:center;align-items:center;min-width:120px;min-height:72px;padding:12px 14px;border-radius:12px;background:#1f2937;color:#e5e7eb;box-shadow:0 2px 8px rgba(0,0,0,.25);cursor:pointer;user-select:none;transition:transform .08s ease, background-color .15s ease, box-shadow .15s ease;}
+ .glpi-newfilter-block{display:flex;flex-direction:column;justify-content:center;align-items:center;min-width:120px;min-height:72px;padding:12px 14px;border-radius:12px;background:#1f2937;color:#e5e7eb;box-shadow:0 2px 8px rgba(0,0,0,.25);cursor:pointer;user-select:none;transition:transform .08s ease, background-color .15s ease, box-shadow .15s ease;}
  .glpi-status-block .status-count,
  .glpi-newfilter-block .status-count{font-size:28px;line-height:1;font-weight:800;}
  .glpi-status-block .status-label,
@@ -159,15 +159,7 @@ body {
  .glpi-status-block.active .status-count,
  .glpi-newfilter-block.active .status-count{color:#111827;}
  .glpi-status-block.active .status-label,
-.glpi-newfilter-block.active .status-label{color:#111827;opacity:1;font-weight:700;}
-
-/* [manager-switcher] dropdown исполнителей */
-.glpi-executors{position:relative;display:inline-block;margin-left:8px;}
-.glpi-executors__btn{background:#1f2937;border:1px solid #374151;color:#e5e7eb;padding:6px 10px;border-radius:6px;cursor:pointer;}
-.glpi-executors__menu{display:none;position:absolute;right:0;top:100%;background:#1f2937;border:1px solid #374151;border-radius:6px;margin-top:4px;min-width:160px;z-index:1000;list-style:none;padding:4px 0;}
-.glpi-executors.open .glpi-executors__menu{display:block;}
-.glpi-executors__menu li{padding:6px 12px;cursor:pointer;}
-.glpi-executors__menu li:hover{background:#273447;}
+ .glpi-newfilter-block.active .status-label{color:#111827;opacity:1;font-weight:700;}
 .glpi-search-block{flex:1;display:flex;flex-direction:column;position:relative;}
 .glpi-search-input{all:unset;width:100%;max-width:400px;box-sizing:border-box;background:#1e293b!important;color:#f8fafc!important;padding:10px 34px 10px 14px;border:1px solid #334155;border-radius:6px;font-size:14px;}
 .gexe-search-clear{position:absolute;right:8px;top:50%;transform:translateY(-50%);background:transparent;border:0;color:#94a3b8;width:32px;height:32px;display:flex;align-items:center;justify-content:center;cursor:pointer;}
