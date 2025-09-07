@@ -195,10 +195,6 @@ function gexe_cat_slug($leaf) {
   <!-- Карточки -->
   <div class="glpi-wrapper">
     <?php foreach ($tickets as $t):
-      $assignees     = array_map('intval', $t['assignee_ids'] ?? []);
-      $assignees     = array_values(array_unique($assignees, SORT_NUMERIC));
-      $assignees_str = implode(',', $assignees);
-
       $is_late       = !empty($t['late']);
 
       $name_raw      = trim((string)$t['name']);
@@ -226,7 +222,6 @@ function gexe_cat_slug($leaf) {
     ?>
       <div class="glpi-card"
            data-ticket-id="<?php echo intval($t['id']); ?>"
-           data-assignees="<?php echo esc_attr($assignees_str); ?>"
            data-category="<?php echo esc_attr(strtolower($cat_slug)); ?>"
            data-late="<?php echo $is_late ? '1':'0'; ?>"
            data-status="<?php echo esc_attr((string)$t['status']); ?>"
@@ -241,7 +236,9 @@ function gexe_cat_slug($leaf) {
         <div class="glpi-card-body">
           <p class="glpi-desc" data-full="<?php echo esc_attr($clean_desc); ?>"><?php echo $desc_short; ?></p>
         </div>
-        <div class="glpi-executor-footer"><?php echo $footer_html; ?></div>
+        <?php if ($footer_html !== ''): ?>
+          <div class="glpi-location-footer"><?php echo $footer_html; ?></div>
+        <?php endif; ?>
         <div class="glpi-date-footer" data-date="<?php echo esc_attr((string)$t['date']); ?>"></div>
       </div>
     <?php endforeach; ?>
