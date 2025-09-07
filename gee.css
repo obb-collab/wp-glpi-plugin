@@ -179,6 +179,8 @@ body {
 .gnt-inline-status.loading{color:#94a3b8;}
 .gnt-inline-status.error{color:#f87171;}
 .gnt-inline-status.empty{color:#94a3b8;}
+.gnt-inline-status .spinner{width:12px;height:12px;border:2px solid #94a3b8;border-top-color:#2563eb;border-radius:50%;display:inline-block;vertical-align:middle;margin-right:4px;animation:gnt-spin .6s linear infinite;}
+@keyframes gnt-spin{to{transform:rotate(360deg);}}
 
 /* Generic dictionary helper classes used by the "New ticket" modal */
 .dict-helper{font-size:12px;margin-top:4px;color:#94a3b8;}

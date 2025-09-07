@@ -433,6 +433,8 @@
       .catch(() => ({ ok: false, code: 'network_error' }));
   }
 
+  const dictLocks = {};
+
   function fillSelect(sel, list) {
     const el = document.querySelector(sel);
     if (!el) return;
@@ -461,13 +463,15 @@
 
   function loadNewTaskDicts() {
     const modal = document.querySelector('.glpi-create-modal');
-    if (!modal) return;
+    if (!modal || modal.__dictLoading) return;
+    modal.__dictLoading = true;
     const catSel = modal.querySelector('#gnt-category');
     const locSel = modal.querySelector('#gnt-location');
     const execSel = modal.querySelector('#gnt-assignee');
     const assignChk = modal.querySelector('#gnt-assign-me');
     const submit = modal.querySelector('.gnt-submit');
     const loader = modal.querySelector('.gexe-dict-status');
+    const glpiId = (window.gexeAjax || window.glpiAjax || {}).user_glpi_id || 0;
 
     if (loader) {
       loader.innerHTML = '<span class="spinner"></span><span>Загрузка…</span>';
@@ -482,11 +486,10 @@
 
     if (execSel) {
       fillAssigneeOptions(execSel, '—');
-      const selfId = (window.gexeAjax || window.glpiAjax || {}).user_glpi_id || 0;
-      if (assignChk && assignChk.checked && selfId) {
-        execSel.value = String(selfId);
+      if (assignChk && assignChk.checked && glpiId) {
+        execSel.value = String(glpiId);
       }
-      execSel.disabled = assignChk && assignChk.checked;
+      execSel.disabled = true;
     }
 
     const setStatus = (el, type, text, retry) => {
@@ -494,7 +497,9 @@
       const st = modal.querySelector('#' + el.id + '-status');
       if (st) {
         st.className = 'gnt-inline-status dict-helper' + (type ? ' dict-' + type : '');
-        if (type === 'error' && retry) {
+        if (type === 'loading') {
+          st.innerHTML = '<span class="spinner"></span><span>' + (text || '') + '</span>';
+        } else if (type === 'error' && retry) {
           st.innerHTML = text + ' <button type="button" class="gnt-retry">Повторить</button>';
           const btn = st.querySelector('.gnt-retry');
           if (btn) btn.addEventListener('click', retry);
@@ -506,45 +511,73 @@
 
     const loadOne = (which, el) => {
       if (!el) return Promise.resolve(null);
+      if (dictLocks[which]) return dictLocks[which];
       setStatus(el, 'loading', 'Загрузка…');
-      return fetchDict(which).then(res => {
+      const p = fetchDict(which).then(res => {
         if (res && res.ok) {
           if (which === 'categories') fillSelect('#gnt-category', res.list);
           else if (which === 'locations') fillSelect('#gnt-location', res.list);
+          else if (which === 'executors') fillAssigneeOptions(el, '—', res.list);
           el.disabled = false;
           el.classList.remove('disabled');
           setStatus(el, '', '');
         } else if (res && res.code === 'dict_empty') {
-          el.disabled = false;
-          el.classList.remove('disabled');
-          setStatus(el, 'empty', 'Нет данных');
+          const emptyMap = {
+            categories: 'Категории не найдены',
+            locations: 'Местоположения не найдены',
+            executors: 'Исполнители не найдены'
+          };
+          setStatus(el, 'error', emptyMap[which] || 'Нет данных', () => loadOne(which, el));
         } else {
-          setStatus(el, 'error', 'Не удалось загрузить', () => loadOne(which, el));
+          const errMap = {
+            categories: 'Ошибка загрузки категорий',
+            locations: 'Ошибка загрузки местоположений',
+            executors: 'Ошибка загрузки исполнителей'
+          };
+          setStatus(el, 'error', errMap[which] || 'Не удалось загрузить', () => loadOne(which, el));
         }
         return res;
+      }).finally(() => {
+        delete dictLocks[which];
       });
+      dictLocks[which] = p;
+      return p;
     };
 
-    Promise.all([
+    const promises = [
       loadOne('categories', catSel),
       loadOne('locations', locSel)
-    ]).then(([cat, loc]) => {
+    ];
+    let execPromise = null;
+    if (execSel && glpiId > 0) {
+      execPromise = loadOne('executors', execSel);
+      promises.push(execPromise);
+    } else if (execSel) {
+      setStatus(execSel, 'error', 'Исполнители недоступны');
+    }
+
+    Promise.all(promises).then(results => {
+      const cat = results[0];
+      const loc = results[1];
+      const exec = execPromise ? results[2] : null;
       // Enable common fields once dictionaries have finished loading
       $$('input,select,textarea', modal).forEach(el => {
         if (el === catSel || el === locSel || el === execSel) return; // handled above
         el.disabled = false;
         el.classList.remove('disabled');
       });
-      if (execSel) {
+      if (execSel && glpiId > 0 && exec && exec.ok) {
         execSel.classList.remove('disabled');
         execSel.disabled = assignChk && assignChk.checked;
       }
-      if (submit && cat && cat.ok && loc && loc.ok) {
+      const allOk = cat && cat.ok && loc && loc.ok && (!execSel || glpiId <= 0 || (exec && exec.ok));
+      if (submit && allOk) {
         submit.disabled = false;
         submit.classList.remove('disabled');
       }
     }).finally(() => {
       if (loader) { loader.hidden = true; loader.innerHTML = ''; }
+      modal.__dictLoading = false;
       bindNewTaskForm(modal);
     });
 
@@ -1246,12 +1279,12 @@
     }
   }
 
-  function fillAssigneeOptions(sel, placeholder) {
+  function fillAssigneeOptions(sel, placeholder, list) {
     if (!sel) return;
-    const list = (window.gexeAjax || window.glpiAjax || {}).assignees || [];
+    const data = list || ((window.gexeAjax || window.glpiAjax || {}).assignees || []);
     const first = placeholder !== undefined ? placeholder : 'Сменить исполнителя';
     sel.innerHTML = '<option value="">' + first + '</option>';
-    list.forEach(a => {
+    data.forEach(a => {
       const opt = document.createElement('option');
       opt.value = String(a.id);
       opt.textContent = a.name;
