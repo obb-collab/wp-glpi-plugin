@@ -17,10 +17,14 @@ add_action('wp_enqueue_scripts', function () {
 
     wp_register_script('glpi-new-task-js', plugin_dir_url(__FILE__) . 'glpi-new-task.js', [], '1.0.0', true);
     wp_enqueue_script('glpi-new-task-js');
-    wp_localize_script('glpi-new-task-js', 'glpiAjax', [
-        'url'   => admin_url('admin-ajax.php'),
-        'nonce' => wp_create_nonce('glpi_new_task'),
-    ]);
+
+    $data = [
+        'url'          => admin_url('admin-ajax.php'),
+        'nonce'        => wp_create_nonce('glpi_new_task'),
+        'user_glpi_id' => (int) gexe_get_current_glpi_uid(),
+        'assignees'    => function_exists('gexe_get_assignee_options') ? gexe_get_assignee_options() : [],
+    ];
+    wp_localize_script('glpi-new-task-js', 'glpiAjax', $data);
 });
 
 /** Verify AJAX nonce. */

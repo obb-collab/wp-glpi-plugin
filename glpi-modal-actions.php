@@ -795,3 +795,97 @@ function gexe_change_assignee_sql() {
         ],
     ]);
 }
+/* -------- AJAX: создание тикета -------- */
+add_action('wp_ajax_gexe_create_ticket_sql', 'gexe_create_ticket_sql');
+function gexe_create_ticket_sql() {
+    $action = 'create_ticket';
+    $title  = isset($_POST['title']) ? sanitize_text_field(wp_unslash($_POST['title'])) : '';
+    $body   = isset($_POST['content']) ? sanitize_textarea_field(wp_unslash($_POST['content'])) : '';
+    $cat_id = isset($_POST['category_id']) ? intval($_POST['category_id']) : 0;
+    $loc_id = isset($_POST['location_id']) ? intval($_POST['location_id']) : 0;
+    $assignee_id = isset($_POST['assignee_glpi_id']) ? intval($_POST['assignee_glpi_id']) : 0;
+
+    if (!check_ajax_referer('gexe_actions', 'nonce', false)) {
+        gexe_action_response(false, 'csrf', 0, $action);
+    }
+    if (!is_user_logged_in()) {
+        gexe_action_response(false, 'not_logged_in', 0, $action);
+    }
+    $actor_glpi_id = gexe_get_current_glpi_user_id(get_current_user_id());
+    if ($actor_glpi_id <= 0) {
+        gexe_action_response(false, 'not_mapped', 0, $action);
+    }
+
+    if ($title === '' || mb_strlen($title) > 255 || $cat_id <= 0) {
+        gexe_action_response(false, 'validation', 0, $action);
+    }
+
+    $allowed = wp_list_pluck(gexe_get_assignee_options(), 'id');
+    if ($assignee_id > 0 && !in_array($assignee_id, $allowed, true)) {
+        gexe_action_response(false, 'invalid_target', 0, $action);
+    }
+
+    global $glpi_db;
+    $glpi_db->query('START TRANSACTION');
+
+    $dup_id = $glpi_db->get_var($glpi_db->prepare(
+        'SELECT id FROM glpi_tickets WHERE users_id_recipient=%d AND name=%s AND content=%s AND TIMESTAMPDIFF(SECOND,date,NOW())<=3 LIMIT 1',
+        $actor_glpi_id,
+        $title,
+        $body
+    ));
+    if ($dup_id) {
+        $glpi_db->query('ROLLBACK');
+        gexe_action_response(true, 'already_exists', (int)$dup_id, $action);
+    }
+
+    $sql = $glpi_db->prepare(
+        'INSERT INTO glpi_tickets (name, content, status, itilcategories_id, locations_id, users_id_lastupdater, users_id_recipient, date, date_mod) VALUES (%s,%s,1,%d,%d,%d,%d,NOW(),NOW())',
+        $title,
+        $body,
+        $cat_id,
+        $loc_id,
+        $actor_glpi_id,
+        $actor_glpi_id
+    );
+    if (!$glpi_db->query($sql)) {
+        $err = $glpi_db->last_error;
+        $glpi_db->query('ROLLBACK');
+        gexe_action_response(false, 'sql_error', 0, $action, $err);
+    }
+    $ticket_id = (int) $glpi_db->insert_id;
+
+    $sql = $glpi_db->prepare('INSERT INTO glpi_tickets_users (tickets_id, users_id, type) VALUES (%d,%d,1)', $ticket_id, $actor_glpi_id);
+    if (!$glpi_db->query($sql)) {
+        $err = $glpi_db->last_error;
+        $glpi_db->query('ROLLBACK');
+        gexe_action_response(false, 'sql_error', $ticket_id, $action, $err);
+    }
+
+    if ($assignee_id > 0) {
+        $sql = $glpi_db->prepare('INSERT INTO glpi_tickets_users (tickets_id, users_id, type) VALUES (%d,%d,2)', $ticket_id, $assignee_id);
+        if (!$glpi_db->query($sql)) {
+            $err = $glpi_db->last_error;
+            $glpi_db->query('ROLLBACK');
+            gexe_action_response(false, 'sql_error', $ticket_id, $action, $err);
+        }
+
+        $row = $glpi_db->get_row($glpi_db->prepare('SELECT realname, firstname FROM glpi_users WHERE id=%d', $assignee_id), ARRAY_A);
+        $short = gexe_compose_short_name($row['realname'] ?? '', $row['firstname'] ?? '');
+        $fcontent = 'Назначен исполнитель: ' . $short;
+        $sql = $glpi_db->prepare(
+            "INSERT INTO glpi_itilfollowups (itemtype,items_id,date,users_id,content,is_private) VALUES ('Ticket',%d,NOW(),%d,%s,0)",
+            $ticket_id,
+            $actor_glpi_id,
+            $fcontent
+        );
+        if (!$glpi_db->query($sql)) {
+            $err = $glpi_db->last_error;
+            $glpi_db->query('ROLLBACK');
+            gexe_action_response(false, 'sql_error', $ticket_id, $action, $err);
+        }
+    }
+
+    $glpi_db->query('COMMIT');
+    gexe_action_response(true, 'ok', $ticket_id, $action);
+}
