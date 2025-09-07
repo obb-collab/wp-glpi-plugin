@@ -23,16 +23,6 @@ function gexe_resolve_glpi_mapping($wp_user_id) {
     if ($key !== '' && ctype_digit($key)) {
         $glpi   = (int) $key;
         $source = 'numeric';
-    } elseif (strlen($key) === 32 && preg_match('/^[a-f0-9]{32}$/i', $key)) {
-        $source = 'md5';
-        global $glpi_db;
-        if ($glpi_db instanceof wpdb) {
-            $sql  = $glpi_db->prepare(
-                "SELECT id FROM glpi_users WHERE MD5(CONCAT(realname,' ',LEFT(firstname,1),'.')) = %s LIMIT 1",
-                $key
-            );
-            $glpi = (int) $glpi_db->get_var($sql);
-        }
     }
 
     return [
@@ -59,16 +49,19 @@ function gexe_get_current_glpi_user_id($wp_user_id) {
         return 0;
     }
 
-    $key = get_user_meta($wp_user_id, 'glpi_user_key', true);
-    $key = is_string($key) ? trim($key) : '';
-    if ($key !== '' && ctype_digit($key)) {
-        $glpi = (int) $key;
-        update_user_meta($wp_user_id, 'glpi_user_id', $glpi);
-        return $glpi;
+    $key = trim((string) get_user_meta($wp_user_id, 'glpi_user_key', true));
+    if ($key === '') {
+        delete_user_meta($wp_user_id, 'glpi_user_id');
+        return 0;
+    }
+    if (!ctype_digit($key)) {
+        delete_user_meta($wp_user_id, 'glpi_user_id');
+        return 0;
     }
 
-    delete_user_meta($wp_user_id, 'glpi_user_id');
-    return 0;
+    $id = (int) $key;
+    update_user_meta($wp_user_id, 'glpi_user_id', $id);
+    return $id;
 }
 
 /**

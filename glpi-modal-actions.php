@@ -549,8 +549,8 @@ function gexe_glpi_ticket_accept_sql() {
 
     $author_glpi = gexe_get_current_glpi_user_id($wp_uid);
     if ($author_glpi <= 0) {
-        error_log('[accept] no_glpi_id_for_current_user ticket=' . intval($_POST['ticket_id'] ?? 0) . ' wp=' . $wp_uid . ' glpi=0');
-        wp_send_json(['error' => 'no_glpi_id_for_current_user'], 422);
+        error_log('[accept] no_glpi_id ticket=' . intval($_POST['ticket_id'] ?? 0) . ' wp=' . $wp_uid . ' glpi=0');
+        gexe_ajax_error_compat('NO_GLPI_USER', 'no_glpi_id', [], 422);
     }
 
     $ticket_id   = isset($_POST['ticket_id']) ? intval($_POST['ticket_id']) : 0;
@@ -565,8 +565,8 @@ function gexe_glpi_ticket_accept_sql() {
         $assignee = $author_glpi;
     }
     if ($assignee <= 0) {
-        error_log('[accept] no_glpi_id_for_current_user ticket=' . $ticket_id . ' wp=' . $wp_uid . ' glpi=' . $author_glpi);
-        wp_send_json(['error' => 'no_glpi_id_for_current_user'], 422);
+        error_log('[accept] no_glpi_id ticket=' . $ticket_id . ' wp=' . $wp_uid . ' glpi=' . $author_glpi);
+        gexe_ajax_error_compat('NO_GLPI_USER', 'no_glpi_id', [], 422);
     }
 
     global $glpi_db;

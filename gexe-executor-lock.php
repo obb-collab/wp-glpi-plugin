@@ -33,31 +33,18 @@ add_action('wp_footer', function () {
   $skip     = ($show_all || get_user_meta($u->ID, 'glpi_executor_lock_disable', true) === '1');
   if ($skip) return;
 
-  // Ключ пользователя GLPI: новый мета-ключ 'glpi_user_key' (числовой users_id ИЛИ md5 от имени исполнителя)
+  // Ключ пользователя GLPI: мета-ключ 'glpi_user_key' (только числовой users.id)
   $raw_key = trim((string) get_user_meta($u->ID, 'glpi_user_key', true));
 
   // Фоллбеки на старые мета-ключи для совместимости
   if ($raw_key === '') { $raw_key = trim((string) get_user_meta($u->ID, 'glpi_token', true)); }
   if ($raw_key === '') { $raw_key = trim((string) get_user_meta($u->ID, 'glpi_executor_id', true)); }
 
-  $mode = '';
-  $TOKENS = [];
-
-  if ($raw_key !== '') {
-    if (preg_match('~^\d+$~', $raw_key)) {
-      // Числовой users_id из GLPI — фильтруем по data-assignees
-      $mode = 'assignee_id';
-      $TOKENS = [ (string) $raw_key ];
-    } elseif (preg_match('~^[a-f0-9]{32}$~i', $raw_key)) {
-      // MD5 от имени исполнителя — фильтруем по data-executors
-      $mode = 'assignee_md5';
-      $TOKENS = [ strtolower($raw_key) ];
-    }
-  }
-
-  if ($mode === '') {
+  if ($raw_key === '' || !ctype_digit($raw_key)) {
     return; // не удалось распознать ключ
   }
+
+  $TOKENS = [ (string) $raw_key ];
   ?>
   <script>
   (function(){
@@ -75,16 +62,10 @@ add_action('wp_footer', function () {
     try { window.__gexe_tokens = TOKENS.slice(0); } catch(e){}
 
     // === GEXE: строгая блокировка карточек по сопоставлению WP↔GLPI ===
-    var MODE = <?php echo wp_json_encode($mode); ?>;
     function gexeMatchCard(card) {
       try {
-        if (MODE === 'assignee_id') {
-          var ids = (card.getAttribute('data-assignees') || '').split(',').map(function(s){ return String(s||'').trim(); });
-          return TOKENS.some(function(t){ return ids.indexOf(String(t)) !== -1; });
-        } else if (MODE === 'assignee_md5') {
-          var slugs = (card.getAttribute('data-executors') || '').toLowerCase().split(',').map(function(s){ return String(s||'').trim().toLowerCase(); });
-          return TOKENS.some(function(t){ return slugs.indexOf(String(t).toLowerCase()) !== -1; });
-        }
+        var ids = (card.getAttribute('data-assignees') || '').split(',').map(function(s){ return String(s||'').trim(); });
+        return TOKENS.some(function(t){ return ids.indexOf(String(t)) !== -1; });
       } catch(e) {}
       return true;
     }
