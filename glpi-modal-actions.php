@@ -720,17 +720,17 @@ add_action('wp_ajax_glpi_comment_add', 'gexe_glpi_comment_add');
 function gexe_glpi_comment_add() {
     $wp_uid = get_current_user_id();
     if (!check_ajax_referer('gexe_actions', 'nonce', false)) {
-        error_log('[comment] nonce_failed ticket=' . intval($_POST['ticket_id'] ?? 0) . ' wp=' . $wp_uid . ' glpi=0');
-        wp_send_json(['error' => 'nonce_failed'], 403);
+        error_log('[comment] nonce_expired ticket=' . intval($_POST['ticket_id'] ?? 0) . ' wp=' . $wp_uid . ' glpi=0');
+        wp_send_json(['error' => 'NONCE_EXPIRED'], 403);
     }
     if (!is_user_logged_in()) {
-        error_log('[comment] not_logged_in ticket=' . intval($_POST['ticket_id'] ?? 0) . ' wp=' . $wp_uid . ' glpi=0');
-        wp_send_json(['error' => 'not_logged_in'], 401);
+        error_log('[comment] no_permission ticket=' . intval($_POST['ticket_id'] ?? 0) . ' wp=' . $wp_uid . ' glpi=0');
+        wp_send_json(['error' => 'NO_PERMISSION'], 403);
     }
     $author_glpi = gexe_get_current_glpi_user_id($wp_uid);
     if ($author_glpi <= 0) {
-        error_log('[comment] no_glpi_id_for_current_user ticket=' . intval($_POST['ticket_id'] ?? 0) . ' wp=' . $wp_uid . ' glpi=0');
-        wp_send_json(['error' => 'no_glpi_id_for_current_user'], 422);
+        error_log('[comment] no_permission ticket=' . intval($_POST['ticket_id'] ?? 0) . ' wp=' . $wp_uid . ' glpi=0');
+        wp_send_json(['error' => 'NO_PERMISSION'], 403);
     }
 
     $ticket_id = isset($_POST['ticket_id']) ? intval($_POST['ticket_id']) : 0;
@@ -740,8 +740,8 @@ function gexe_glpi_comment_add() {
         wp_send_json(['error' => 'ticket_not_found'], 404);
     }
     if ($content === '') {
-        error_log('[comment] empty_comment ticket=' . $ticket_id . ' wp=' . $wp_uid . ' glpi=' . $author_glpi);
-        wp_send_json(['error' => 'empty_comment'], 422);
+        error_log('[comment] empty_content ticket=' . $ticket_id . ' wp=' . $wp_uid . ' glpi=' . $author_glpi);
+        wp_send_json(['error' => 'EMPTY_CONTENT'], 422);
     }
 
     global $glpi_db;
@@ -756,10 +756,10 @@ function gexe_glpi_comment_add() {
         if (($res['code'] ?? '') === 'SQL_ERROR') {
             gexe_log_action(sprintf('[comment.sql] ticket=%d author=%d result=fail code=sql_error msg="%s"', $ticket_id, $author_glpi, $res['message'] ?? ''));
             error_log('[comment] sql_error followup_insert_failed ticket=' . $ticket_id . ' wp=' . $wp_uid . ' glpi=' . $author_glpi . ' sql=' . ($res['message'] ?? ''));
-            wp_send_json(['error' => 'sql_error', 'details' => 'followup_insert_failed'], 500);
+            wp_send_json(['error' => 'SQL_OP_FAILED', 'details' => 'followup_insert_failed'], 500);
         }
-        error_log('[comment] ' . ($res['code'] ?? 'error') . ' ticket=' . $ticket_id . ' wp=' . $wp_uid . ' glpi=' . $author_glpi);
-        wp_send_json(['error' => $res['code'] ?? 'error'], 422);
+        error_log('[comment] no_permission ticket=' . $ticket_id . ' wp=' . $wp_uid . ' glpi=' . $author_glpi);
+        wp_send_json(['error' => 'NO_PERMISSION'], 403);
     }
 
     gexe_clear_comments_cache($ticket_id);

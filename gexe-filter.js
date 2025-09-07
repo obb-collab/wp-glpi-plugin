@@ -18,11 +18,13 @@
   const ERROR_MAP = {
     not_logged_in: 'Сессия истекла. Войдите в систему.',
     nonce_failed: 'Обновите страницу (просрочен ключ безопасности).',
+    NONCE_EXPIRED: 'Обновите страницу (просрочен ключ безопасности).',
+    NO_PERMISSION: 'Недостаточно прав.',
     no_glpi_id_for_current_user: 'В профиле WP не указан GLPI ID.',
     assignee_not_mapped_to_glpi: 'Выбранный исполнитель не привязан к GLPI.',
     ticket_not_found: 'Заявка не найдена.',
-    sql_error: details => 'Ошибка записи в GLPI. Код: ' + (details || '') + '.',
-    empty_comment: 'Введите комментарий',
+    SQL_OP_FAILED: details => 'Ошибка записи в GLPI. Код: ' + (details || '') + '.',
+    EMPTY_CONTENT: 'Введите комментарий',
     bad_response: 'Не удалось обработать ответ сервера.',
     network_error: 'Ошибка сети',
     NO_PERMISSION: 'Нет прав на заявку',
@@ -757,6 +759,7 @@
   }
 
   /* ========================= МОДАЛКА КОММЕНТАРИЯ ========================= */
+  const MAX_COMMENT_LEN = 4000;
   let cmntModal = null;
   let doneModal = null;
   function ensureCommentModal() {
@@ -771,9 +774,11 @@
           '<button class="gexe-cmnt__close" aria-label="Закрыть"><i class="fa-solid fa-xmark"></i></button>' +
         '</div>' +
         '<div class="gexe-cmnt__body">' +
-          '<textarea id="gexe-cmnt-text" placeholder="Ваш комментарий..." rows="3"></textarea>' +
+          '<textarea id="gexe-cmnt-text" placeholder="Ваш комментарий..." rows="3" maxlength="4000"></textarea>' +
+          '<div id="gexe-cmnt-err" class="gexe-cmnt__err" aria-live="polite"></div>' +
         '</div>' +
         '<div class="gexe-cmnt__foot">' +
+          '<div class="gexe-cmnt__counter"><span id="gexe-cmnt-count">0</span>/4000</div>' +
           '<button id="gexe-cmnt-send" class="glpi-act">Отправить</button>' +
         '</div>' +
       '</div>';
@@ -784,37 +789,65 @@
     const txtArea = $('#gexe-cmnt-text', cmntModal);
     if (sendBtn) sendBtn.disabled = true;
     if (txtArea) {
-      txtArea.addEventListener('input', () => {
-        if (sendBtn) sendBtn.disabled = txtArea.value.trim() === '';
-      });
+      txtArea.addEventListener('input', updateCommentValidation);
     }
-    if (sendBtn) sendBtn.addEventListener('click', sendComment);
+    if (sendBtn) sendBtn.addEventListener('click', () => sendComment(false));
     return cmntModal;
+  }
+  function updateCommentValidation(force) {
+    const txtArea = $('#gexe-cmnt-text', cmntModal);
+    const sendBtn = $('#gexe-cmnt-send', cmntModal);
+    const cntEl = $('#gexe-cmnt-count', cmntModal);
+    const errEl = $('#gexe-cmnt-err', cmntModal);
+    const raw = txtArea && txtArea.value ? txtArea.value : '';
+    const len = raw.length;
+    if (cntEl) cntEl.textContent = String(len);
+    let msg = '';
+    if (len > MAX_COMMENT_LEN) msg = 'Слишком длинный комментарий';
+    else if (force && len === 0) msg = ERROR_MAP.EMPTY_CONTENT;
+    if (errEl) errEl.textContent = msg;
+    if (sendBtn) sendBtn.disabled = len === 0 || len > MAX_COMMENT_LEN;
+    return !msg && len > 0;
+  }
+  function showCommentError(code, details, status) {
+    const errEl = $('#gexe-cmnt-err', cmntModal);
+    let msg;
+    const m = ERROR_MAP[code];
+    if (typeof m === 'function') msg = m(details);
+    else if (typeof m === 'string') msg = m;
+    if (!msg) msg = 'Неизвестная ошибка' + (status ? ' (' + status + ')' : '');
+    if (errEl) errEl.textContent = msg;
+  }
+  function clearCommentError() {
+    const errEl = $('#gexe-cmnt-err', cmntModal);
+    if (errEl) errEl.textContent = '';
   }
   function openCommentModal(title, ticketId) {
     ensureCommentModal();
     $('.gexe-cmnt__title', cmntModal).textContent = title || 'Комментарий';
     cmntModal.setAttribute('data-ticket-id', String(ticketId || 0));
     const ta = $('#gexe-cmnt-text', cmntModal); if (ta) { ta.value = ''; ta.focus(); }
-    const sendBtn = $('#gexe-cmnt-send', cmntModal); if (sendBtn) sendBtn.disabled = true;
+    updateCommentValidation();
     cmntModal.classList.add('is-open'); document.body.classList.add('glpi-modal-open');
   }
   function closeCommentModal() {
     if (!cmntModal) return;
     cmntModal.classList.remove('is-open'); document.body.classList.remove('glpi-modal-open');
   }
-  async function sendComment(){
+  async function sendComment(retried) {
     if (!cmntModal) return;
     const id  = Number(cmntModal.getAttribute('data-ticket-id') || '0');
-    const txtEl = document.querySelector('#gexe-cmnt-text');
+    const txtEl = $('#gexe-cmnt-text', cmntModal);
     const btn = $('#gexe-cmnt-send', cmntModal);
-    const txt = (txtEl && txtEl.value ? txtEl.value : '').trim();
-    if (!id || !txt || !btn) return;
+    if (!id || !txtEl || !btn) return;
+    if (!updateCommentValidation(true)) return;
+    const txt = txtEl.value.trim();
     const url = window.glpiAjax && glpiAjax.url;
     const nonce = window.glpiAjax && glpiAjax.nonce;
     if (!url || !nonce) return;
     lockAction(id, 'comment', true);
     setActionLoading(btn, true);
+    clearCommentError();
     const fd = new FormData();
     fd.append('action', 'glpi_comment_add');
     const nonceKey = glpiAjax.nonce_key || 'nonce';
@@ -832,25 +865,31 @@
       let data = null;
       try { data = await res.clone().json(); }
       catch (e) { try { await res.clone().text(); } catch (e2) {} }
-      if (!res.ok) {
-        showError(data && data.error ? data.error : 'bad_response', data && data.details, res.status);
+      if (!res.ok || !data || !data.ok) {
+        const code = data && data.error ? data.error : 'bad_response';
+        if (code === 'NONCE_EXPIRED' && !retried) {
+          try {
+            await refreshActionsNonce();
+            showNotice('success', 'Обновили доступ');
+            return sendComment(true);
+          } catch (e) {
+            showCommentError('network_error');
+            return;
+          }
+        }
+        showCommentError(code, data && data.details, res.status);
         return;
       }
-      if (!data) {
-        showError('bad_response', null, res.status);
-        return;
-      }
-      if (!data.ok) {
-        showError(data.error, data.details, res.status);
-        return;
-      }
-      if (txtEl) txtEl.value = '';
+      txtEl.value = '';
+      updateCommentValidation();
       insertFollowup(id, data.payload && data.payload.followup);
       refreshTicketMeta(id);
-      showNotice('success','Комментарий отправлен');
+      setActionLoading(btn, false);
+      btn.classList.add('is-done');
+      setTimeout(() => { btn.classList.remove('is-done'); }, 1500);
+      closeCommentModal();
     } catch (err) {
-      if (err && err.name === 'AbortError') showNotice('error','Таймаут запроса');
-      else showError('network_error');
+      showCommentError('network_error');
     } finally {
       clearTimeout(timeoutId);
       lockAction(id, 'comment', false);
