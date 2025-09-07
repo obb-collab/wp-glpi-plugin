@@ -59,9 +59,13 @@ function gexe_require_glpi_user($wp_user_id) {
  * item contains the WordPress user identifier (`wp_id`), display name and the
  * mapped GLPI `users_id`.
  *
+ * Historically this helper was named `gexe_get_executors_list()`.  The new
+ * modal expects `gexe_get_executors_wp()` so we keep the old name as an alias
+ * below for backwards compatibility.
+ *
  * @return array{ok:bool,code:string,which?:string,list?:array}
  */
-function gexe_get_executors_list() {
+function gexe_get_executors_wp() {
     global $wpdb;
 
     $sql = "SELECT u.ID AS wp_id, u.display_name, "
@@ -88,4 +92,11 @@ function gexe_get_executors_list() {
     }, $rows);
 
     return ['ok' => true, 'code' => 'ok', 'list' => $list];
+}
+
+// Old name kept for compatibility with legacy code paths.
+if (!function_exists('gexe_get_executors_list')) {
+    function gexe_get_executors_list() {
+        return gexe_get_executors_wp();
+    }
 }
