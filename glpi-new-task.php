@@ -38,14 +38,22 @@ function glpi_nt_verify_nonce() {
 add_action('wp_ajax_glpi_get_categories', 'glpi_ajax_get_categories');
 function glpi_ajax_get_categories() {
     glpi_nt_verify_nonce();
+    global $glpi_db;
     $res = glpi_db_get_categories();
+    if (!$res['ok'] && $glpi_db->last_error && defined('WP_DEBUG') && WP_DEBUG) {
+        error_log('glpi_get_categories: ' . $glpi_db->last_error);
+    }
     wp_send_json($res);
 }
 
 add_action('wp_ajax_glpi_get_locations', 'glpi_ajax_get_locations');
 function glpi_ajax_get_locations() {
     glpi_nt_verify_nonce();
+    global $glpi_db;
     $res = glpi_db_get_locations();
+    if (!$res['ok'] && $glpi_db->last_error && defined('WP_DEBUG') && WP_DEBUG) {
+        error_log('glpi_get_locations: ' . $glpi_db->last_error);
+    }
     wp_send_json($res);
 }
 
@@ -59,10 +67,41 @@ function glpi_ajax_get_executors() {
     if (!$map['ok']) {
         wp_send_json(['ok' => false, 'code' => $map['code']]);
     }
-    // Executors come from WordPress users mapped to GLPI users.  Helper name
-    // changed to `gexe_get_executors_wp()`; keep compatibility via alias.
-    $res = gexe_get_executors_wp();
+    global $glpi_db;
+    $res = glpi_db_get_executors();
+    if (!$res['ok'] && $glpi_db->last_error && defined('WP_DEBUG') && WP_DEBUG) {
+        error_log('glpi_get_executors: ' . $glpi_db->last_error);
+    }
     wp_send_json($res);
+}
+
+/**
+ * Fetch list of available executors.
+ *
+ * @return array{ok:bool,code?:string,which?:string,list?:array<int,array{id:int,name:string}>}
+ */
+function glpi_db_get_executors() {
+    global $glpi_db;
+
+    $rows = $glpi_db->get_results(
+        "SELECT id, name FROM glpi_users WHERE is_deleted=0 ORDER BY name",
+        ARRAY_A
+    );
+    if ($glpi_db->last_error) {
+        return ['ok' => false, 'code' => 'dict_failed', 'which' => 'executors'];
+    }
+    if (!$rows) {
+        return ['ok' => false, 'code' => 'dict_empty', 'which' => 'executors'];
+    }
+
+    $list = array_map(function ($r) {
+        return [
+            'id'   => (int) ($r['id'] ?? 0),
+            'name' => $r['name'] ?? '',
+        ];
+    }, $rows);
+
+    return ['ok' => true, 'code' => 'ok', 'list' => $list];
 }
 
 // -------- Create ticket --------
