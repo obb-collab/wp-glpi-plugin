@@ -15,8 +15,12 @@ if (!defined('WP_GLPI_DEBUG')) {
     define('WP_GLPI_DEBUG', false);
 }
 
-if (!defined('WP_GLPI_DISABLE_ENTITY_CHECK')) {
-    define('WP_GLPI_DISABLE_ENTITY_CHECK', false);
+if (!defined('WP_GLPI_ALLOW_FALLBACK_USER_ENTITY')) {
+    define('WP_GLPI_ALLOW_FALLBACK_USER_ENTITY', true);
+}
+
+if (!defined('WP_GLPI_DISABLE_ENTITY_FILTER')) {
+    define('WP_GLPI_DISABLE_ENTITY_FILTER', false);
 }
 
 if (!defined('WP_GLPI_DISABLE_MAPPING_CHECK')) {

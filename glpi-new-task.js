@@ -162,7 +162,7 @@
       if (btn) btn.addEventListener('click', function(){
         box.innerHTML = '';
         box.hidden = true;
-        setTimeout(retry, 400);
+        setTimeout(retry, 500);
       });
     }
   }
@@ -216,7 +216,8 @@
   function fetchDicts(force){
     const now = Date.now();
     if (!force && dictCache && (now - dictCache.ts < 5 * 60 * 1000)) {
-      return Promise.resolve({ ok: true, categories: dictCache.data.categories, locations: dictCache.data.locations, executors: dictCache.data.executors });
+      const d = dictCache.data;
+      return Promise.resolve({ ok: true, categories: d.categories, locations: d.locations, executors: d.executors, meta: d.meta });
     }
     if (!gexeAjax || !gexeAjax.url) {
       return Promise.resolve({ ok: false, error: { type: 'NETWORK', message: 'Ошибка соединения с сервером' } });
@@ -229,7 +230,7 @@
       .then(resp => {
         if (resp && resp.success && resp.data) {
           dictCache = { ts: now, data: resp.data };
-          return { ok: true, categories: resp.data.categories, locations: resp.data.locations, executors: resp.data.executors };
+          return { ok: true, categories: resp.data.categories, locations: resp.data.locations, executors: resp.data.executors, meta: resp.data.meta };
         }
         const err = resp && (resp.error || resp.data && resp.data.error);
         return { ok: false, error: err || { type: 'UNKNOWN', message: 'Не удалось загрузить справочники' } };
@@ -241,9 +242,16 @@
     if (dictLoading) return;
     const now = Date.now();
     if (!force && dictCache && (now - dictCache.ts < 5 * 60 * 1000)) {
-      fillDropdowns({ categories: dictCache.data.categories, locations: dictCache.data.locations, executors: dictCache.data.executors });
+      const d = dictCache.data;
+      fillDropdowns({ categories: d.categories, locations: d.locations, executors: d.executors });
       lockForm(false);
-      hideStatus();
+      const warns = [];
+      if (d.meta && d.meta.empty) {
+        if (d.meta.empty.categories) warns.push('Справочник «Категории» пуст');
+        if (d.meta.empty.locations) warns.push('Справочник «Местоположения» пуст');
+      }
+      if (warns.length) showError(warns.join('. '));
+      else hideStatus();
       return;
     }
     dictLoading = true;
@@ -255,8 +263,14 @@
         (res.categories || []).forEach(c => { c.path = c.completename || c.path || ''; });
         (res.locations || []).forEach(l => { l.path = l.completename || l.path || ''; });
         fillDropdowns({ categories: res.categories, locations: res.locations, executors: res.executors });
-        hideStatus();
         lockForm(false);
+        const warns = [];
+        if (res.meta && res.meta.empty) {
+          if (res.meta.empty.categories) warns.push('Справочник «Категории» пуст');
+          if (res.meta.empty.locations) warns.push('Справочник «Местоположения» пуст');
+        }
+        if (warns.length) showError(warns.join('. '));
+        else hideStatus();
       } else {
         const err = res.error || {};
         if (gexeAjax && gexeAjax.debug) {
@@ -279,9 +293,9 @@
           default:
             if (err.message) msg = err.message;
         }
-        let details = err.details;
-        if (gexeAjax && gexeAjax.debug && details && typeof details !== 'string') {
-          try { details = JSON.stringify(details); } catch(e) { details = String(details); }
+        let details = null;
+        if (gexeAjax && gexeAjax.debug && err.details) {
+          try { details = typeof err.details === 'string' ? err.details : JSON.stringify(err.details); } catch(e) { details = String(err.details); }
         }
         showError(msg, () => startDictLoad(true), details);
       }
