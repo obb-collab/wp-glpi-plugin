@@ -1777,65 +1777,6 @@
     }
   }
 
-  // [manager-switcher] запрос карточек с переключением исполнителя
-  function reloadTickets(viewAs) {
-    ajaxPost({ action: 'gexe_get_tickets', view_as: viewAs }).then(res => {
-      if (!(res && res.ok && res.data && res.data.html)) {
-        showNotice('error', 'Не удалось применить фильтр исполнителя');
-        return;
-      }
-      const tmp = document.createElement('div');
-      tmp.innerHTML = res.data.html;
-      const newCont = tmp.querySelector('.glpi-container');
-      const oldCont = document.querySelector('.glpi-container');
-      if (newCont && oldCont) {
-        oldCont.replaceWith(newCont);
-        injectCardActionButtons();
-        applyActionVisibility();
-        bindCardOpen();
-        bindStatusAndSearch();
-        recalcStatusCounts();
-        recalcCategoryVisibility();
-        filterCards();
-        updateAgeFooters();
-      }
-    }).catch(() => {
-      showNotice('error', 'Не удалось применить фильтр исполнителя');
-    });
-  }
-
-  // [manager-switcher] инициализация выпадающего списка исполнителей
-  function initManagerSwitcher() {
-    if (!glpiAjax || !glpiAjax.is_manager) return;
-    const panel = document.querySelector('.glpi-filtering-panel');
-    if (!panel) return;
-    const wrap = document.createElement('div');
-    wrap.className = 'glpi-executors';
-    wrap.innerHTML = '<button class="glpi-executors__btn">Исполнители</button><ul class="glpi-executors__menu"></ul>';
-    panel.appendChild(wrap);
-    const menu = wrap.querySelector('.glpi-executors__menu');
-    const btn = wrap.querySelector('.glpi-executors__btn');
-    btn.addEventListener('click', () => { wrap.classList.toggle('open'); });
-    document.addEventListener('click', (e) => { if (!wrap.contains(e.target)) wrap.classList.remove('open'); });
-    ajaxPost({ action: 'gexe_get_executors_list' }).then(res => {
-      if (!(res && res.ok && res.data && Array.isArray(res.data.executors))) return;
-      const addItem = (id, text) => {
-        const li = document.createElement('li');
-        li.dataset.id = id;
-        li.textContent = text;
-        menu.appendChild(li);
-      };
-      addItem('all', 'Без фильтров');
-      res.data.executors.forEach(ex => addItem(String(ex.id), ex.name));
-      menu.addEventListener('click', (e) => {
-        const id = e.target && e.target.dataset ? e.target.dataset.id : '';
-        if (!id) return;
-        wrap.classList.remove('open');
-        reloadTickets(id);
-      });
-    });
-  }
-
   /* ========================= ИНИЦИАЛИЗАЦИЯ ========================= */
   document.addEventListener('DOMContentLoaded', function () {
     ensureOverdueBlock();
@@ -1848,7 +1789,6 @@
 
 
     bindStatusAndSearch();
-    initManagerSwitcher();
     recalcStatusCounts();
     recalcCategoryVisibility();
     filterCards();

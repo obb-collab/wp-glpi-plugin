@@ -9,17 +9,6 @@ require_once __DIR__ . '/glpi-utils.php';
 require_once __DIR__ . '/includes/glpi-sql.php';
 require_once __DIR__ . '/includes/glpi-auth-map.php';
 
-// [manager-switcher] Проверка привилегий начальника
-function gexe_is_manager($user = null) {
-    $user = $user ?: wp_get_current_user();
-    if (!$user || !($user->ID ?? 0)) {
-        return false;
-    }
-    $login   = $user->user_login ?? '';
-    $glpi_id = (int) get_user_meta($user->ID, 'glpi_user_id', true);
-    return ($login === 'vks_m5_local') || ($glpi_id === 2);
-}
-
 function gexe_action_response($ok, $code, $ticket_id, $action, $msg = '', $extra = []) {
     $payload = array_merge([
         'ok'        => (bool) $ok,
@@ -1011,28 +1000,4 @@ function gexe_get_glpi_dicts() {
     }
 
     wp_send_json(array_merge(['ok' => true], $data));
-}
-
-// [manager-switcher] Список исполнителей для начальника
-add_action('wp_ajax_gexe_get_executors_list', 'gexe_get_executors_list');
-function gexe_get_executors_list() {
-    check_ajax_referer('gexe_actions', 'nonce');
-    if (!gexe_is_manager()) {
-        wp_send_json_error(['code' => 'forbidden']);
-    }
-    $list = gexe_get_assignee_options();
-    wp_send_json_success(['executors' => $list]);
-}
-
-// [manager-switcher] Получение карточек с учётом view_as
-add_action('wp_ajax_gexe_get_tickets', 'gexe_get_tickets');
-function gexe_get_tickets() {
-    check_ajax_referer('gexe_actions', 'nonce');
-    if (!is_user_logged_in()) {
-        wp_send_json_error(['code' => 'not_logged_in']);
-    }
-    $view_as = isset($_POST['view_as']) ? sanitize_text_field(wp_unslash($_POST['view_as'])) : '';
-    $_REQUEST['view_as'] = $view_as;
-    $html = gexe_glpi_cards_shortcode([]);
-    wp_send_json_success(['html' => $html]);
 }

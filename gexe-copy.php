@@ -54,10 +54,6 @@ add_action('wp_enqueue_scripts', function () {
     wp_localize_script('gexe-filter', 'glpiAjax', [
         'url'               => admin_url('admin-ajax.php'),
         'nonce'             => wp_create_nonce('gexe_actions'),
-        // [manager-switcher] дополнительные флаги
-        'ajax_url'          => admin_url('admin-ajax.php'),
-        'ajax_nonce'        => wp_create_nonce('gexe_actions'),
-        'is_manager'        => gexe_is_manager() ? 1 : 0,
         'user_glpi_id'      => (int) gexe_get_current_glpi_uid(),
         'current_wp_user_id'=> (int) get_current_user_id(),
         'rest'              => esc_url_raw(rest_url('glpi/v1/')),
@@ -131,18 +127,6 @@ function gexe_glpi_cards_shortcode($atts) {
     if ($current_user && $current_user->ID) {
         $glpi_user_id  = trim((string) get_user_meta($current_user->ID, 'glpi_user_id', true));
         $glpi_show_all = (get_user_meta($current_user->ID, 'glpi_show_all_cards', true) === '1');
-    }
-
-    // [manager-switcher] обработка временного просмотра
-    $view_as = isset($_REQUEST['view_as']) ? trim((string) $_REQUEST['view_as']) : '';
-    if (gexe_is_manager()) {
-        if ($view_as === 'all') {
-            $glpi_show_all = true;
-            $glpi_user_id  = '';
-        } elseif ($view_as !== '' && ctype_digit($view_as)) {
-            $glpi_user_id  = $view_as;
-            $glpi_show_all = false;
-        }
     }
 
     // ---- Базовый запрос по активным тикетам ----
