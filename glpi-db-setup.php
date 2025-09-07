@@ -371,22 +371,46 @@ function glpi_db_create_ticket(array $payload) {
 }
 
 /**
- * Resolve ticket by setting status to 6 and adding a followup.
+ * Load status IDs from glpi_itilstatuses and map common names.
  *
- * Similar to a regular followup insertion but checks current status and
- * returns `already_done` when the ticket is already resolved. The followup
- * text is fixed to "Заявка решена".
+ * @return array{work:int,planned:int,onhold:int,resolved:int}
+ */
+function gexe_glpi_status_map() {
+    static $cache = null;
+    if ($cache !== null) return $cache;
+    global $glpi_db;
+    $cache = ['work' => 2, 'planned' => 3, 'onhold' => 4, 'resolved' => 6];
+    $rows = $glpi_db->get_results('SELECT id,name FROM glpi_itilstatuses', ARRAY_A);
+    if ($rows) {
+        $names = [];
+        foreach ($rows as $r) {
+            $names[mb_strtolower(trim($r['name']))] = (int) $r['id'];
+        }
+        $cache['work'] = $names['в работе'] ?? $names['in progress'] ?? $cache['work'];
+        $cache['planned'] = $names['в плане'] ?? $names['planned'] ?? $cache['planned'];
+        $cache['onhold'] = $names['в стопе'] ?? $names['on hold'] ?? $names['ожидание'] ?? $names['等待'] ?? $cache['onhold'];
+        $cache['resolved'] = $names['решено'] ?? $names['resolved'] ?? $names['solved'] ?? $cache['resolved'];
+    }
+    return $cache;
+}
+
+/**
+ * Change ticket status and insert followup.
  *
  * @param int $ticket_id
  * @param int $glpi_user_id
+ * @param int $status_id
+ * @param string $followup_text
  * @return array{ok:bool,code?:string,msg?:string,extra?:array}
  */
-function sql_ticket_resolve($ticket_id, $glpi_user_id) {
+function sql_ticket_set_status($ticket_id, $glpi_user_id, $status_id, $followup_text) {
     global $glpi_db;
 
     $ticket_id    = (int) $ticket_id;
     $glpi_user_id = (int) $glpi_user_id;
-    if ($ticket_id <= 0 || $glpi_user_id <= 0) {
+    $status_id    = (int) $status_id;
+    $followup_text = (string) $followup_text;
+    if ($ticket_id <= 0 || $glpi_user_id <= 0 || $status_id <= 0) {
         return ['ok' => false, 'code' => 'validation'];
     }
 
@@ -407,12 +431,12 @@ function sql_ticket_resolve($ticket_id, $glpi_user_id) {
         $glpi_db->query('ROLLBACK');
         return ['ok' => false, 'code' => 'not_found'];
     }
-    if ((int) $status === 6) {
+    if ((int) $status === $status_id) {
         $glpi_db->query('ROLLBACK');
-        return ['ok' => false, 'code' => 'already_done', 'extra' => ['status' => 6]];
+        return ['ok' => false, 'code' => 'already_done', 'extra' => ['status' => $status_id]];
     }
 
-    $sql = $glpi_db->prepare('UPDATE glpi_tickets SET status=6 WHERE id=%d', $ticket_id);
+    $sql = $glpi_db->prepare('UPDATE glpi_tickets SET status=%d WHERE id=%d', $status_id, $ticket_id);
     if (!$glpi_db->query($sql)) {
         $err = $glpi_db->last_error;
         $glpi_db->query('ROLLBACK');
@@ -420,9 +444,10 @@ function sql_ticket_resolve($ticket_id, $glpi_user_id) {
     }
 
     $sql = $glpi_db->prepare(
-        "INSERT INTO glpi_itilfollowups (items_id,itemtype,users_id,date,content,is_private) VALUES (%d,'Ticket',%d,NOW(),'Заявка решена',0)",
+        "INSERT INTO glpi_itilfollowups (items_id,itemtype,users_id,date,content,is_private) VALUES (%d,'Ticket',%d,NOW(),%s,0)",
         $ticket_id,
-        $glpi_user_id
+        $glpi_user_id,
+        $followup_text
     );
     if (!$glpi_db->query($sql)) {
         $err = $glpi_db->last_error;
@@ -436,14 +461,30 @@ function sql_ticket_resolve($ticket_id, $glpi_user_id) {
     return [
         'ok'    => true,
         'extra' => [
-            'status'   => 6,
+            'status'   => $status_id,
             'followup' => [
                 'id'      => $fid,
-                'content' => 'Заявка решена',
+                'content' => $followup_text,
                 'date'    => $date,
             ],
         ],
     ];
+}
+
+/**
+ * Resolve ticket by setting status to 6 and adding a followup.
+ *
+ * Similar to a regular followup insertion but checks current status and
+ * returns `already_done` when the ticket is already resolved. The followup
+ * text is fixed to "Заявка решена".
+ *
+ * @param int $ticket_id
+ * @param int $glpi_user_id
+ * @return array{ok:bool,code?:string,msg?:string,extra?:array}
+ */
+function sql_ticket_resolve($ticket_id, $glpi_user_id) {
+    $map = gexe_glpi_status_map();
+    return sql_ticket_set_status($ticket_id, $glpi_user_id, $map['resolved'], 'Заявка решена');
 }
 
 if (defined('WP_CLI') && WP_CLI) {
