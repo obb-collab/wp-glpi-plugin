@@ -162,86 +162,42 @@ function gexe_glpi_triggers_status() {
 }
 
 /**
- * Accept ticket on behalf of GLPI user.
+ * Insert a followup for a ticket.
  *
- * Inserts a fixed followup "Принято в работу" and updates ticket status to 2
- * when needed. The operation is executed inside a transaction and is
- * idempotent – a second call by the same user will return `duplicate` without
- * modifying data. Requires the user to be assigned as type=2 in
- * `glpi_tickets_users`.
- *
- * @param int $ticket_id
- * @param int $glpi_user_id
- * @return array{ok:bool,code?:string,msg?:string,extra?:array}
+ * @param int    $ticket_id
+ * @param int    $glpi_user_id
+ * @param string $content
+ * @return array{ok:bool,code?:string,msg?:string,followup?:array}
  */
-function sql_ticket_accept($ticket_id, $glpi_user_id) {
+function sql_insert_followup($ticket_id, $glpi_user_id, $content) {
     global $glpi_db;
 
     $ticket_id    = (int) $ticket_id;
     $glpi_user_id = (int) $glpi_user_id;
-    if ($ticket_id <= 0 || $glpi_user_id <= 0) {
+    $content      = trim((string) $content);
+    if ($ticket_id <= 0 || $glpi_user_id <= 0 || $content === '') {
         return ['ok' => false, 'code' => 'validation'];
     }
 
-    $glpi_db->query('START TRANSACTION');
-
-    // Ensure user is assigned to the ticket
-    $has = $glpi_db->get_var($glpi_db->prepare(
-        'SELECT 1 FROM glpi_tickets_users WHERE tickets_id=%d AND users_id=%d AND type IN (2) FOR UPDATE',
-        $ticket_id,
-        $glpi_user_id
-    ));
-    if (!$has) {
-        $glpi_db->query('ROLLBACK');
-        return ['ok' => false, 'code' => 'no_rights'];
-    }
-
-    // Current status for extra payload and duplicate detection
-    $status = (int) $glpi_db->get_var($glpi_db->prepare(
-        'SELECT status FROM glpi_tickets WHERE id=%d FOR UPDATE',
-        $ticket_id
-    ));
-
-    $dup = $glpi_db->get_var($glpi_db->prepare(
-        "SELECT id FROM glpi_itilfollowups WHERE items_id=%d AND itemtype='Ticket' AND users_id=%d AND content='Принято в работу' LIMIT 1",
-        $ticket_id,
-        $glpi_user_id
-    ));
-    if ($dup) {
-        $glpi_db->query('ROLLBACK');
-        return ['ok' => false, 'code' => 'duplicate', 'extra' => ['status' => $status]];
-    }
-
     $sql = $glpi_db->prepare(
-        "INSERT INTO glpi_itilfollowups (items_id,itemtype,users_id,date,content,is_private) VALUES (%d,'Ticket',%d,NOW(),'Принято в работу',0)",
+        "INSERT INTO glpi_itilfollowups (items_id,itemtype,users_id,date,content,is_private) VALUES (%d,'Ticket',%d,NOW(),%s,0)",
         $ticket_id,
-        $glpi_user_id
+        $glpi_user_id,
+        $content
     );
     if (!$glpi_db->query($sql)) {
         $err = $glpi_db->last_error;
-        $glpi_db->query('ROLLBACK');
         return ['ok' => false, 'code' => 'sql_error', 'msg' => $err];
     }
-    $fid  = (int) $glpi_db->insert_id;
-    $date = $glpi_db->get_var($glpi_db->prepare('SELECT date FROM glpi_itilfollowups WHERE id=%d', $fid));
-
-    $sql = $glpi_db->prepare('UPDATE glpi_tickets SET status=2 WHERE id=%d AND status<>2', $ticket_id);
-    if (!$glpi_db->query($sql)) {
-        $err = $glpi_db->last_error;
-        $glpi_db->query('ROLLBACK');
-        return ['ok' => false, 'code' => 'sql_error', 'msg' => $err];
-    }
-
-    $glpi_db->query('COMMIT');
+    $fid = (int) $glpi_db->insert_id;
     return [
-        'ok'    => true,
-        'extra' => [
-            'status'   => 2,
-            'followup' => [
-                'id'      => $fid,
-                'content' => 'Принято в работу',
-                'date'    => $date,
-            ],
+        'ok'       => true,
+        'followup' => [
+            'id'       => $fid,
+            'items_id' => $ticket_id,
+            'users_id' => $glpi_user_id,
+            'content'  => $content,
+            'date'     => date('c'),
         ],
     ];
 }
@@ -249,9 +205,9 @@ function sql_ticket_accept($ticket_id, $glpi_user_id) {
 /**
  * Resolve ticket by setting status to 6 and adding a followup.
  *
- * Similar to {@see sql_ticket_accept()} but checks current status and returns
- * `already_done` when the ticket is already resolved. The followup text is
- * fixed to "Заявка решена".
+ * Similar to a regular followup insertion but checks current status and
+ * returns `already_done` when the ticket is already resolved. The followup
+ * text is fixed to "Заявка решена".
  *
  * @param int $ticket_id
  * @param int $glpi_user_id
