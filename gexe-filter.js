@@ -519,11 +519,15 @@
       });
     };
 
-    Promise.all([
+    const dictPromises = [
       loadOne('categories', catSel),
-      loadOne('locations', locSel),
-      loadOne('executors', execSel)
-    ]).then(([cat, loc]) => {
+      loadOne('locations', locSel)
+    ];
+    const rt = window.GLPI_RUNTIME || {};
+    if (rt.features && rt.features.executors) {
+      dictPromises.push(loadOne('executors', execSel));
+    }
+    Promise.all(dictPromises).then(([cat, loc]) => {
       // Enable common fields once dictionaries have finished loading
       $$('input,select,textarea', modal).forEach(el => {
         if (el === catSel || el === locSel || el === execSel) return; // handled above
@@ -773,9 +777,8 @@
   }
 
   function initExecutorFilter(){
+    if (!window.GLPI_RUNTIME || !GLPI_RUNTIME.features || !GLPI_RUNTIME.features.executors) return;
     try {
-      const rt = window.GLPI_RUNTIME || {};
-      if (!rt.features || !rt.features.executors) return;
       const block = document.querySelector('.glpi-executor-block');
       if (!block) return;
       block.innerHTML = '<select id="glpi-executor-filter" class="glpi-executor-select" disabled><option value="all">no filter</option></select><span class="glpi-executor-badge" hidden></span>';
