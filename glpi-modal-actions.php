@@ -551,32 +551,7 @@ function gexe_glpi_card_action() {
 
 add_action('wp_ajax_glpi_accept', 'gexe_glpi_accept');
 function gexe_glpi_accept() {
-    $ticket_id = isset($_POST['ticket_id']) ? intval($_POST['ticket_id']) : 0;
-    if (!check_ajax_referer('gexe_actions', 'nonce', false)) {
-        gexe_action_response(false, 'csrf', $ticket_id, 'accept');
-    }
-    if (!is_user_logged_in()) {
-        gexe_action_response(false, 'not_logged_in', $ticket_id, 'accept');
-    }
-    $glpi_uid = gexe_get_current_glpi_user_id(get_current_user_id());
-    if ($glpi_uid <= 0) {
-        gexe_action_response(false, 'not_mapped', $ticket_id, 'accept');
-    }
-    if ($ticket_id <= 0) {
-        gexe_action_response(false, 'validation', $ticket_id, 'accept');
-    }
-    global $glpi_db;
-    $exists = $glpi_db->get_var($glpi_db->prepare('SELECT id FROM glpi_tickets WHERE id=%d', $ticket_id));
-    if (!$exists) {
-        gexe_action_response(false, 'not_found', $ticket_id, 'accept');
-    }
-
-    $res = sql_ticket_accept($ticket_id, $glpi_uid);
-    if (!$res['ok']) {
-        gexe_action_response(false, $res['code'] ?? 'sql_error', $ticket_id, 'accept', '', ['extra' => $res['extra'] ?? []]);
-    }
-    gexe_clear_comments_cache($ticket_id);
-    gexe_action_response(true, 'ok', $ticket_id, 'accept', '', ['extra' => $res['extra'] ?? []]);
+    gexe_glpi_comment_add('accept', 'Принято в работу');
 }
 
 add_action('wp_ajax_glpi_resolve', 'gexe_glpi_resolve');
@@ -635,30 +610,34 @@ function gexe_check_mapping() {
 
 /* -------- AJAX: добавить комментарий -------- */
 add_action('wp_ajax_glpi_comment_add', 'gexe_glpi_comment_add');
-function gexe_glpi_comment_add() {
+function gexe_glpi_comment_add($action = 'comment', $content_override = null) {
     $ticket_id = isset($_POST['ticket_id']) ? intval($_POST['ticket_id']) : 0;
-    $content   = isset($_POST['content']) ? sanitize_textarea_field((string) $_POST['content']) : '';
+    if ($content_override !== null) {
+        $content = sanitize_textarea_field((string) $content_override);
+    } else {
+        $content = isset($_POST['content']) ? sanitize_textarea_field((string) $_POST['content']) : '';
+    }
     if (!check_ajax_referer('gexe_actions', 'nonce', false)) {
-        gexe_action_response(false, 'csrf', $ticket_id, 'comment');
+        gexe_action_response(false, 'csrf', $ticket_id, $action);
     }
     if (!is_user_logged_in()) {
-        gexe_action_response(false, 'not_logged_in', $ticket_id, 'comment');
+        gexe_action_response(false, 'not_logged_in', $ticket_id, $action);
     }
     $glpi_uid = gexe_get_current_glpi_user_id(get_current_user_id());
     if ($glpi_uid <= 0) {
-        gexe_action_response(false, 'not_mapped', $ticket_id, 'comment');
+        gexe_action_response(false, 'not_mapped', $ticket_id, $action);
     }
     if ($ticket_id <= 0) {
-        gexe_action_response(false, 'validation', $ticket_id, 'comment');
+        gexe_action_response(false, 'validation', $ticket_id, $action);
     }
     $content = trim($content);
     if ($content === '' || mb_strlen($content) > 2000) {
-        gexe_action_response(false, 'validation', $ticket_id, 'comment');
+        gexe_action_response(false, 'validation', $ticket_id, $action);
     }
     global $glpi_db;
     $exists = $glpi_db->get_var($glpi_db->prepare('SELECT id FROM glpi_tickets WHERE id=%d', $ticket_id));
     if (!$exists) {
-        gexe_action_response(false, 'not_found', $ticket_id, 'comment');
+        gexe_action_response(false, 'not_found', $ticket_id, $action);
     }
     $glpi_db->query('START TRANSACTION');
     $has = $glpi_db->get_var($glpi_db->prepare(
@@ -668,7 +647,7 @@ function gexe_glpi_comment_add() {
     ));
     if (!$has) {
         $glpi_db->query('ROLLBACK');
-        gexe_action_response(false, 'no_rights', $ticket_id, 'comment');
+        gexe_action_response(false, 'no_rights', $ticket_id, $action);
     }
     $last = $glpi_db->get_row($glpi_db->prepare(
         "SELECT content, date FROM glpi_itilfollowups WHERE itemtype='Ticket' AND items_id=%d AND users_id=%d ORDER BY id DESC LIMIT 1",
@@ -679,30 +658,15 @@ function gexe_glpi_comment_add() {
         $ts = strtotime($last['date']);
         if ($ts !== false && (time() - $ts) < 10) {
             $glpi_db->query('ROLLBACK');
-            gexe_action_response(false, 'rate_limit_client', $ticket_id, 'comment');
+            gexe_action_response(false, 'rate_limit_client', $ticket_id, $action);
         }
     }
-    $sql = $glpi_db->prepare(
-        "INSERT INTO glpi_itilfollowups (items_id,itemtype,users_id,date,content,is_private) VALUES (%d,'Ticket',%d,NOW(),%s,0)",
-        $ticket_id,
-        $glpi_uid,
-        $content
-    );
-    if (!$glpi_db->query($sql)) {
+    $res = sql_insert_followup($ticket_id, $glpi_uid, $content);
+    if (!$res['ok']) {
         $glpi_db->query('ROLLBACK');
-        gexe_action_response(false, 'sql_error', $ticket_id, 'comment');
+        gexe_action_response(false, $res['code'] ?? 'sql_error', $ticket_id, $action);
     }
-    $fid = (int) $glpi_db->insert_id;
     $glpi_db->query('COMMIT');
     gexe_clear_comments_cache($ticket_id);
-    $extra = [
-        'followup' => [
-            'id'       => $fid,
-            'items_id' => $ticket_id,
-            'users_id' => $glpi_uid,
-            'content'  => $content,
-            'date'     => date('c'),
-        ],
-    ];
-    gexe_action_response(true, 'ok', $ticket_id, 'comment', '', ['extra' => $extra]);
+    gexe_action_response(true, 'ok', $ticket_id, $action, '', ['extra' => ['followup' => $res['followup']]]);
 }

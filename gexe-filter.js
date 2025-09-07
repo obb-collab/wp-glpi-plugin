@@ -193,49 +193,6 @@
   }
 
 
-  function markAccepted(ticketId, btn, payload) {
-    if (!btn) return;
-    btn.innerHTML = '<i class="fa-solid fa-check"></i>';
-    btn.disabled = true;
-    btn.setAttribute('aria-disabled', 'true');
-    btn.setAttribute('title', 'Уже принято');
-
-    const cardEl = document.querySelector('.glpi-card[data-ticket-id="' + ticketId + '"]');
-    if (cardEl) {
-      cardEl.setAttribute('data-status', '2');
-      cardEl.setAttribute('data-unassigned', '0');
-      if (payload && payload.assigned_glpi_id) {
-        cardEl.setAttribute('data-assignees', String(payload.assigned_glpi_id));
-      }
-      const cardBtn = cardEl.querySelector('.gexe-open-accept');
-      if (cardBtn && cardBtn !== btn) {
-        setActionLoading(cardBtn, false);
-        cardBtn.disabled = true;
-        cardBtn.innerHTML = '<i class="fa-solid fa-check"></i>';
-        cardBtn.setAttribute('aria-disabled', 'true');
-        cardBtn.setAttribute('title', 'Уже принято');
-      }
-      const footer = cardEl.querySelector('.glpi-executor-footer');
-      if (footer && !footer.querySelector('.glpi-executors')) {
-        const span = document.createElement('span');
-        span.className = 'glpi-executors';
-        span.innerHTML = '<i class="fa-solid fa-user-tie glpi-executor"></i> Вы';
-        footer.appendChild(span);
-      }
-    }
-
-    if (modalEl && modalEl.getAttribute('data-ticket-id') === String(ticketId)) {
-      const mb = modalEl.querySelector('.gexe-open-accept');
-      if (mb && mb !== btn) {
-        setActionLoading(mb, false);
-        mb.disabled = true;
-        mb.innerHTML = '<i class="fa-solid fa-check"></i>';
-        mb.setAttribute('aria-disabled', 'true');
-        mb.setAttribute('title', 'Уже принято');
-      }
-    }
-  }
-
   function debugRequest(url, payload) {
     if (!window.GEXE_DEBUG) return;
     const safe = {};
@@ -310,31 +267,22 @@
     lockAction(ticketId, 'accept', true);
     setActionLoading(btn, true);
 
-    ajaxPost({ action: 'glpi_accept', ticket_id: String(ticketId) }).then(res => {
+    ajaxPost({ action: 'glpi_comment_add', ticket_id: String(ticketId), content: 'Принято в работу' }).then(res => {
       setActionLoading(btn, false);
       lockAction(ticketId, 'accept', false);
       if (window.__GLPI_DEBUG) {
         console.log({ action: 'accept', ticket_id: ticketId, code: res.code || 'ok' });
       }
       if (!res.ok) {
-        if (res.code === 'duplicate') {
-          markAccepted(ticketId, btn);
-          refreshTicketMeta(ticketId);
-          recalcStatusCounts(); filterCards();
-          showNotice('success', 'Уже отмечено');
-          return;
-        }
-        if (res.code === 'no_rights') {
+        if (res.code === 'no_rights' || res.code === 'not_mapped') {
           btn.disabled = true;
           btn.setAttribute('aria-disabled', 'true');
         }
         showError(res.code);
         return;
       }
-      markAccepted(ticketId, btn, res.data.extra);
       insertFollowup(ticketId, res.data.extra && res.data.extra.followup);
       refreshTicketMeta(ticketId);
-      recalcStatusCounts(); filterCards();
       showNotice('success', 'Принято в работу');
     }).catch(() => {
       setActionLoading(btn, false);
