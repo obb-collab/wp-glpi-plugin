@@ -37,6 +37,15 @@ function gexe_glpi_ticket_resolve() {
         wp_send_json(['error' => 'ticket_not_found'], 404);
     }
 
+    $current_assignees = $glpi_db->get_col($glpi_db->prepare(
+        'SELECT users_id FROM glpi_tickets_users WHERE tickets_id=%d AND type=2',
+        $ticket_id
+    ));
+    $current_assignees = array_map('intval', $current_assignees);
+    if (!empty($current_assignees) && !in_array($author_glpi, $current_assignees, true)) {
+        wp_send_json(['error' => 'NO_PERMISSION'], 403);
+    }
+
     $glpi_db->query('START TRANSACTION');
     $sql = $glpi_db->prepare('UPDATE glpi_tickets SET status=%d, users_id_lastupdater=%d, date_mod=NOW() WHERE id=%d', $status, $author_glpi, $ticket_id);
     if (!$glpi_db->query($sql)) {

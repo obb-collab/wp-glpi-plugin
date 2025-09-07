@@ -25,6 +25,7 @@
     empty_comment: 'Введите комментарий',
     bad_response: 'Не удалось обработать ответ сервера.',
     network_error: 'Ошибка сети',
+    NO_PERMISSION: 'Недостаточно прав.',
   };
 
   function ensureNoticeHost() {
@@ -163,6 +164,21 @@
     return 0;
   }
 
+  function checkTicketAssignee(ticketId) {
+    const ajax = window.gexeAjax || window.glpiAjax;
+    const uid = Number((ajax && ajax.user_glpi_id) || 0);
+    if (!ticketId || uid <= 0) return true;
+    const card = document.querySelector('.glpi-card[data-ticket-id="' + ticketId + '"]');
+    if (!card) return true;
+    const assignees = (card.getAttribute('data-assignees') || '')
+      .split(',').map(s => parseInt(s, 10)).filter(n => n > 0);
+    if (assignees.length && !assignees.includes(uid)) {
+      showNotice('error', 'Вы не исполнитель');
+      return false;
+    }
+    return true;
+  }
+
   function handleActionClick(e) {
     const btn = e.target.closest('.gexe-action-btn');
     if (!btn) return;
@@ -180,12 +196,14 @@
     }
 
     if (btn.classList.contains('gexe-open-close')) {
+      if (!checkTicketAssignee(ticketId)) return;
       openDoneModal(ticketId);
       return;
     }
 
     if (!btn.classList.contains('gexe-open-accept')) return;
     if (btn.disabled || isActionLocked(ticketId, 'accept')) return;
+    if (!checkTicketAssignee(ticketId)) return;
 
     const ajax = window.gexeAjax || window.glpiAjax;
     if (!ajax || !ajax.url) return;
@@ -855,6 +873,7 @@
     const id = Number(doneModal.getAttribute('data-ticket-id') || '0');
     if (!id) return;
     const btn = $('#gexe-done-confirm', doneModal);
+    if (!checkTicketAssignee(id)) return;
     if (btn && isActionLocked(id, 'done')) return;
     if (btn) setActionLoading(btn, true);
     lockAction(id, 'done', true);

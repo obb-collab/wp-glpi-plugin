@@ -606,6 +606,15 @@ function gexe_glpi_ticket_accept_sql() {
         $ticket_id, $assignee
     )) ? true : false;
 
+    $current_assignees = $glpi_db->get_col($glpi_db->prepare(
+        'SELECT users_id FROM glpi_tickets_users WHERE tickets_id=%d AND type=2',
+        $ticket_id
+    ));
+    $current_assignees = array_map('intval', $current_assignees);
+    if (!empty($current_assignees) && !in_array($assignee, $current_assignees, true)) {
+        wp_send_json(['error' => 'NO_PERMISSION'], 403);
+    }
+
     $glpi_db->query('START TRANSACTION');
     $followup_id = 0;
     $created_at  = date('c');
