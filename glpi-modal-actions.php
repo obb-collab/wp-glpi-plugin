@@ -889,3 +889,67 @@ function gexe_create_ticket_sql() {
     $glpi_db->query('COMMIT');
     gexe_action_response(true, 'ok', $ticket_id, $action);
 }
+
+// ====== DICTIONARIES: categories & locations ======
+
+add_action('wp_ajax_gexe_get_dicts', 'gexe_get_glpi_dicts');
+
+/**
+ * Fetch active categories and locations from GLPI.
+ * Caches response for 5 minutes using the "glpi" cache group.
+ *
+ * Returns JSON: { ok:true, categories:[{id,name,parent_id}], locations:[{id,name,parent_id}] }
+ */
+function gexe_get_glpi_dicts() {
+    if (!is_user_logged_in()) {
+        wp_send_json(['ok' => false, 'error' => 'unauthorized'], 401);
+    }
+    if (!check_ajax_referer('gexe_actions', 'nonce', false)) {
+        wp_send_json(['ok' => false, 'error' => 'csrf'], 403);
+    }
+
+    $cache = wp_cache_get('glpi_dict_v1', 'glpi');
+    if (is_array($cache)) {
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log('gexe_get_dicts cache hit');
+        }
+        wp_send_json(array_merge(['ok' => true], $cache));
+    }
+
+    global $glpi_db;
+    $cats = $glpi_db->get_results(
+        "SELECT id, name, itilcategories_id AS parent_id FROM glpi_itilcategories WHERE is_active=1 ORDER BY name",
+        ARRAY_A
+    );
+    $locs = $glpi_db->get_results(
+        "SELECT id, name, locations_id AS parent_id FROM glpi_locations WHERE is_active=1 ORDER BY name",
+        ARRAY_A
+    );
+    if ($glpi_db->last_error) {
+        wp_send_json(['ok' => false, 'error' => 'dict_fetch_failed', 'details' => $glpi_db->last_error], 500);
+    }
+
+    $data = [
+        'categories' => array_map(function ($r) {
+            return [
+                'id'        => (int) ($r['id'] ?? 0),
+                'name'      => $r['name'] ?? '',
+                'parent_id' => (int) ($r['parent_id'] ?? 0),
+            ];
+        }, $cats ?: []),
+        'locations' => array_map(function ($r) {
+            return [
+                'id'        => (int) ($r['id'] ?? 0),
+                'name'      => $r['name'] ?? '',
+                'parent_id' => (int) ($r['parent_id'] ?? 0),
+            ];
+        }, $locs ?: []),
+    ];
+
+    wp_cache_set('glpi_dict_v1', $data, 'glpi', 5 * MINUTE_IN_SECONDS);
+    if (defined('WP_DEBUG') && WP_DEBUG) {
+        error_log('gexe_get_dicts cache miss cats=' . count($data['categories']) . ' locs=' . count($data['locations']));
+    }
+
+    wp_send_json(array_merge(['ok' => true], $data));
+}

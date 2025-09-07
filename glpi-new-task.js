@@ -11,6 +11,7 @@
   let loadingPromise = null;
   let loadSeq = 0;
   window.__gexeFormDataLoading = null;
+  let dictCache = null;
 
   let successModal = null;
   let successTimer = null;
@@ -27,9 +28,9 @@
         <button type="button" class="gnt-close" aria-label="Закрыть">×</button>
       </div>
         <div class="gnt-body">
-          <div class="glpi-form-loader" role="status" aria-live="polite" hidden></div>
+          <div class="gexe-dict-status" role="status" aria-live="polite" hidden></div>
           <label for="gnt-name" class="gnt-label">Тема</label>
-          <input id="gnt-name" type="text" class="gnt-input" />
+          <textarea id="gnt-name" class="gnt-textarea"></textarea>
           <div id="gnt-name-err" class="gnt-field-error" hidden></div>
           <label for="gnt-content" class="gnt-label">Описание</label>
           <textarea id="gnt-content" class="gnt-textarea"></textarea>
@@ -63,7 +64,7 @@
           </div>
         </div>
         <div class="gnt-footer">
-          <button type="button" class="gnt-submit">Создать</button>
+          <button type="button" class="gnt-submit">Создать заявку</button>
         </div>
       </div>
     `;
@@ -119,34 +120,32 @@
   }
 
   function showLoading(){
-    const box = modal.querySelector('.glpi-form-loader');
+    const box = modal.querySelector('.gexe-dict-status');
     if (!box) return;
-    box.innerHTML = '<span class="spinner"></span><span>Загружаем справочники…</span>';
+    box.innerHTML = '<span class="spinner"></span><span>Загрузка справочников…</span>';
     box.hidden = false;
   }
 
-  function hideLoader(){
-    const box = modal.querySelector('.glpi-form-loader');
+  function hideStatus(){
+    const box = modal.querySelector('.gexe-dict-status');
     if (!box) return;
     box.hidden = true;
     box.innerHTML = '';
   }
 
-  function showError(message){
-    const box = modal.querySelector('.glpi-form-loader');
+  function showError(message, retry){
+    const box = modal.querySelector('.gexe-dict-status');
     if (!box) return;
-    const msg = 'Не удалось загрузить справочники категорий и местоположений. ' + (message || 'Попробуйте ещё раз.');
-    box.innerHTML = '<span class="error">' + msg + '</span><button type="button" class="gnt-retry">Повторить</button>';
+    box.innerHTML = '<span class="error">' + message + '</span>' + (retry ? '<button type="button" class="gnt-retry">Повторить</button>' : '');
     box.hidden = false;
-    const btn = box.querySelector('.gnt-retry');
-    btn.addEventListener('click', function(){
-      hideLoader();
-      window.dispatchEvent(new CustomEvent('gexe:newtask:retry'));
-    });
+    if (retry) {
+      const btn = box.querySelector('.gnt-retry');
+      if (btn) btn.addEventListener('click', retry);
+    }
   }
 
   function showSubmitError(message){
-    const box = modal.querySelector('.glpi-form-loader');
+    const box = modal.querySelector('.gexe-dict-status');
     if (!box) return;
     box.innerHTML = '<span class="error">' + (message || 'Ошибка создания заявки') + '</span>';
     box.hidden = false;
@@ -191,15 +190,82 @@
     });
   }
 
-  function fetchFormData(){
-    return Promise.resolve({ ok: true, categories: [], locations: [], executors: [] });
+  function fetchDicts(force){
+    const now = Date.now();
+    if (!force && dictCache && (now - dictCache.ts < 5 * 60 * 1000)) {
+      return Promise.resolve({ ok: true, categories: dictCache.data.categories, locations: dictCache.data.locations });
+    }
+    if (!gexeAjax || !gexeAjax.url) {
+      return Promise.resolve({ ok: false, error: 'network_error' });
+    }
+    const fd = new FormData();
+    fd.append('action', 'gexe_get_dicts');
+    if (gexeAjax.nonce) fd.append('nonce', gexeAjax.nonce);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 10000);
+    return fetch(gexeAjax.url, { method: 'POST', body: fd, signal: controller.signal })
+      .then(r => r.json().then(data => ({ status: r.status, data: data })))
+      .then(resp => {
+        if (resp.status === 200 && resp.data && resp.data.ok) {
+          dictCache = { ts: now, data: resp.data };
+          return { ok: true, categories: resp.data.categories, locations: resp.data.locations };
+        }
+        if (resp.status === 401) {
+          return { ok: false, error: 'unauthorized' };
+        }
+        return { ok: false, error: resp.data && resp.data.error ? resp.data.error : 'dict_fetch_failed' };
+      })
+      .catch(err => {
+        if (err.name === 'AbortError') return { ok: false, error: 'timeout' };
+        return { ok: false, error: 'network_error' };
+      })
+      .finally(() => clearTimeout(timer));
+  }
+
+  function buildPaths(list){
+    const map = {};
+    list.forEach(it => { map[it.id] = it; });
+    const make = (it) => {
+      const parts = [it.name];
+      let pid = it.parent_id;
+      while (pid && map[pid]) { parts.unshift(map[pid].name); pid = map[pid].parent_id; }
+      return parts.join(' > ');
+    };
+    list.forEach(it => { it.path = make(it); });
+    return list;
+  }
+
+  function startDictLoad(force){
+    const now = Date.now();
+    if (!force && dictCache && (now - dictCache.ts < 5 * 60 * 1000)) {
+      fillDropdowns({ categories: dictCache.data.categories, locations: dictCache.data.locations, executors: gexeAjax.assignees || [] });
+      lockForm(false);
+      hideStatus();
+      return;
+    }
+    lockForm(true);
+    showLoading();
+    fetchDicts(force).then(res => {
+      if (res.ok) {
+        res.categories = buildPaths(res.categories || []);
+        res.locations = buildPaths(res.locations || []);
+        fillDropdowns({ categories: res.categories, locations: res.locations, executors: gexeAjax.assignees || [] });
+        hideStatus();
+        lockForm(false);
+      } else {
+        let msg = 'Не удалось загрузить справочники. Повторите попытку.';
+        if (res.error === 'timeout') msg = 'Справочники загружаются слишком долго. Нажмите «Повторить».';
+        if (res.error === 'unauthorized') msg = 'Сессия истекла. Войдите в систему и попробуйте снова.';
+        showError(msg, () => startDictLoad(true));
+      }
+    });
   }
 
   function open(){
     buildModal();
     modal.classList.add('open');
     document.body.classList.add('glpi-modal-open');
-    lockForm(false);
+    startDictLoad(false);
     updatePaths();
   }
 
@@ -439,6 +505,7 @@
     const makeBody = () => 'action=gexe_create_ticket&nonce='+encodeURIComponent(gexeAjax.nonce)+'&payload='+encodeURIComponent(JSON.stringify(payload));
     const btn = modal.querySelector('.gnt-submit');
     btn.disabled = true;
+    btn.classList.add('is-loading');
     const send = (retry) => {
       return fetch(gexeAjax.url, {
         method: 'POST',
@@ -468,7 +535,7 @@
     }).catch(err=>{
       logClientError((err && err.code ? err.code + ': ' : '') + (err && err.message ? err.message : String(err)));
       showSubmitError(err && err.message ? err.message : 'Ошибка отправки');
-    }).finally(()=>{btn.disabled = false;});
+    }).finally(()=>{btn.disabled = false; btn.classList.remove('is-loading');});
   }
 
   function updatePaths(){

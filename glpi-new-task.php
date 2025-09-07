@@ -20,7 +20,7 @@ add_action('wp_enqueue_scripts', function () {
 
     $data = [
         'url'          => admin_url('admin-ajax.php'),
-        'nonce'        => wp_create_nonce('glpi_new_task'),
+        'nonce'        => wp_create_nonce('gexe_actions'),
         'user_glpi_id' => (int) gexe_get_current_glpi_uid(),
         'assignees'    => function_exists('gexe_get_assignee_options') ? gexe_get_assignee_options() : [],
     ];
@@ -29,7 +29,7 @@ add_action('wp_enqueue_scripts', function () {
 
 /** Verify AJAX nonce. */
 function glpi_nt_verify_nonce() {
-    if (!check_ajax_referer('glpi_new_task', 'nonce', false)) {
+    if (!check_ajax_referer('gexe_actions', 'nonce', false)) {
         wp_send_json(['ok' => false, 'code' => 'csrf']);
     }
 }
