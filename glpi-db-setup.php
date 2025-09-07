@@ -250,62 +250,6 @@ function glpi_db_get_categories() {
 }
 
 /**
- * Fetch list of executors (users).
- *
- * @return array<array{glpi_user_id:int,realname:string,firstname:string}>
- */
-function glpi_db_get_executors() {
-    global $glpi_db, $wpdb;
-    $sql = $glpi_db->prepare(
-        "SELECT u.id AS glpi_user_id, u.realname, u.firstname\n"
-        . "FROM glpi_users u\n"
-        . "INNER JOIN {$wpdb->usermeta} m ON m.meta_key = %s AND CAST(m.meta_value AS UNSIGNED) = u.id\n"
-        . "INNER JOIN {$wpdb->users} w ON w.ID = m.user_id\n"
-        . "WHERE u.is_active = 1\n"
-        . "ORDER BY u.realname, u.firstname",
-        'glpi_user_id'
-    );
-    $rows = $glpi_db->get_results($sql, ARRAY_A);
-    return $rows ? $rows : [];
-}
-
-/**
- * Fetch tickets filtered by executor id.
- *
- * @param string|int $executor_id 'all' or GLPI user id
- * @param int        $current_id  current GLPI user id for permission check
- * @return array<int,array>
- */
-function glpi_db_get_tickets_by_executor($executor_id, $current_id) {
-    global $glpi_db;
-    $where_status = " t.status IN (1,2,3,4) AND t.is_deleted = 0 ";
-    $join_assignee = " LEFT JOIN glpi_tickets_users tu ON t.id = tu.tickets_id AND tu.type = 2 ";
-    if ($executor_id !== 'all') {
-        $where_status .= $glpi_db->prepare(' AND tu.users_id = %d ', (int) $executor_id);
-    }
-    $sql = "
-        SELECT  t.id, t.status, t.time_to_resolve,
-                t.name, t.content, t.date,
-                tu.users_id AS assignee_id,
-                tu_req.users_id AS author_id,
-                u.realname, u.firstname,
-                c.completename AS category_name,
-                l.completename AS location_name
-        FROM glpi_tickets t
-        $join_assignee
-        LEFT JOIN glpi_tickets_users tu_req ON t.id = tu_req.tickets_id AND tu_req.type = 1
-        LEFT JOIN glpi_users u ON tu.users_id = u.id
-        LEFT JOIN glpi_itilcategories c ON t.itilcategories_id = c.id
-        LEFT JOIN glpi_locations l ON t.locations_id = l.id
-        WHERE $where_status
-        ORDER BY t.date DESC
-        LIMIT 500
-    ";
-    $rows = $glpi_db->get_results($sql, ARRAY_A);
-    return $rows ? $rows : [];
-}
-
-/**
  * Fetch list of available locations.
  *
  * @return array{ok:bool,code?:string,which?:string,list?:array}
@@ -351,6 +295,12 @@ function glpi_db_get_locations() {
 
     return ['ok' => true, 'code' => 'ok', 'list' => $list];
 }
+
+/**
+ * Fetch list of executors (users).
+ *
+ * @return array{ok:bool,code?:string,which?:string,list?:array}
+ */
 
 /**
  * Create ticket transaction.
