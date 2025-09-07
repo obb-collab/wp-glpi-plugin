@@ -18,11 +18,12 @@ add_action('wp_enqueue_scripts', function () {
     wp_register_script('glpi-new-task-js', plugin_dir_url(__FILE__) . 'glpi-new-task.js', [], '1.0.0', true);
     wp_enqueue_script('glpi-new-task-js');
 
-    $data = [
+$data = [
         'url'          => admin_url('admin-ajax.php'),
         'nonce'        => wp_create_nonce('gexe_actions'),
         'user_glpi_id' => (int) gexe_get_current_glpi_uid(),
         'assignees'    => function_exists('gexe_get_assignee_options') ? gexe_get_assignee_options() : [],
+        'debug'        => defined('WP_GLPI_DEBUG') && WP_GLPI_DEBUG,
     ];
     wp_localize_script('glpi-new-task-js', 'glpiAjax', $data);
 });
@@ -30,147 +31,170 @@ add_action('wp_enqueue_scripts', function () {
 /** Verify AJAX nonce. */
 function glpi_nt_verify_nonce() {
     if (!check_ajax_referer('gexe_actions', 'nonce', false)) {
-        wp_send_json(['ok' => false, 'code' => 'csrf']);
+        wp_send_json_error([
+            'error' => [
+                'type'    => 'SECURITY',
+                'scope'   => 'all',
+                'code'    => 'NO_CSRF',
+                'message' => 'Ошибка безопасности запроса',
+            ]
+        ]);
     }
 }
 
 // -------- Dictionaries --------
+/* legacy loader (rollback)
 add_action('wp_ajax_glpi_get_categories', 'glpi_ajax_get_categories');
-function glpi_ajax_get_categories() {
-    glpi_nt_verify_nonce();
-    if (!is_user_logged_in()) {
-        wp_send_json(['ok' => false, 'error' => 'not_logged_in']);
-    }
-    $map = gexe_require_glpi_user(get_current_user_id());
-    if (!$map['ok']) {
-        wp_send_json(['ok' => false, 'error' => 'not_mapped']);
-    }
-    global $glpi_db;
-    $entity_id = (int)$glpi_db->get_var($glpi_db->prepare(
-        'SELECT entities_id FROM glpi_users WHERE id=%d AND is_deleted=0',
-        $map['id']
-    ));
-    if ($glpi_db->last_error) {
-        error_log('[wp-glpi new-task catalogs] categories SQL error: ' . $glpi_db->last_error);
-        wp_send_json(['ok' => false, 'error' => 'sql', 'which' => 'categories', 'sql' => $glpi_db->last_error]);
-    }
-    if ($entity_id <= 0) {
-        wp_send_json(['ok' => false, 'error' => 'entity_access']);
-    }
-
-    $res = glpi_db_get_categories($entity_id);
-    if (!$res['ok']) {
-        if ($res['code'] === 'dict_failed') {
-            $err = [
-                'ok'   => false,
-                'error'=> 'sql',
-                'which'=> 'categories'
-            ];
-            if ($glpi_db->last_error) {
-                $err['sql'] = $glpi_db->last_error;
-                error_log('[wp-glpi new-task catalogs] categories SQL error: ' . $glpi_db->last_error);
-            }
-            wp_send_json($err);
-        }
-        if ($res['code'] === 'dict_empty') {
-            wp_send_json(['ok' => false, 'error' => 'empty', 'which' => 'categories']);
-        }
-    }
-    wp_send_json(['ok' => true, 'list' => $res['list']]);
-}
+function glpi_ajax_get_categories() { old implementation }
 
 add_action('wp_ajax_glpi_get_locations', 'glpi_ajax_get_locations');
-function glpi_ajax_get_locations() {
-    glpi_nt_verify_nonce();
-    if (!is_user_logged_in()) {
-        wp_send_json(['ok' => false, 'error' => 'not_logged_in']);
-    }
-    $map = gexe_require_glpi_user(get_current_user_id());
-    if (!$map['ok']) {
-        wp_send_json(['ok' => false, 'error' => 'not_mapped']);
-    }
-    global $glpi_db;
-    $res = glpi_db_get_locations();
-    if (!$res['ok']) {
-        if ($res['code'] === 'dict_failed') {
-            $err = [
-                'ok'   => false,
-                'error'=> 'sql',
-                'which'=> 'locations'
-            ];
-            if ($glpi_db->last_error) {
-                $err['sql'] = $glpi_db->last_error;
-                error_log('[wp-glpi new-task catalogs] locations SQL error: ' . $glpi_db->last_error);
-            }
-            wp_send_json($err);
-        }
-        if ($res['code'] === 'dict_empty') {
-            wp_send_json(['ok' => false, 'error' => 'empty', 'which' => 'locations']);
-        }
-    }
-    wp_send_json(['ok' => true, 'list' => $res['list']]);
-}
+function glpi_ajax_get_locations() { old implementation }
 
 add_action('wp_ajax_glpi_get_executors', 'glpi_ajax_get_executors');
-function glpi_ajax_get_executors() {
-    glpi_nt_verify_nonce();
-    if (!is_user_logged_in()) {
-        wp_send_json(['ok' => false, 'error' => 'not_logged_in']);
+function glpi_ajax_get_executors() { old implementation }
+
+function glpi_db_get_executors() { old implementation }
+*/
+
+add_action('wp_ajax_glpi_load_dicts', 'glpi_ajax_load_dicts');
+
+class CatalogEmpty extends Exception {
+    public $scope;
+    public function __construct($scope) {
+        $this->scope = $scope;
+        parent::__construct($scope);
     }
-    $map = gexe_require_glpi_user(get_current_user_id());
-    if (!$map['ok']) {
-        wp_send_json(['ok' => false, 'error' => 'not_mapped']);
-    }
-    global $glpi_db;
-    $res = glpi_db_get_executors();
-    if (!$res['ok']) {
-        if ($res['code'] === 'dict_failed') {
-            $err = [
-                'ok'   => false,
-                'error'=> 'sql',
-                'which'=> 'executors'
-            ];
-            if ($glpi_db->last_error) {
-                $err['sql'] = $glpi_db->last_error;
-                error_log('[wp-glpi new-task catalogs] executors SQL error: ' . $glpi_db->last_error);
-            }
-            wp_send_json($err);
-        }
-        if ($res['code'] === 'dict_empty') {
-            wp_send_json(['ok' => false, 'error' => 'empty', 'which' => 'executors']);
-        }
-    }
-    wp_send_json(['ok' => true, 'list' => $res['list']]);
 }
 
-/**
- * Fetch list of available executors.
- *
- * @return array{ok:bool,code?:string,which?:string,list?:array<int,array{id:int,name:string}>}
- */
-function glpi_db_get_executors() {
-    global $glpi_db;
-
-    $rows = $glpi_db->get_results(
-        "SELECT id, name FROM glpi_users WHERE is_deleted=0 ORDER BY name",
+function glpi_get_wp_executors(): array {
+    global $wpdb;
+    $um = $wpdb->usermeta;
+    $u  = $wpdb->users;
+    $rows = $wpdb->get_results(
+        "SELECT u.ID AS user_id, u.display_name, um.meta_value AS glpi_user_id FROM $u u INNER JOIN $um um ON um.user_id = u.ID AND um.meta_key = 'glpi_user_id' AND um.meta_value <> '' ORDER BY u.display_name ASC",
         ARRAY_A
     );
-    if ($glpi_db->last_error) {
-        return ['ok' => false, 'code' => 'dict_failed', 'which' => 'executors'];
-    }
     if (!$rows) {
-        return ['ok' => false, 'code' => 'dict_empty', 'which' => 'executors'];
+        return [];
     }
-
-    $list = array_map(function ($r) {
+    return array_map(function ($r) {
         return [
-            'id'           => (int) ($r['id'] ?? 0),
-            'label'        => $r['name'] ?? '',
-            'glpi_user_id' => (int) ($r['id'] ?? 0),
+            'user_id'      => (int) ($r['user_id'] ?? 0),
+            'display_name' => $r['display_name'] ?? '',
+            'glpi_user_id' => (int) ($r['glpi_user_id'] ?? 0),
         ];
     }, $rows);
+}
 
-    return ['ok' => true, 'code' => 'ok', 'list' => $list];
+function glpi_ajax_load_dicts() {
+    glpi_nt_verify_nonce();
+    if (!is_user_logged_in()) {
+        wp_send_json_error([
+            'error' => [
+                'type'    => 'SECURITY',
+                'scope'   => 'all',
+                'code'    => 'NO_AUTH',
+                'message' => 'Пользователь не авторизован',
+            ]
+        ]);
+    }
+
+    $user_id = get_current_user_id();
+    $glpi_user_id = (int) get_user_meta($user_id, 'glpi_user_id', true);
+    if ($glpi_user_id <= 0) {
+        wp_send_json_error([
+            'error' => [
+                'type'    => 'MAPPING',
+                'scope'   => 'executors',
+                'code'    => 'NO_MAPPING',
+                'message' => 'Ваш профиль не привязан к GLPI пользователю',
+            ]
+        ]);
+    }
+
+    try {
+        $pdo = glpi_get_pdo();
+        $pdo->beginTransaction();
+
+        $stmt = $pdo->prepare('SELECT entities_id FROM glpi_users WHERE id = :id AND is_deleted = 0');
+        $stmt->execute([':id' => $glpi_user_id]);
+        $entity_id = (int) $stmt->fetchColumn();
+        if ($entity_id <= 0) {
+            throw new Exception('no_entity');
+        }
+
+        $scope = 'categories';
+        $stmtC = $pdo->prepare("SELECT c.id, c.name, c.completename, c.level, c.ancestors_cache FROM glpi_itilcategories c WHERE c.is_deleted = 0 AND c.is_helpdeskvisible = 1 AND (c.entities_id = :entity_id OR c.is_recursive = 1) ORDER BY c.completename ASC");
+        $stmtC->execute([':entity_id' => $entity_id]);
+        $categories = $stmtC->fetchAll();
+        if (!$categories) {
+            throw new CatalogEmpty('categories');
+        }
+
+        $scope = 'locations';
+        $stmtL = $pdo->prepare("SELECT l.id, l.name, l.completename FROM glpi_locations l WHERE l.is_deleted = 0 ORDER BY l.completename ASC");
+        $stmtL->execute();
+        $locations = $stmtL->fetchAll();
+        if (!$locations) {
+            throw new CatalogEmpty('locations');
+        }
+
+        $scope = 'executors';
+        $executors = glpi_get_wp_executors();
+        if (!$executors) {
+            throw new CatalogEmpty('executors');
+        }
+
+        $pdo->commit();
+        wp_send_json_success([
+            'categories' => $categories,
+            'locations'  => $locations,
+            'executors'  => $executors,
+        ]);
+    } catch (CatalogEmpty $e) {
+        if (isset($pdo) && $pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        wp_send_json_error([
+            'error' => [
+                'type'    => 'EMPTY',
+                'scope'   => $e->scope,
+                'code'    => 'EMPTY_CATALOG',
+                'message' => 'Справочник «' . ($e->scope === 'categories' ? 'Категории' : ($e->scope === 'locations' ? 'Местоположения' : 'Исполнители')) . '» пуст',
+            ]
+        ]);
+    } catch (PDOException $e) {
+        if (isset($pdo) && $pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        error_log('[wp-glpi:new-task] [' . ($scope ?? 'all') . '] ' . $e->getMessage());
+        wp_send_json_error([
+            'error' => [
+                'type'    => 'SQL',
+                'scope'   => $scope ?? 'all',
+                'code'    => $e->getCode(),
+                'message' => 'Ошибка SQL при загрузке ' . ($scope === 'categories' ? 'категорий' : ($scope === 'locations' ? 'местоположений' : 'исполнителей')),
+                'details' => WP_GLPI_DEBUG ? $e->getMessage() : null,
+            ]
+        ]);
+    } catch (Exception $e) {
+        if (isset($pdo) && $pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        $msg = $e->getMessage() === 'no_entity' ? 'Нет доступа к сущности' : 'Не удалось загрузить справочники';
+        $code = $e->getMessage() === 'no_entity' ? 'NO_ENTITY' : 'UNHANDLED';
+        $type = $e->getMessage() === 'no_entity' ? 'ENTITY' : 'UNKNOWN';
+        error_log('[wp-glpi:new-task] [all] ' . $e->getMessage());
+        wp_send_json_error([
+            'error' => [
+                'type'    => $type,
+                'scope'   => 'all',
+                'code'    => $code,
+                'message' => $msg,
+                'details' => WP_GLPI_DEBUG ? $e->getMessage() : null,
+            ]
+        ]);
+    }
 }
 
 // -------- Create ticket --------
@@ -220,4 +244,3 @@ function glpi_ajax_create_ticket() {
     }
     wp_send_json($res);
 }
-

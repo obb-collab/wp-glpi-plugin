@@ -11,6 +11,24 @@ if (!isset($glpi_db) || !($glpi_db instanceof wpdb)) {
     );
 }
 
+if (!defined('WP_GLPI_DEBUG')) {
+    define('WP_GLPI_DEBUG', false);
+}
+
+function glpi_get_pdo(): PDO {
+    static $pdo = null;
+    if ($pdo instanceof PDO) {
+        return $pdo;
+    }
+    $dsn = 'mysql:host=192.168.100.12;dbname=glpi;charset=utf8mb4';
+    $pdo = new PDO($dsn, 'wp_glpi', 'xapetVD4OWZqw8f', [
+        PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
+        PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+        PDO::ATTR_TIMEOUT            => 5,
+    ]);
+    return $pdo;
+}
+
 define('GEXE_TRIGGERS_VERSION', '2');
 
 define('GEXE_GLPI_API_URL', 'http://192.168.100.12/glpi/apirest.php');
