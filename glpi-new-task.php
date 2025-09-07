@@ -11,6 +11,7 @@
 if (!defined('ABSPATH')) exit;
 
 require_once __DIR__ . '/glpi-utils.php';
+require_once __DIR__ . '/includes/executors-cache.php';
 require_once __DIR__ . '/includes/glpi-form-data.php';
 require_once __DIR__ . '/includes/glpi-auth-map.php';
 
