@@ -144,8 +144,9 @@ body {
  .glpi-header-row{position:sticky;top:0;z-index:100;display:flex;flex-direction:column;gap:16px;padding:16px 24px;background:#111827;}
  .glpi-top-row{display:flex;align-items:center;gap:16px;}
  .glpi-top-left{display:flex;align-items:center;gap:16px;}
- .glpi-status-row{display:flex;justify-content:center;}
- .glpi-status-blocks{display:flex;flex-wrap:nowrap;gap:12px;}
+ .glpi-topbar-center{max-width:1200px;margin:0 auto;display:flex;flex-direction:column;gap:16px;padding:0 16px;box-sizing:border-box;}
+ .glpi-status-row,.glpi-category-row{display:flex;justify-content:center;flex-wrap:wrap;gap:16px;}
+.glpi-status-blocks{display:flex;flex-wrap:nowrap;gap:12px;}
  .glpi-status-block,
  .glpi-newfilter-block{display:flex;flex-direction:column;justify-content:center;align-items:center;min-width:120px;min-height:72px;padding:12px 14px;border-radius:12px;background:#1f2937;color:#e5e7eb;box-shadow:0 2px 8px rgba(0,0,0,.25);cursor:pointer;user-select:none;transition:transform .08s ease, background-color .15s ease, box-shadow .15s ease;}
  .glpi-status-block .status-count,
@@ -206,22 +207,17 @@ button.disabled{opacity:.5;cursor:not-allowed;}
 @keyframes gnt-spin{to{transform:rotate(360deg);}}
 
 /* Инлайн-категории */
-.glpi-categories-inline{
+ .glpi-categories-inline{
   display:flex;
   flex-wrap:wrap;
   gap:8px;
-  margin:8px 0;
+  margin:0;
   padding:12px;
   background:#0f172a;
   border:1px solid #334155;
   border-radius:12px;
   box-shadow:0 2px 4px rgba(0,0,0,.3);
-  margin-bottom:var(--glpi-gap-lg);
-}
-
-@media (min-width:1280px){
-  .glpi-categories-inline{margin-bottom:var(--glpi-gap-xl);}
-}
+ }
 .glpi-cat-chip{display:flex;align-items:center;gap:6px;padding:6px 10px;border-radius:8px;background:#1e293b;color:#e5e7eb;font-size:14px;cursor:pointer;white-space:nowrap;}
 .glpi-cat-chip:hover{box-shadow:0 0 0 1px #475569;}
 .glpi-cat-chip.active{background:#facc15;color:#1e1e1e;font-weight:700;}
@@ -231,7 +227,7 @@ button.disabled{opacity:.5;cursor:not-allowed;}
 @media (max-width:768px){
   .glpi-top-row{flex-direction:column;align-items:stretch;}
   .glpi-top-left{width:100%;justify-content:flex-start;}
-  .glpi-status-row{justify-content:flex-start;}
+  .glpi-status-row,.glpi-category-row{justify-content:flex-start;}
   .glpi-search-input{max-width:100%;}
 }
 

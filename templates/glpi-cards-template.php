@@ -127,7 +127,6 @@ function gexe_cat_slug($leaf) {
     <?php include __DIR__ . '/glpi-header.php'; ?>
   </div>
 
-  <div class="glpi-categories-inline" id="glpi-categories-inline" aria-label="Категории" hidden></div>
 
   <script>
     // Предзагруженные категории (slug, label, count)
