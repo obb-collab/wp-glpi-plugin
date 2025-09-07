@@ -163,11 +163,17 @@ body {
 .glpi-search-input:focus{outline:none;border-color:#facc15;box-shadow:0 0 0 2px rgba(250,204,21,.3);}
 .gexe-greeting{color:#facc15;font-weight:700;margin-bottom:12px;}
 @media (max-width:480px){.gexe-greeting{margin-bottom:8px;}}
- .glpi-newtask-btn{display:flex;align-items:center;gap:8px;padding:10px 16px;border-radius:6px;background:#1f2937;color:#e5e7eb;border:1px solid #334155;cursor:pointer;transition:background-color .15s ease;white-space:nowrap;}
- .glpi-newtask-btn:hover{background:#273447;}
+.glpi-newtask-btn{display:flex;align-items:center;gap:8px;padding:10px 16px;border-radius:6px;background:#1f2937;color:#e5e7eb;border:1px solid #334155;cursor:pointer;transition:background-color .15s ease;white-space:nowrap;}
+.glpi-newtask-btn:hover{background:#273447;}
 .glpi-category-block{position:relative;}
 .glpi-cat-toggle{display:flex;align-items:center;gap:8px;padding:10px 16px;border-radius:6px;background:#1f2937;color:#e5e7eb;border:1px solid #334155;cursor:pointer;transition:background-color .15s ease;}
 .glpi-cat-toggle:hover{background:#273447;}
+
+/* Inline statuses for "New ticket" modal */
+.gnt-inline-status{font-size:12px;margin-top:4px;color:#94a3b8;}
+.gnt-inline-status.loading{color:#94a3b8;}
+.gnt-inline-status.error{color:#f87171;}
+.gnt-inline-status.empty{color:#94a3b8;}
 
 /* Инлайн-категории */
 .glpi-categories-inline{

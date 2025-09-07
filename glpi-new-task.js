@@ -40,6 +40,7 @@
               <input id="gnt-category" list="gnt-category-list" class="gnt-input" />
               <datalist id="gnt-category-list"></datalist>
               <div id="gnt-category-path" class="gnt-path"></div>
+              <div id="gnt-category-status" class="gnt-inline-status"></div>
               <div id="gnt-category-err" class="gnt-field-error" hidden></div>
             </div>
             <div>
@@ -47,17 +48,16 @@
               <input id="gnt-location" list="gnt-location-list" class="gnt-input" />
               <datalist id="gnt-location-list"></datalist>
               <div id="gnt-location-path" class="gnt-path"></div>
+              <div id="gnt-location-status" class="gnt-inline-status"></div>
               <div id="gnt-location-err" class="gnt-field-error" hidden></div>
             </div>
           </div>
-          <label for="gnt-due" class="gnt-label">Срок</label>
-          <input id="gnt-due" type="datetime-local" class="gnt-input" />
-          <div id="gnt-due-err" class="gnt-field-error" hidden></div>
           <div class="gnt-row gnt-assign-row">
             <label class="gnt-check"><input type="checkbox" id="gnt-assign-me" checked /> Я исполнитель</label>
             <div>
               <label for="gnt-assignee" class="gnt-label">Исполнитель</label>
               <select id="gnt-assignee" class="gnt-select" disabled><option value="">—</option></select>
+              <div id="gnt-assignee-status" class="gnt-inline-status"></div>
               <div id="gnt-assignee-err" class="gnt-field-error" hidden></div>
             </div>
           </div>
@@ -90,7 +90,7 @@
         assigneeSel.value = '';
       }
     });
-    [['#gnt-name','name'],['#gnt-content','content'],['#gnt-category','category'],['#gnt-location','location'],['#gnt-assignee','assignee'],['#gnt-due','due']].forEach(function(pair){
+    [['#gnt-name','name'],['#gnt-content','content'],['#gnt-category','category'],['#gnt-location','location'],['#gnt-assignee','assignee']].forEach(function(pair){
       const sel = pair[0];
       const field = pair[1];
       modal.querySelector(sel).addEventListener('input', function(){
@@ -105,7 +105,7 @@
     if (!dialog) return;
     if (state) { dialog.setAttribute('aria-busy', 'true'); }
     else { dialog.removeAttribute('aria-busy'); }
-    ['#gnt-name','#gnt-content','#gnt-category','#gnt-location','#gnt-due','#gnt-assign-me','#gnt-assignee','.gnt-submit'].forEach(function(sel){
+    ['#gnt-name','#gnt-content','#gnt-category','#gnt-location','#gnt-assign-me','#gnt-assignee','.gnt-submit'].forEach(function(sel){
       const el = modal.querySelector(sel);
       if (!el) return;
       if (state) {
@@ -215,7 +215,6 @@
     modal.querySelector('#gnt-content').value = '';
     modal.querySelector('#gnt-category').value = '';
     modal.querySelector('#gnt-location').value = '';
-    modal.querySelector('#gnt-due').value = '';
     modal.querySelector('#gnt-category-path').textContent = '';
     modal.querySelector('#gnt-location-path').textContent = '';
     const assignChk = modal.querySelector('#gnt-assign-me');
@@ -223,7 +222,7 @@
     assignChk.checked = true;
     assigneeSel.value = '';
     assigneeSel.disabled = true;
-    ['name','content','category','location','assignee','due'].forEach(function(f){ setFieldError(f); });
+    ['name','content','category','location','assignee'].forEach(function(f){ setFieldError(f); });
     updatePaths();
   }
 
@@ -415,7 +414,6 @@
     const locInput = modal.querySelector('#gnt-location');
     const catId = getSelectedId('gnt-category-list', catInput.value);
     const locId = getSelectedId('gnt-location-list', locInput.value);
-    const dueVal = modal.querySelector('#gnt-due').value.trim();
     const assignMe = modal.querySelector('#gnt-assign-me').checked;
     const assigneeSel = modal.querySelector('#gnt-assignee');
     const assigneeId = assigneeSel.disabled ? 0 : parseInt(assigneeSel.value,10) || 0;
@@ -424,7 +422,6 @@
     if (!content) errors.content = 'Обязательное поле';
     if (!catId) errors.category = 'Обязательное поле';
     if (!locId) errors.location = 'Обязательное поле';
-    if (!dueVal) errors.due = 'Обязательное поле';
     if (!assignMe && !assigneeId) errors.assignee = 'Обязательное поле';
     if (Object.keys(errors).length) {
       Object.keys(errors).forEach(function(f){ setFieldError(f, errors[f]); });
@@ -436,7 +433,6 @@
       content: content,
       category_id: catId,
       location_id: locId,
-      due_date: dueVal,
       assign_me: assignMe ? 1 : 0,
       assignee_id: assigneeId
     };
