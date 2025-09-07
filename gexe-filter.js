@@ -17,7 +17,7 @@
 
   const ERROR_MAP = {
     NONCE_EXPIRED: 'Сессия истекла. Обновите страницу.',
-    NO_GLPI_USER: 'Не найден профиль исполнителя GLPI. Обратитесь к администратору.',
+    NO_GLPI_USER: 'Не найден профиль GLPI. Укажите числовой users.id в своём профиле WordPress (поле “Ключ пользователя GLPI”).',
     NO_PERMISSION: 'У вас нет прав для этой заявки.',
     EMPTY_CONTENT: 'Введите текст комментария.',
     ALREADY_ACCEPTED: 'Уже принято в работу.',
@@ -158,10 +158,6 @@
       if (show) showError('SESSION_EXPIRED');
       return { ok: false, code: 'SESSION_EXPIRED' };
     }
-    if (!ajax.user_glpi_id || Number(ajax.user_glpi_id) <= 0) {
-      if (show) showError('no_glpi_id_for_current_user');
-      return { ok: false, code: 'no_glpi_id_for_current_user' };
-    }
     return { ok: true };
   }
 
@@ -192,74 +188,6 @@
     }
   }
 
-  function blockActions(code) {
-    $$('.gexe-action-btn').forEach(btn => markPreflight(btn, code));
-  }
-  function unblockActions() {
-    $$('.gexe-action-btn').forEach(btn => clearPreflight(btn));
-  }
-
-  function showMappingWarning() {
-    let wrap = document.getElementById('gexe-mapping-warning');
-    if (!wrap) {
-      wrap = document.createElement('div');
-      wrap.id = 'gexe-mapping-warning';
-      wrap.style.position = 'fixed';
-      wrap.style.left = '0';
-      wrap.style.right = '0';
-      wrap.style.top = '0';
-      wrap.style.zIndex = '9999';
-      wrap.style.background = '#fdecea';
-      wrap.style.padding = '5px 10px';
-      wrap.style.textAlign = 'center';
-      wrap.style.boxShadow = '0 2px 5px rgba(0,0,0,0.1)';
-      wrap.innerHTML = '<span class="gexe-map-msg">Не найден профиль GLPI. Укажите users.id в профиле WP.</span> '
-        + '<button type="button" class="gexe-map-check glpi-act">Проверить</button>'
-        + '<span class="gexe-map-resp"></span>';
-      document.body.prepend(wrap);
-      const btn = wrap.querySelector('.gexe-map-check');
-      if (btn) btn.addEventListener('click', checkMapping);
-    } else {
-      wrap.style.display = 'block';
-    }
-  }
-
-  function hideMappingWarning() {
-    const wrap = document.getElementById('gexe-mapping-warning');
-    if (wrap) wrap.remove();
-  }
-
-  async function checkMapping() {
-    const btn = document.querySelector('#gexe-mapping-warning .gexe-map-check');
-    if (btn) btn.disabled = true;
-    const ajax = window.gexeAjax || window.glpiAjax;
-    const resp = document.querySelector('#gexe-mapping-warning .gexe-map-resp');
-    const data = await ajaxPost({ action: 'gexe_check_mapping' });
-    if (btn) btn.disabled = false;
-    if (data.ok && data.data) {
-      const info = data.data;
-      if (resp) {
-        resp.textContent = ' wp: ' + info.wp_user_id + ' / key: ' + info.glpi_user_key + ' / glpi: ' + info.glpi_user_id + ' / source: ' + info.source;
-      }
-      ajax.user_glpi_id = Number(info.glpi_user_id) || 0;
-      if (ajax.user_glpi_id > 0) {
-        hideMappingWarning();
-        unblockActions();
-      } else {
-        blockActions('NO_GLPI_USER');
-      }
-    } else if (resp) {
-      resp.textContent = ' Проверка не удалась';
-    }
-  }
-
-  function initMappingPreflight() {
-    const ajax = window.gexeAjax || window.glpiAjax;
-    if (!ajax || !ajax.user_glpi_id || Number(ajax.user_glpi_id) <= 0) {
-      showMappingWarning();
-      blockActions('NO_GLPI_USER');
-    }
-  }
 
   function markAccepted(ticketId, btn, payload) {
     if (!btn) return;
@@ -1376,11 +1304,7 @@
     return selectedCategories.includes(cat);
   }
   function cardMatchesExecutor(card) {
-    const exec = document.querySelector('.executor-filter-btn.active');
-    const v = exec ? (exec.getAttribute('data-exec') || 'all') : 'all';
-    if (v === 'all') return true;
-    const slugs = (card.getAttribute('data-executors') || '').toLowerCase().split(',').map(s => s.trim()).filter(Boolean);
-    return slugs.includes(v);
+    return true;
   }
   function cardMatchesStatus(card) {
     const st = activeStatus();
@@ -1505,7 +1429,6 @@
     applyActionVisibility();
     bindCardOpen();
 
-    initMappingPreflight();
 
     bindStatusAndSearch();
     recalcStatusCounts();

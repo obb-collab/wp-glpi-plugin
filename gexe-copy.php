@@ -139,17 +139,10 @@ function gexe_glpi_cards_shortcode($atts) {
     $join_loc      = ' LEFT JOIN glpi_locations l ON t.locations_id = l.id ';
 
     $where_assignee = '';
-    $mode = 'all';
 
-    if (!$glpi_show_all && $glpi_user_key !== '') {
-        if (preg_match('~^\d+$~', $glpi_user_key)) {
-            // Жёсткая фильтрация по users_id (GLPI)
-            $mode = 'assignee_id';
-            $where_assignee = $glpi_db->prepare(' AND tu_ass.users_id = %d ', (int)$glpi_user_key);
-        } elseif (preg_match('~^[a-f0-9]{32}$~i', $glpi_user_key)) {
-            // Фильтрация по md5 от форматированного имени — выполняем далее в PHP
-            $mode = 'assignee_md5';
-        }
+    if (!$glpi_show_all && $glpi_user_key !== '' && ctype_digit($glpi_user_key)) {
+        // Жёсткая фильтрация по users_id (GLPI)
+        $where_assignee = $glpi_db->prepare(' AND tu_ass.users_id = %d ', (int) $glpi_user_key);
     }
 
     $sql = "
@@ -215,17 +208,6 @@ function gexe_glpi_cards_shortcode($atts) {
         }
     }
 
-    // ---- Фильтрация по md5, если задан этот режим ----
-    if ($mode === 'assignee_md5') {
-        $uk = strtolower($glpi_user_key);
-        $tickets = array_filter($tickets, function ($t) use ($uk) {
-            foreach ($t['executors'] as $nm) {
-                if (md5($nm) === $uk) return true;
-            }
-            return false;
-        });
-    }
-
     // ---- Статистика по статусам (для меню) ----
     $status_counts = [1 => 0, 2 => 0, 3 => 0, 4 => 0];
     foreach ($tickets as $t) {
@@ -246,15 +228,6 @@ function gexe_glpi_cards_shortcode($atts) {
             }
         }
     }
-
-    // ---- Map исполнителей (для фильтра «Категории», когда show_all = true) ----
-    $executors_map = [];
-    foreach ($tickets as $t) {
-        foreach ($t['executors'] as $e) {
-            $executors_map[$e] = md5($e);
-        }
-    }
-    ksort($executors_map, SORT_NATURAL | SORT_FLAG_CASE);
 
     // ---- Группировка по дочерним категориям (когда show_all = false) ----
     $category_counts = [];   // 'Ремонт' => 12
@@ -287,7 +260,6 @@ function gexe_glpi_cards_shortcode($atts) {
 
     // Передаём переменные в область видимости инклюда
     $GLOBALS['gexe_tickets']          = $tickets;
-    $GLOBALS['gexe_executors_map']    = $executors_map;
     $GLOBALS['gexe_status_counts']    = $status_counts;
     $GLOBALS['gexe_total_count']      = $total_count;
     $GLOBALS['gexe_show_all']         = $glpi_show_all;
@@ -316,7 +288,7 @@ function gexe_show_glpi_profile_fields($user) {
             <th><label for="glpi_user_key">Ключ пользователя GLPI</label></th>
             <td>
                 <input type="text" name="glpi_user_key" id="glpi_user_key" class="regular-text" value="<?php echo esc_attr($glpi_user_key); ?>" />
-                <p class="description">Укажите <strong>числовой users.id</strong> из GLPI (предпочтительно) или <strong>MD5 от имени исполнителя</strong> в формате «Фамилия И.».</p>
+                <p class="description">Укажите <strong>числовой users.id</strong> из GLPI.</p>
             </td>
         </tr>
         <tr>
@@ -333,12 +305,12 @@ function gexe_save_glpi_profile_fields($user_id) {
 
     if (isset($_POST['glpi_user_key'])) {
         $raw = trim((string) wp_unslash($_POST['glpi_user_key']));
-        if ($raw !== '') {
-            $raw = sanitize_text_field($raw);
-            if (preg_match('/^\d+$/', $raw)) {
-                $raw = preg_replace('/\D+/', '', $raw);
-            }
+        if ($raw === '' || !ctype_digit($raw)) {
+            delete_user_meta($user_id, 'glpi_user_key');
+            delete_user_meta($user_id, 'glpi_user_id');
+        } else {
             update_user_meta($user_id, 'glpi_user_key', $raw);
+            update_user_meta($user_id, 'glpi_user_id', (int) $raw);
         }
     }
 

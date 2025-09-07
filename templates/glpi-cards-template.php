@@ -5,7 +5,6 @@ if (!defined('ABSPATH')) exit;
  * Шаблон вывода карточек GLPI
  * Ожидает переменные в $GLOBALS:
  *  - gexe_tickets          : array
- *  - gexe_executors_map    : array (имя => md5)
  *  - gexe_status_counts    : array (status => count)
  *  - gexe_total_count      : int
  *  - gexe_show_all         : bool
@@ -13,7 +12,6 @@ if (!defined('ABSPATH')) exit;
  *  - gexe_category_slugs   : array ('Ремонт' => 'remont')
  */
 $tickets          = isset($GLOBALS['gexe_tickets'])         ? $GLOBALS['gexe_tickets']         : [];
-$executors_map    = isset($GLOBALS['gexe_executors_map'])    ? $GLOBALS['gexe_executors_map']    : [];
 $status_counts    = isset($GLOBALS['gexe_status_counts'])    ? $GLOBALS['gexe_status_counts']    : [1=>0,2=>0,3=>0,4=>0];
 $total_count      = isset($GLOBALS['gexe_total_count'])      ? $GLOBALS['gexe_total_count']      : 0;
 $show_all         = isset($GLOBALS['gexe_show_all'])         ? (bool)$GLOBALS['gexe_show_all']   : false;
@@ -195,8 +193,6 @@ function gexe_cat_slug($leaf) {
   <!-- Карточки -->
   <div class="glpi-wrapper">
     <?php foreach ($tickets as $t):
-      $slug_list     = array_map('md5', $t['executors']);
-      $slug_str      = implode(',', $slug_list);
       $assignees     = array_map('intval', $t['assignee_ids'] ?? []);
       $assignees     = array_values(array_unique($assignees, SORT_NUMERIC));
       $assignees_str = implode(',', $assignees);
@@ -244,7 +240,6 @@ function gexe_cat_slug($leaf) {
     ?>
       <div class="glpi-card"
            data-ticket-id="<?php echo intval($t['id']); ?>"
-           data-executors="<?php echo esc_attr($slug_str); ?>"
            data-assignees="<?php echo esc_attr($assignees_str); ?>"
            data-category="<?php echo esc_attr(strtolower($cat_slug)); ?>"
            data-late="<?php echo $is_late ? '1':'0'; ?>"
