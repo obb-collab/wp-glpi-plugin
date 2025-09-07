@@ -11,6 +11,8 @@ Update URI: https://github.com/obb-collab/wp-glpi-plugin
 
 if (!defined('ABSPATH')) exit;
 
+require_once __DIR__ . '/glpi-utils.php';
+
 // ----- Capabilities -----
 register_activation_hook(__FILE__, function () {
     $role = get_role('administrator');
@@ -48,6 +50,17 @@ add_action('wp_enqueue_scripts', function () {
     wp_enqueue_style('gexe-gee', plugin_dir_url(__FILE__) . 'gee.css', [], $css_ver);
     wp_enqueue_style('gexe-fa', 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css', [], '6.5.0');
     wp_enqueue_script('gexe-filter', plugin_dir_url(__FILE__) . 'gexe-filter.js', [], $js_ver, true);
+
+    wp_localize_script('gexe-filter', 'glpiAjax', [
+        'url'               => admin_url('admin-ajax.php'),
+        'nonce'             => wp_create_nonce('gexe_actions'),
+        'user_glpi_id'      => (int) gexe_get_current_glpi_uid(),
+        'current_wp_user_id'=> (int) get_current_user_id(),
+        'rest'              => esc_url_raw(rest_url('glpi/v1/')),
+        'restNonce'         => wp_create_nonce('wp_rest'),
+        'solvedStatus'      => (int) get_option('glpi_solved_status', 6),
+        'webBase'           => gexe_glpi_web_base(),
+    ]);
 });
 
 // ====== ПОДКЛЮЧЕНИЕ К БД GLPI ======
@@ -317,8 +330,18 @@ function gexe_show_glpi_profile_fields($user) {
 
 function gexe_save_glpi_profile_fields($user_id) {
     if (!current_user_can('edit_user', $user_id)) return;
-    $key = isset($_POST['glpi_user_key']) ? sanitize_text_field(wp_unslash($_POST['glpi_user_key'])) : '';
-    update_user_meta($user_id, 'glpi_user_key', $key);
+
+    if (isset($_POST['glpi_user_key'])) {
+        $raw = trim((string) wp_unslash($_POST['glpi_user_key']));
+        if ($raw !== '') {
+            $raw = sanitize_text_field($raw);
+            if (preg_match('/^\d+$/', $raw)) {
+                $raw = preg_replace('/\D+/', '', $raw);
+            }
+            update_user_meta($user_id, 'glpi_user_key', $raw);
+        }
+    }
+
     $show = isset($_POST['glpi_show_all_cards']) ? '1' : '0';
     update_user_meta($user_id, 'glpi_show_all_cards', $show);
 }

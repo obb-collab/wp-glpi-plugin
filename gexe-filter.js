@@ -164,6 +164,86 @@
     }
   }
 
+  function blockActions(code) {
+    $$('.gexe-action-btn').forEach(btn => markPreflight(btn, code));
+  }
+  function unblockActions() {
+    $$('.gexe-action-btn').forEach(btn => clearPreflight(btn));
+  }
+
+  function showMappingWarning() {
+    let wrap = document.getElementById('gexe-mapping-warning');
+    if (!wrap) {
+      wrap = document.createElement('div');
+      wrap.id = 'gexe-mapping-warning';
+      wrap.style.position = 'fixed';
+      wrap.style.left = '0';
+      wrap.style.right = '0';
+      wrap.style.bottom = '0';
+      wrap.style.zIndex = '9999';
+      wrap.style.background = '#fdecea';
+      wrap.style.padding = '10px';
+      wrap.style.textAlign = 'center';
+      wrap.style.boxShadow = '0 -2px 5px rgba(0,0,0,0.1)';
+      wrap.innerHTML = '<span class="gexe-map-msg">Не найден профиль GLPI. Укажите числовой <strong>users.id</strong> в поле “Ключ пользователя GLPI” в своём профиле WordPress (или md5 “Фамилия И.”).</span> '
+        + '<button type="button" class="gexe-map-check glpi-act">Проверить</button>'
+        + '<span class="gexe-map-resp"></span>';
+      document.body.appendChild(wrap);
+      const btn = wrap.querySelector('.gexe-map-check');
+      if (btn) btn.addEventListener('click', checkMapping);
+    } else {
+      wrap.style.display = 'block';
+    }
+  }
+
+  function hideMappingWarning() {
+    const wrap = document.getElementById('gexe-mapping-warning');
+    if (wrap) wrap.remove();
+  }
+
+  async function checkMapping() {
+    const btn = document.querySelector('#gexe-mapping-warning .gexe-map-check');
+    if (btn) btn.disabled = true;
+    const ajax = window.gexeAjax || window.glpiAjax;
+    if (!ajax || !ajax.url) return;
+    const fd = new FormData();
+    fd.append('action', 'gexe_check_mapping');
+    const nonceKey = ajax.nonce_key || 'nonce';
+    fd.append(nonceKey, ajax.nonce || '');
+    fd.append('nonce', ajax.nonce || '');
+    fd.append('_ajax_nonce', ajax.nonce || '');
+    let data = null;
+    try {
+      const res = await fetch(ajax.url, { method: 'POST', body: fd });
+      data = await res.json();
+    } catch (e) {
+      showNotice('error', 'Ошибка сети');
+    }
+    if (btn) btn.disabled = false;
+    const resp = document.querySelector('#gexe-mapping-warning .gexe-map-resp');
+    if (data && data.success && data.data) {
+      const info = data.data;
+      if (resp) {
+        resp.textContent = ' ID: ' + info.glpi_user_id + ' / key: ' + info.glpi_user_key + ' / source: ' + info.source;
+      }
+      ajax.user_glpi_id = Number(info.glpi_user_id) || 0;
+      if (ajax.user_glpi_id > 0) {
+        hideMappingWarning();
+        unblockActions();
+      }
+    } else if (resp) {
+      resp.textContent = ' Проверка не удалась';
+    }
+  }
+
+  function initMappingPreflight() {
+    const ajax = window.gexeAjax || window.glpiAjax;
+    if (!ajax || !ajax.user_glpi_id || Number(ajax.user_glpi_id) <= 0) {
+      showMappingWarning();
+      blockActions('no_glpi_id_for_current_user');
+    }
+  }
+
   function markAccepted(ticketId, btn, payload) {
     if (!btn) return;
     btn.innerHTML = '<i class="fa-solid fa-check"></i>';
@@ -1414,6 +1494,8 @@
     injectCardActionButtons();
     applyActionVisibility();
     bindCardOpen();
+
+    initMappingPreflight();
 
     bindStatusAndSearch();
     recalcStatusCounts();
