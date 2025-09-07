@@ -64,9 +64,7 @@ body {
   word-break: break-word;
   display: block;
 }
-@media (max-width:576px){
-  .glpi-topic{font-size:14px;}
-}
+/* font-size and weight remain consistent across breakpoints */
 /* Обёртка заголовка карточки */
 .ticket-card__title {
   margin: 0 8px 0 0;
@@ -77,24 +75,14 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   word-break: break-word;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
 }
 
-@media (max-width:480px){
-  .ticket-card__title{
-    -webkit-line-clamp:2;
-    line-clamp:2;
-  }
-}
-@media (min-width:481px) and (max-width:768px){
-  .ticket-card__title{
-    -webkit-line-clamp:3;
-    line-clamp:3;
-  }
-}
-@media (min-width:769px){
-  .ticket-card__title{
-    -webkit-line-clamp:unset;
-    line-clamp:unset;
+@supports not (-webkit-line-clamp: 2) {
+  .ticket-card__title {
+    max-height: calc(2 * 1.2em);
+    overflow: hidden;
   }
 }
 
@@ -104,6 +92,9 @@ body {
   flex: 1 1 auto;
   max-width: 100%;
   overflow: visible;
+  -webkit-line-clamp: unset;
+  line-clamp: unset;
+  -webkit-box-orient: initial;
   white-space: normal;
   word-break: break-word;
 }
