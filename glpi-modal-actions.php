@@ -605,7 +605,11 @@ function gexe_glpi_change_status($legacy = false) {
     $followup = $texts[$status_id] ?? '';
     $res = sql_ticket_set_status($ticket_id, $glpi_uid, $status_id, $followup);
     if (!$res['ok']) {
-        gexe_action_response(false, $res['code'] ?? 'sql_error', $ticket_id, $action, '', ['extra' => $res['extra'] ?? []]);
+        $code = $res['code'] ?? 'sql_error';
+        if ($code === 'already_done' && $status_id === $map['planned']) {
+            $code = 'already_planned';
+        }
+        gexe_action_response(false, $code, $ticket_id, $action, '', ['extra' => $res['extra'] ?? []]);
     }
     gexe_clear_comments_cache($ticket_id);
     gexe_action_response(true, 'ok', $ticket_id, $action, '', ['extra' => $res['extra'] ?? []]);

@@ -61,6 +61,7 @@ add_action('wp_enqueue_scripts', function () {
         'solvedStatus'      => (int) get_option('glpi_solved_status', 6),
         'webBase'           => gexe_glpi_web_base(),
         'assignees'         => gexe_get_assignee_options(),
+        'planned_status_id' => (int) gexe_glpi_status_map()['planned'],
     ]);
 });
 
