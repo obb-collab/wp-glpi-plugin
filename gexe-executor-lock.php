@@ -20,7 +20,7 @@ if (!defined('ABSPATH')) exit;
 
 /* --- Подключаем внешний CSS (перенёс стили в gee.css) --- */
 add_action('wp_enqueue_scripts', function() {
-  wp_enqueue_style('gexe-gee', plugin_dir_url(__FILE__) . 'gee.css', [], null);
+  wp_enqueue_style('gexe-gee', plugin_dir_url(__FILE__) . 'assets/css/gee.css', [], null);
 });
 
 // Встраиваем токены и служебный JS в footer

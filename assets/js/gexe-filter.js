@@ -1750,38 +1750,49 @@
         }
       });
     });
-    const inp = document.getElementById('glpi-unified-search');
-    const wrap = inp ? inp.closest('.glpi-search-wrap') : null;
-    const clearBtn = wrap ? $('.glpi-search-clear', wrap) : null;
-    if (!inp || !wrap || !clearBtn) {
-      console.error('GLPI search: container not found');
+    const wrap = $('.glpi-search-wrap');
+    if (!wrap) {
+      console.error('[glpi] search wrap not found');
       return;
     }
-    if (window.GEXE_DEBUG) console.debug('GLPI search initialized');
+    if (window.GEXE_DEBUG) console.debug('[glpi] search init');
+    const inp = $('.glpi-search-input', wrap);
+    const clearBtn = $('.glpi-search-clear', wrap);
+    if (!inp || !clearBtn) {
+      console.error('[glpi] search elements missing');
+      return;
+    }
     const toggleState = () => {
       wrap.classList.toggle('is-empty', !(inp.value && inp.value.trim().length));
       clearBtn.disabled = inp.disabled;
     };
     const debouncedSearch = debounce(() => { updateSearchMatches(); }, 200);
-    inp.addEventListener('input', () => { toggleState(); debouncedSearch(); });
-    inp.addEventListener('keydown', e => {
-      if (e.key === 'Escape') {
+    wrap.addEventListener('input', e => {
+      if (e.target === inp) {
+        toggleState();
+        debouncedSearch();
+      }
+    });
+    wrap.addEventListener('keydown', e => {
+      if (e.target === inp && e.key === 'Escape') {
         inp.value = '';
         toggleState();
         commentSearchIds.clear();
         filterCards();
       }
     });
-    clearBtn.addEventListener('click', () => {
-      if (clearBtn.disabled) return;
-      clearBtn.disabled = true;
-      inp.value = '';
-      inp.focus();
-      toggleState();
-      commentSearchIds.clear();
-      filterCards();
-      debouncedSearch();
-      setTimeout(() => { clearBtn.disabled = inp.disabled; }, 220);
+    wrap.addEventListener('click', e => {
+      if (e.target.closest('.glpi-search-clear')) {
+        if (clearBtn.disabled) return;
+        clearBtn.disabled = true;
+        inp.value = '';
+        inp.focus();
+        toggleState();
+        commentSearchIds.clear();
+        filterCards();
+        debouncedSearch();
+        setTimeout(() => { clearBtn.disabled = inp.disabled; }, 220);
+      }
     });
     toggleState();
   }

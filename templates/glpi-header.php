@@ -6,22 +6,23 @@ if (!defined('ABSPATH')) exit;
     <div class="gexe-greeting" aria-live="polite"><?php echo esc_html($gexe_greeting); ?></div>
   <?php endif; ?>
 
-  <div class="glpi-top-row">
-    <div class="glpi-top-left">
-      <div class="glpi-category-block">
-        <button type="button" class="glpi-cat-toggle" aria-expanded="false" aria-controls="glpi-categories-inline">Категории</button>
+  <div class="glpi-topbar-center">
+    <div class="glpi-top-row">
+      <div class="glpi-top-left">
+        <div class="glpi-category-block">
+          <button type="button" class="glpi-cat-toggle" aria-expanded="false" aria-controls="glpi-categories-inline">Категории</button>
+        </div>
+        <button type="button" class="glpi-newtask-btn"><i class="fa-regular fa-file-lines"></i> Новая заявка</button>
       </div>
-      <button type="button" class="glpi-newtask-btn"><i class="fa-regular fa-file-lines"></i> Новая заявка</button>
+
+      <div class="glpi-search-block">
+        <div class="glpi-search-wrap is-empty">
+          <input type="text" id="glpi-unified-search" class="glpi-search-input" placeholder="Поиск...">
+          <button type="button" class="glpi-search-clear" aria-label="Очистить поиск">&times;</button>
+        </div>
+      </div>
     </div>
 
-    <div class="glpi-search-block">
-      <div class="glpi-search-wrap is-empty">
-        <input type="text" id="glpi-unified-search" class="glpi-search-input" placeholder="Поиск...">
-        <button type="button" class="glpi-search-clear" aria-label="Очистить поиск">&times;</button>
-      </div>
-    </div>
-  </div>
-  <div class="glpi-topbar-center">
     <div class="glpi-status-row">
       <div class="glpi-status-blocks">
         <div class="glpi-status-block status-filter-btn" data-status="all" data-label="Все задачи">

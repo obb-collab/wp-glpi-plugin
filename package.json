@@ -2,7 +2,7 @@
   "name": "wp-glpi-plugin",
   "version": "1.0.0",
   "description": "This plugin integrates WordPress with a GLPI helpdesk.",
-  "main": "gexe-filter.js",
+  "main": "assets/js/gexe-filter.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
