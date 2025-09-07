@@ -40,10 +40,24 @@ function glpi_ajax_get_categories() {
     glpi_nt_verify_nonce();
     global $glpi_db;
     $res = glpi_db_get_categories();
-    if (!$res['ok'] && $glpi_db->last_error && defined('WP_DEBUG') && WP_DEBUG) {
-        error_log('glpi_get_categories: ' . $glpi_db->last_error);
+    if (!$res['ok']) {
+        if ($res['code'] === 'dict_failed') {
+            $err = [
+                'ok'   => false,
+                'error'=> 'sql',
+                'which'=> 'categories'
+            ];
+            if ($glpi_db->last_error) {
+                $err['sql'] = $glpi_db->last_error;
+                error_log('glpi_get_categories: ' . $glpi_db->last_error);
+            }
+            wp_send_json($err);
+        }
+        if ($res['code'] === 'dict_empty') {
+            wp_send_json(['ok' => false, 'error' => 'empty', 'which' => 'categories']);
+        }
     }
-    wp_send_json($res);
+    wp_send_json(['ok' => true, 'list' => $res['list']]);
 }
 
 add_action('wp_ajax_glpi_get_locations', 'glpi_ajax_get_locations');
@@ -51,28 +65,56 @@ function glpi_ajax_get_locations() {
     glpi_nt_verify_nonce();
     global $glpi_db;
     $res = glpi_db_get_locations();
-    if (!$res['ok'] && $glpi_db->last_error && defined('WP_DEBUG') && WP_DEBUG) {
-        error_log('glpi_get_locations: ' . $glpi_db->last_error);
+    if (!$res['ok']) {
+        if ($res['code'] === 'dict_failed') {
+            $err = [
+                'ok'   => false,
+                'error'=> 'sql',
+                'which'=> 'locations'
+            ];
+            if ($glpi_db->last_error) {
+                $err['sql'] = $glpi_db->last_error;
+                error_log('glpi_get_locations: ' . $glpi_db->last_error);
+            }
+            wp_send_json($err);
+        }
+        if ($res['code'] === 'dict_empty') {
+            wp_send_json(['ok' => false, 'error' => 'empty', 'which' => 'locations']);
+        }
     }
-    wp_send_json($res);
+    wp_send_json(['ok' => true, 'list' => $res['list']]);
 }
 
 add_action('wp_ajax_glpi_get_executors', 'glpi_ajax_get_executors');
 function glpi_ajax_get_executors() {
     glpi_nt_verify_nonce();
     if (!is_user_logged_in()) {
-        wp_send_json(['ok' => false, 'code' => 'not_logged_in']);
+        wp_send_json(['ok' => false, 'error' => 'not_logged_in']);
     }
     $map = gexe_require_glpi_user(get_current_user_id());
     if (!$map['ok']) {
-        wp_send_json(['ok' => false, 'code' => $map['code']]);
+        wp_send_json(['ok' => false, 'error' => 'not_mapped']);
     }
     global $glpi_db;
     $res = glpi_db_get_executors();
-    if (!$res['ok'] && $glpi_db->last_error && defined('WP_DEBUG') && WP_DEBUG) {
-        error_log('glpi_get_executors: ' . $glpi_db->last_error);
+    if (!$res['ok']) {
+        if ($res['code'] === 'dict_failed') {
+            $err = [
+                'ok'   => false,
+                'error'=> 'sql',
+                'which'=> 'executors'
+            ];
+            if ($glpi_db->last_error) {
+                $err['sql'] = $glpi_db->last_error;
+                error_log('glpi_get_executors: ' . $glpi_db->last_error);
+            }
+            wp_send_json($err);
+        }
+        if ($res['code'] === 'dict_empty') {
+            wp_send_json(['ok' => false, 'error' => 'empty', 'which' => 'executors']);
+        }
     }
-    wp_send_json($res);
+    wp_send_json(['ok' => true, 'list' => $res['list']]);
 }
 
 /**
@@ -96,8 +138,9 @@ function glpi_db_get_executors() {
 
     $list = array_map(function ($r) {
         return [
-            'id'   => (int) ($r['id'] ?? 0),
-            'name' => $r['name'] ?? '',
+            'id'           => (int) ($r['id'] ?? 0),
+            'label'        => $r['name'] ?? '',
+            'glpi_user_id' => (int) ($r['id'] ?? 0),
         ];
     }, $rows);
 

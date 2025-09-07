@@ -192,6 +192,7 @@ body {
 .dict-loading{color:#94a3b8;}
 .dict-error{color:#f87171;}
 .dict-empty{color:#94a3b8;}
+.gexe-dict-status .error{color:#f87171;}
 
 /* Selected completename path under inputs */
 .gnt-path{font-size:12px;margin-top:4px;color:#94a3b8;}

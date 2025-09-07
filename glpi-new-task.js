@@ -190,72 +190,79 @@
     });
   }
 
-  function fetchDicts(force){
-    const now = Date.now();
-    if (!force && dictCache && (now - dictCache.ts < 5 * 60 * 1000)) {
-      return Promise.resolve({ ok: true, categories: dictCache.data.categories, locations: dictCache.data.locations });
-    }
+  function fetchSingleDict(action){
     if (!gexeAjax || !gexeAjax.url) {
-      return Promise.resolve({ ok: false, error: 'network_error' });
+      return Promise.resolve({ ok: false, error: 'network' });
     }
     const fd = new FormData();
-    fd.append('action', 'gexe_get_dicts');
+    fd.append('action', action);
     if (gexeAjax.nonce) fd.append('nonce', gexeAjax.nonce);
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 10000);
-    return fetch(gexeAjax.url, { method: 'POST', body: fd, signal: controller.signal })
+    return fetch(gexeAjax.url, { method: 'POST', body: fd })
       .then(r => r.json().then(data => ({ status: r.status, data: data })))
       .then(resp => {
         if (resp.status === 200 && resp.data && resp.data.ok) {
-          dictCache = { ts: now, data: resp.data };
-          return { ok: true, categories: resp.data.categories, locations: resp.data.locations };
+          return resp.data;
         }
-        if (resp.status === 401) {
-          return { ok: false, error: 'unauthorized' };
-        }
-        return { ok: false, error: resp.data && resp.data.error ? resp.data.error : 'dict_fetch_failed' };
+        const data = resp.data || {};
+        return { ok: false, error: data.error || 'dict_fetch_failed', which: data.which, sql: data.sql };
       })
-      .catch(err => {
-        if (err.name === 'AbortError') return { ok: false, error: 'timeout' };
-        return { ok: false, error: 'network_error' };
-      })
-      .finally(() => clearTimeout(timer));
+      .catch(() => ({ ok: false, error: 'network' }));
   }
 
-  function buildPaths(list){
-    const map = {};
-    list.forEach(it => { map[it.id] = it; });
-    const make = (it) => {
-      const parts = [it.name];
-      let pid = it.parent_id;
-      while (pid && map[pid]) { parts.unshift(map[pid].name); pid = map[pid].parent_id; }
-      return parts.join(' > ');
-    };
-    list.forEach(it => { it.path = make(it); });
-    return list;
+  function fetchDicts(force){
+    const now = Date.now();
+    if (!force && dictCache && (now - dictCache.ts < 5 * 60 * 1000)) {
+      return Promise.resolve({ ok: true, categories: dictCache.data.categories, locations: dictCache.data.locations, executors: dictCache.data.executors });
+    }
+    return Promise.all([
+      fetchSingleDict('glpi_get_categories'),
+      fetchSingleDict('glpi_get_locations'),
+      fetchSingleDict('glpi_get_executors')
+    ]).then(([cats, locs, execs]) => {
+      if (!cats.ok) { return { ok: false, error: cats.error, which: cats.which, sql: cats.sql }; }
+      if (!locs.ok) { return { ok: false, error: locs.error, which: locs.which, sql: locs.sql }; }
+      if (!execs.ok) { return { ok: false, error: execs.error, which: execs.which, sql: execs.sql }; }
+      dictCache = { ts: now, data: { categories: cats.list, locations: locs.list, executors: execs.list } };
+      return { ok: true, categories: cats.list, locations: locs.list, executors: execs.list };
+    });
   }
 
   function startDictLoad(force){
     const now = Date.now();
     if (!force && dictCache && (now - dictCache.ts < 5 * 60 * 1000)) {
-      fillDropdowns({ categories: dictCache.data.categories, locations: dictCache.data.locations, executors: gexeAjax.assignees || [] });
+      fillDropdowns({ categories: dictCache.data.categories, locations: dictCache.data.locations, executors: dictCache.data.executors });
       lockForm(false);
       hideStatus();
       return;
     }
     lockForm(true);
     showLoading();
+    if (!gexeAjax || !gexeAjax.user_glpi_id) {
+      showError('Ваш профиль не привязан к GLPI, заявка не может быть создана', () => startDictLoad(true));
+      return;
+    }
     fetchDicts(force).then(res => {
       if (res.ok) {
-        res.categories = buildPaths(res.categories || []);
-        res.locations = buildPaths(res.locations || []);
-        fillDropdowns({ categories: res.categories, locations: res.locations, executors: gexeAjax.assignees || [] });
+        (res.categories || []).forEach(c => { c.path = c.completename || c.path || ''; });
+        (res.locations || []).forEach(l => { l.path = l.completename || l.path || ''; });
+        fillDropdowns({ categories: res.categories, locations: res.locations, executors: res.executors });
         hideStatus();
         lockForm(false);
       } else {
-        let msg = 'Не удалось загрузить справочники. Повторите попытку.';
-        if (res.error === 'timeout') msg = 'Справочники загружаются слишком долго. Нажмите «Повторить».';
-        if (res.error === 'unauthorized') msg = 'Сессия истекла. Войдите в систему и попробуйте снова.';
+        const names = { categories: 'категорий', locations: 'местоположений', executors: 'исполнителей' };
+        const capNames = { categories: 'Категории', locations: 'Местоположения', executors: 'Исполнители' };
+        let msg = 'Не удалось загрузить справочники.';
+        if (res.error === 'sql') {
+          msg = 'Ошибка SQL при загрузке ' + (names[res.which] || res.which || 'справочника') + (res.sql ? ': ' + res.sql : '');
+        } else if (res.error === 'empty') {
+          msg = 'Справочник ' + (capNames[res.which] || res.which || '') + ' пуст';
+        } else if (res.error === 'not_mapped') {
+          msg = 'Ваш профиль не привязан к GLPI, заявка не может быть создана';
+        } else if (res.error === 'network') {
+          msg = 'Ошибка соединения с сервером';
+        } else if (res.error === 'unauthorized' || res.error === 'not_logged_in') {
+          msg = 'Сессия истекла. Войдите в систему и попробуйте снова.';
+        }
         showError(msg, () => startDictLoad(true));
       }
     });
