@@ -141,17 +141,7 @@
     const btn = box.querySelector('.gnt-retry');
     btn.addEventListener('click', function(){
       hideLoader();
-      lockForm(true);
-      showLoading();
-      fetchFormData(true).then(function(data){
-        hideLoader();
-        lockForm(false);
-        fillDropdowns(data);
-        updatePaths();
-      }).catch(function(err){
-        logClientError((err && err.code ? err.code + ': ' : '') + (err && err.message ? err.message : String(err)));
-        showError(err && err.message ? err.message : 'Ошибка загрузки');
-      });
+      window.dispatchEvent(new CustomEvent('gexe:newtask:retry'));
     });
   }
 
@@ -201,92 +191,15 @@
     });
   }
 
-  function fetchFormData(retry){
-    if (!retry && window.__gexeFormData && window.__gexeFormData.ok) {
-      return Promise.resolve(window.__gexeFormData);
-    }
-    if (!window.gexeAjax) return Promise.reject(new Error('no_ajax'));
-    if (loadingPromise) return loadingPromise;
-
-    const seq = ++loadSeq;
-    window.__gexeFormDataLoading = seq;
-    const params = new URLSearchParams();
-    params.append('action','gexe_get_form_data');
-    params.append('nonce', gexeAjax.nonce);
-    const controller = new AbortController();
-    const t = setTimeout(() => controller.abort(), 10000);
-    loadingPromise = fetch(gexeAjax.url, {
-      method:'POST',
-      headers:{'Content-Type':'application/x-www-form-urlencoded'},
-      body: params.toString(),
-      signal: controller.signal
-    }).then(function(r){
-      return r.json().then(function(data){ return { status: r.status, data: data }; });
-    }).then(function(resp){
-      const status = resp.status;
-      const data = resp.data;
-      if (status === 403 && data && data.code === 'AJAX_FORBIDDEN' && data.reason === 'nonce') {
-        const e = new Error('AJAX_FORBIDDEN');
-        e.code = 'AJAX_FORBIDDEN';
-        e.reason = 'nonce';
-        throw e;
-      }
-      if (status >= 400 || !data || !data.ok){
-        const e = new Error(data && data.message ? data.message : 'server_error');
-        e.code = data && data.code ? data.code : ('HTTP_'+status);
-        e.reason = data && data.reason;
-        throw e;
-      }
-      if (seq !== loadSeq) {
-        const e = new Error('stale');
-        e.code = 'STALE';
-        throw e;
-      }
-      window.__gexeFormData = data;
-      if (window.glpiAjax) {
-        window.glpiAjax.meta = window.glpiAjax.meta || {};
-        window.glpiAjax.meta.executorsCache = data.executors_cache || { enabled: false };
-      }
-      if (window.glpiDev) {
-        console.info('[glpi] form data', data.source, data.took_ms + 'ms', 'cats:' + (data.categories ? data.categories.length : 0), 'locs:' + (data.locations ? data.locations.length : 0));
-      }
-      return data;
-    }).catch(function(err){
-      if (err && err.code === 'AJAX_FORBIDDEN' && err.reason === 'nonce' && !retry) {
-        loadingPromise = null;
-        return refreshNonce().then(function(){
-          return fetchFormData(true);
-        });
-      }
-      throw err;
-    }).finally(function(){
-      clearTimeout(t);
-      loadingPromise = null;
-      if (window.__gexeFormDataLoading === seq) window.__gexeFormDataLoading = null;
-    });
-    return loadingPromise;
+  function fetchFormData(){
+    return Promise.resolve({ ok: true, categories: [], locations: [], executors: [] });
   }
 
   function open(){
     buildModal();
     modal.classList.add('open');
     document.body.classList.add('glpi-modal-open');
-    if (window.__gexeFormData && window.__gexeFormData.ok && window.__gexeFormData.categories && window.__gexeFormData.locations) {
-      fillDropdowns(window.__gexeFormData);
-      lockForm(false);
-    } else {
-      lockForm(true);
-      showLoading();
-      fetchFormData().then(function(data){
-        hideLoader();
-        lockForm(false);
-        fillDropdowns(data);
-        updatePaths();
-      }).catch(function(err){
-        logClientError((err && err.code ? err.code + ': ' : '') + (err && err.message ? err.message : String(err)));
-        showError(err && err.message ? err.message : 'Ошибка загрузки');
-      });
-    }
+    lockForm(false);
     updatePaths();
   }
 

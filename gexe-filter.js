@@ -416,6 +416,47 @@
     if (btn) btn.addEventListener('click', openNewTaskModal);
   }
 
+  // -------- Загрузка справочников для модалки --------
+  function fetchDict(which) {
+    const ajax = window.gexeAjax || window.glpiAjax;
+    if (!ajax || !ajax.url) return Promise.resolve({ ok: false, code: 'network_error' });
+    const fd = new FormData();
+    fd.append('action', 'glpi_get_' + which);
+    if (ajax.nonce) fd.append('nonce', ajax.nonce);
+    return fetch(ajax.url, { method: 'POST', body: fd })
+      .then(r => r.json())
+      .catch(() => ({ ok: false, code: 'network_error' }));
+  }
+
+  function fillSelect(sel, list) {
+    const el = document.querySelector(sel);
+    if (!el) return;
+    el.innerHTML = '';
+    list.forEach(it => {
+      const opt = document.createElement('option');
+      opt.value = it.id;
+      opt.textContent = it.name;
+      el.appendChild(opt);
+    });
+  }
+
+  function loadNewTaskDicts() {
+    const modal = document.querySelector('.glpi-create-modal');
+    if (!modal) return;
+    Promise.all([
+      fetchDict('categories'),
+      fetchDict('locations'),
+      fetchDict('executors')
+    ]).then(([cat, loc, exec]) => {
+      if (cat && cat.ok) fillSelect('#gnt-category', cat.list);
+      if (loc && loc.ok) fillSelect('#gnt-location', loc.list);
+      if (exec && exec.ok) fillSelect('#gnt-assignee', exec.list);
+    });
+  }
+
+  window.addEventListener('gexe:newtask:open', loadNewTaskDicts);
+  window.addEventListener('gexe:newtask:retry', loadNewTaskDicts);
+
   /* ========================= ИНЛАЙН КАТЕГОРИИ ========================= */
   let selectedCategories = [];
   let categoriesLoaded = false;

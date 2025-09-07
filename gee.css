@@ -179,6 +179,22 @@ body {
   .glpi-status-block .status-label{margin-top:4px;font-size:12px;}
 }
 
+/* ====== Новая заявка: состояния полей ====== */
+.glpi-create-modal .loading { opacity: .6; pointer-events: none; }
+.glpi-create-modal .error { color: #f87171; }
+.glpi-create-modal .empty { color: #9ca3af; }
+.glpi-create-modal .disabled { opacity: .5; pointer-events: none; }
+.glpi-create-modal .gnt-retry {
+  margin-top: 8px;
+  padding: 4px 8px;
+  background: #1f2937;
+  color: #f1f5f9;
+  border: 1px solid #334155;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.glpi-create-modal .gnt-retry:hover { background: #273447; }
+
 /* Выпадающие (общие) */
 .glpi-filter-dropdown .glpi-filter-menu{ background:#0f172a; border:1px solid #334155; border-radius:8px; box-shadow:0 6px 12px rgba(0,0,0,.3); }
 
