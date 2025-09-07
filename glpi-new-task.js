@@ -12,6 +12,7 @@
   let loadSeq = 0;
   window.__gexeFormDataLoading = null;
   let dictCache = null;
+  let dictLoading = false;
 
   let successModal = null;
   let successTimer = null;
@@ -133,14 +134,36 @@
     box.innerHTML = '';
   }
 
-  function showError(message, retry){
+  function esc(str){
+    return String(str).replace(/[&<>"']/g, function(s){
+      switch (s) {
+        case '&': return '&amp;';
+        case '<': return '&lt;';
+        case '>': return '&gt;';
+        case '"': return '&quot;';
+        case "'": return '&#39;';
+        default: return s;
+      }
+    });
+  }
+
+  function showError(message, retry, details){
     const box = modal.querySelector('.gexe-dict-status');
     if (!box) return;
-    box.innerHTML = '<span class="error">' + message + '</span>' + (retry ? '<button type="button" class="gnt-retry">Повторить</button>' : '');
+    let html = '<span class="error">' + esc(message) + '</span>';
+    if (details) {
+      html += '<details><summary>Подробнее</summary><code>' + esc(details) + '</code></details>';
+    }
+    if (retry) html += '<button type="button" class="gnt-retry">Повторить</button>';
+    box.innerHTML = html;
     box.hidden = false;
     if (retry) {
       const btn = box.querySelector('.gnt-retry');
-      if (btn) btn.addEventListener('click', retry);
+      if (btn) btn.addEventListener('click', function(){
+        box.innerHTML = '';
+        box.hidden = true;
+        retry();
+      });
     }
   }
 
@@ -190,44 +213,32 @@
     });
   }
 
-  function fetchSingleDict(action){
-    if (!gexeAjax || !gexeAjax.url) {
-      return Promise.resolve({ ok: false, error: 'network' });
-    }
-    const fd = new FormData();
-    fd.append('action', action);
-    if (gexeAjax.nonce) fd.append('nonce', gexeAjax.nonce);
-    return fetch(gexeAjax.url, { method: 'POST', body: fd })
-      .then(r => r.json().then(data => ({ status: r.status, data: data })))
-      .then(resp => {
-        if (resp.status === 200 && resp.data && resp.data.ok) {
-          return resp.data;
-        }
-        const data = resp.data || {};
-        return { ok: false, error: data.error || 'dict_fetch_failed', which: data.which, sql: data.sql };
-      })
-      .catch(() => ({ ok: false, error: 'network' }));
-  }
-
   function fetchDicts(force){
     const now = Date.now();
     if (!force && dictCache && (now - dictCache.ts < 5 * 60 * 1000)) {
       return Promise.resolve({ ok: true, categories: dictCache.data.categories, locations: dictCache.data.locations, executors: dictCache.data.executors });
     }
-    return Promise.all([
-      fetchSingleDict('glpi_get_categories'),
-      fetchSingleDict('glpi_get_locations'),
-      fetchSingleDict('glpi_get_executors')
-    ]).then(([cats, locs, execs]) => {
-      if (!cats.ok) { return { ok: false, error: cats.error, which: cats.which, sql: cats.sql }; }
-      if (!locs.ok) { return { ok: false, error: locs.error, which: locs.which, sql: locs.sql }; }
-      if (!execs.ok) { return { ok: false, error: execs.error, which: execs.which, sql: execs.sql }; }
-      dictCache = { ts: now, data: { categories: cats.list, locations: locs.list, executors: execs.list } };
-      return { ok: true, categories: cats.list, locations: locs.list, executors: execs.list };
-    });
+    if (!gexeAjax || !gexeAjax.url) {
+      return Promise.resolve({ ok: false, error: { type: 'NETWORK', message: 'Ошибка соединения с сервером' } });
+    }
+    const fd = new FormData();
+    fd.append('action', 'glpi_load_dicts');
+    if (gexeAjax.nonce) fd.append('nonce', gexeAjax.nonce);
+    return fetch(gexeAjax.url, { method: 'POST', body: fd })
+      .then(r => r.json())
+      .then(resp => {
+        if (resp && resp.success && resp.data) {
+          dictCache = { ts: now, data: resp.data };
+          return { ok: true, categories: resp.data.categories, locations: resp.data.locations, executors: resp.data.executors };
+        }
+        const err = resp && (resp.error || resp.data && resp.data.error);
+        return { ok: false, error: err || { type: 'UNKNOWN', message: 'Не удалось загрузить справочники' } };
+      })
+      .catch(() => ({ ok: false, error: { type: 'NETWORK', message: 'Ошибка соединения с сервером' } }));
   }
 
   function startDictLoad(force){
+    if (dictLoading) return;
     const now = Date.now();
     if (!force && dictCache && (now - dictCache.ts < 5 * 60 * 1000)) {
       fillDropdowns({ categories: dictCache.data.categories, locations: dictCache.data.locations, executors: dictCache.data.executors });
@@ -235,13 +246,16 @@
       hideStatus();
       return;
     }
+    dictLoading = true;
     lockForm(true);
     showLoading();
     if (!gexeAjax || !gexeAjax.user_glpi_id) {
-      showError('Ваш профиль не привязан к GLPI, заявка не может быть создана', () => startDictLoad(true));
+      dictLoading = false;
+      showError('Ваш профиль не привязан к GLPI пользователю', () => startDictLoad(true));
       return;
     }
     fetchDicts(force).then(res => {
+      dictLoading = false;
       if (res.ok) {
         (res.categories || []).forEach(c => { c.path = c.completename || c.path || ''; });
         (res.locations || []).forEach(l => { l.path = l.completename || l.path || ''; });
@@ -249,21 +263,11 @@
         hideStatus();
         lockForm(false);
       } else {
-        const names = { categories: 'категорий', locations: 'местоположений', executors: 'исполнителей' };
-        const capNames = { categories: 'Категории', locations: 'Местоположения', executors: 'Исполнители' };
-        let msg = 'Не удалось загрузить справочники.';
-        if (res.error === 'sql') {
-          msg = 'Ошибка SQL при загрузке ' + (names[res.which] || res.which || 'справочника') + (res.sql ? ': ' + res.sql : '');
-        } else if (res.error === 'empty') {
-          msg = 'Справочник ' + (capNames[res.which] || res.which || '') + ' пуст';
-        } else if (res.error === 'not_mapped') {
-          msg = 'Ваш профиль не привязан к GLPI, заявка не может быть создана';
-        } else if (res.error === 'network') {
-          msg = 'Ошибка соединения с сервером';
-        } else if (res.error === 'unauthorized' || res.error === 'not_logged_in') {
-          msg = 'Сессия истекла. Войдите в систему и попробуйте снова.';
+        const err = res.error || {};
+        if (gexeAjax && gexeAjax.debug) {
+          console.error('wp-glpi:new-task', err);
         }
-        showError(msg, () => startDictLoad(true));
+        showError(err.message || 'Не удалось загрузить справочники', () => startDictLoad(true), err.details);
       }
     });
   }
@@ -415,21 +419,13 @@
         sel.innerHTML = '<option value="">—</option>';
         data.executors.forEach(function(u){
           const opt = document.createElement('option');
-          opt.value = u.id;
-          opt.textContent = u.label;
+          opt.value = u.user_id;
+          opt.textContent = u.display_name;
           if (u.glpi_user_id) {
             opt.setAttribute('data-glpi-id', u.glpi_user_id);
           }
           sel.appendChild(opt);
         });
-        if (data.executors_more && data.executors_more > 0) {
-          const opt = document.createElement('option');
-          opt.value = '';
-          opt.textContent = '\u2026и ещё ' + data.executors_more;
-          opt.disabled = true;
-          opt.title = 'Уточните поиск';
-          sel.appendChild(opt);
-        }
         executorsLoaded = true;
         sel.disabled = modal.querySelector('#gnt-assign-me').checked;
         const assignChk = modal.querySelector('#gnt-assign-me');
