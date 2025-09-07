@@ -1751,30 +1751,39 @@
       });
     });
     const inp = document.getElementById('glpi-unified-search');
-    const clearBtn = document.querySelector('.gexe-search-clear');
-    if (inp) {
-      const toggleClear = () => { if (clearBtn) clearBtn.hidden = !(inp.value && inp.value.length); };
-      const debouncedSearch = debounce(() => { updateSearchMatches(); }, 200);
-      inp.addEventListener('input', () => { toggleClear(); debouncedSearch(); });
-      inp.addEventListener('keydown', e => {
-        if (e.key === 'Escape') {
-          inp.value = '';
-          toggleClear();
-          commentSearchIds.clear();
-          filterCards();
-        }
-      });
-      if (clearBtn) {
-        clearBtn.addEventListener('click', () => {
-          inp.value = '';
-          inp.focus();
-          toggleClear();
-          commentSearchIds.clear();
-          filterCards();
-        });
-      }
-      toggleClear();
+    const wrap = inp ? inp.closest('.glpi-search-wrap') : null;
+    const clearBtn = wrap ? $('.glpi-search-clear', wrap) : null;
+    if (!inp || !wrap || !clearBtn) {
+      console.error('GLPI search: container not found');
+      return;
     }
+    if (window.GEXE_DEBUG) console.debug('GLPI search initialized');
+    const toggleState = () => {
+      wrap.classList.toggle('is-empty', !(inp.value && inp.value.trim().length));
+      clearBtn.disabled = inp.disabled;
+    };
+    const debouncedSearch = debounce(() => { updateSearchMatches(); }, 200);
+    inp.addEventListener('input', () => { toggleState(); debouncedSearch(); });
+    inp.addEventListener('keydown', e => {
+      if (e.key === 'Escape') {
+        inp.value = '';
+        toggleState();
+        commentSearchIds.clear();
+        filterCards();
+      }
+    });
+    clearBtn.addEventListener('click', () => {
+      if (clearBtn.disabled) return;
+      clearBtn.disabled = true;
+      inp.value = '';
+      inp.focus();
+      toggleState();
+      commentSearchIds.clear();
+      filterCards();
+      debouncedSearch();
+      setTimeout(() => { clearBtn.disabled = inp.disabled; }, 220);
+    });
+    toggleState();
   }
 
   /* ========================= ИНИЦИАЛИЗАЦИЯ ========================= */

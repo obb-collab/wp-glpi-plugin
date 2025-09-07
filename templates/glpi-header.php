@@ -15,8 +15,10 @@ if (!defined('ABSPATH')) exit;
     </div>
 
     <div class="glpi-search-block">
-      <input type="text" id="glpi-unified-search" class="glpi-search-input" placeholder="Поиск...">
-      <button type="button" class="gexe-search-clear" aria-label="Очистить поиск" hidden>&times;</button>
+      <div class="glpi-search-wrap is-empty">
+        <input type="text" id="glpi-unified-search" class="glpi-search-input" placeholder="Поиск...">
+        <button type="button" class="glpi-search-clear" aria-label="Очистить поиск">&times;</button>
+      </div>
     </div>
   </div>
 
