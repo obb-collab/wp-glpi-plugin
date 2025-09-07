@@ -3,6 +3,7 @@ if (!defined('ABSPATH')) exit;
 
 require_once __DIR__ . '/logger.php';
 require_once dirname(__DIR__) . '/glpi-utils.php';
+require_once __DIR__ . '/executors-cache.php';
 
 /**
  * AJAX: выдаёт списки категорий и местоположений.
@@ -33,7 +34,7 @@ function gexe_get_form_data() {
     $error_msg   = '';
     $debug_tests = [];
 
-    if (!is_array($data) || empty($data)) {
+    if (!is_array($data) || empty($data['categories']) || empty($data['locations'])) {
         global $glpi_db;
         $categories = [];
         $locations  = [];
@@ -171,38 +172,19 @@ function gexe_get_form_data() {
             }
         }
 
-        // Список возможных исполнителей — WP-пользователи, у которых есть glpi_user_id
-        $executors = [];
-        $users = get_users([
-            'meta_query' => [
-                [
-                    'key'     => 'glpi_user_id',
-                    'value'   => 0,
-                    'compare' => '>',
-                    'type'    => 'NUMERIC',
-                ],
-            ],
-            'number'  => 1000,
-            'orderby' => 'display_name',
-            'order'   => 'ASC',
-            'fields'  => ['ID', 'display_name'],
-        ]);
-        foreach ($users as $u) {
-            $executors[] = [
-                'id'   => (int) $u->ID,
-                'name' => $u->display_name,
-            ];
-        }
-
         $data = [
             'categories' => $categories,
             'locations'  => $locations,
-            'executors'  => $executors,
         ];
 
         wp_cache_set($cache_key, $data, 'glpi', 30 * MINUTE_IN_SECONDS);
         set_transient($cache_key, $data, 30 * MINUTE_IN_SECONDS);
     }
+
+    [$executors, $exec_cache, $exec_more] = gexe_get_wp_executors_cached();
+    $data['executors']       = $executors;
+    $data['executors_cache'] = $exec_cache;
+    $data['executors_more']  = $exec_more;
 
     $elapsed = (int) round((microtime(true) - $t0) * 1000);
     $err_log = isset($error_msg) ? $error_msg : '';

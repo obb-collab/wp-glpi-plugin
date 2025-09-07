@@ -1,6 +1,10 @@
 (function(){
   'use strict';
 
+  const gexeAjax = window.gexeAjax || window.glpiAjax || {};
+  window.gexeAjax = gexeAjax;
+  window.glpiAjax = window.glpiAjax || gexeAjax;
+
   let modal = null;
   let categoriesLoaded = false;
   let executorsLoaded = false;
@@ -72,7 +76,7 @@
     const assignChk = modal.querySelector('#gnt-assign-me');
     const assigneeSel = modal.querySelector('#gnt-assignee');
     assignChk.addEventListener('change', function(){
-      assigneeSel.disabled = this.checked;
+      assigneeSel.disabled = this.checked || !executorsLoaded;
       if (this.checked) {
         assigneeSel.value = '';
         setFieldError('assignee');
@@ -99,7 +103,7 @@
       if (state) {
         el.disabled = true;
       } else if (sel === '#gnt-assignee') {
-        el.disabled = modal.querySelector('#gnt-assign-me').checked;
+        el.disabled = modal.querySelector('#gnt-assign-me').checked || !executorsLoaded;
       } else {
         el.disabled = false;
       }
@@ -231,6 +235,10 @@
         throw e;
       }
       window.__gexeFormData = data;
+      if (window.glpiAjax) {
+        window.glpiAjax.meta = window.glpiAjax.meta || {};
+        window.glpiAjax.meta.executorsCache = data.executors_cache || { enabled: false };
+      }
       if (window.glpiDev) {
         console.info('[glpi] form data', data.source, data.took_ms + 'ms', 'cats:' + (data.categories ? data.categories.length : 0), 'locs:' + (data.locations ? data.locations.length : 0));
       }
@@ -408,15 +416,37 @@
       });
       categoriesLoaded = true;
     }
-    if (data.executors && !executorsLoaded) {
+    if (!executorsLoaded) {
       const sel = modal.querySelector('#gnt-assignee');
-      data.executors.forEach(function(u){
+      if (data.executors && data.executors.length) {
+        sel.innerHTML = '<option value="">—</option>';
+        data.executors.forEach(function(u){
+          const opt = document.createElement('option');
+          opt.value = u.id;
+          opt.textContent = u.label;
+          sel.appendChild(opt);
+        });
+        if (data.executors_more && data.executors_more > 0) {
+          const opt = document.createElement('option');
+          opt.value = '';
+          opt.textContent = '\u2026и ещё ' + data.executors_more;
+          opt.disabled = true;
+          opt.title = 'Уточните поиск';
+          sel.appendChild(opt);
+        }
+        executorsLoaded = true;
+        sel.disabled = modal.querySelector('#gnt-assign-me').checked;
+      } else {
+        sel.innerHTML = '';
         const opt = document.createElement('option');
-        opt.value = u.id;
-        opt.textContent = u.name;
+        opt.value = '';
+        opt.textContent = 'Список исполнителей временно недоступен. Обновите страницу или попробуйте позже';
+        opt.disabled = true;
+        opt.selected = true;
         sel.appendChild(opt);
-      });
-      executorsLoaded = true;
+        sel.disabled = true;
+        executorsLoaded = false;
+      }
     }
     if (data.locations) {
       const list = modal.querySelector('#gnt-location-list');
