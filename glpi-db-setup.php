@@ -247,6 +247,173 @@ function sql_ticket_accept($ticket_id, $glpi_user_id) {
 }
 
 /**
+ * Fetch list of helpdesk-visible categories.
+ *
+ * @return array{ok:bool,code?:string,which?:string,list?:array<int,array{id:int,name:string}>}
+ */
+function glpi_db_get_categories() {
+    global $glpi_db;
+    $sql  = "SELECT id, completename FROM glpi_itilcategories WHERE is_helpdeskvisible=1 AND is_active=1 ORDER BY completename";
+    $rows = $glpi_db->get_results($sql, ARRAY_A);
+    if ($glpi_db->last_error) {
+        return ['ok' => false, 'code' => 'dict_failed', 'which' => 'categories'];
+    }
+    if (!$rows) {
+        return ['ok' => false, 'code' => 'dict_empty', 'which' => 'categories'];
+    }
+    $list = array_map(function ($r) {
+        return ['id' => (int) $r['id'], 'name' => $r['completename']];
+    }, $rows);
+    return ['ok' => true, 'list' => $list];
+}
+
+/**
+ * Fetch list of available locations.
+ *
+ * @return array{ok:bool,code?:string,which?:string,list?:array}
+ */
+function glpi_db_get_locations() {
+    global $glpi_db;
+    $sql  = "SELECT id, completename FROM glpi_locations WHERE is_active=1 ORDER BY completename";
+    $rows = $glpi_db->get_results($sql, ARRAY_A);
+    if ($glpi_db->last_error) {
+        return ['ok' => false, 'code' => 'dict_failed', 'which' => 'locations'];
+    }
+    if (!$rows) {
+        return ['ok' => false, 'code' => 'dict_empty', 'which' => 'locations'];
+    }
+    $list = array_map(function ($r) {
+        return ['id' => (int) $r['id'], 'name' => $r['completename']];
+    }, $rows);
+    return ['ok' => true, 'list' => $list];
+}
+
+/**
+ * Fetch list of executors (users).
+ *
+ * @return array{ok:bool,code?:string,which?:string,list?:array}
+ */
+function glpi_db_get_executors() {
+    global $glpi_db;
+    $sql  = "SELECT id, realname, firstname FROM glpi_users WHERE is_active=1 ORDER BY realname, firstname";
+    $rows = $glpi_db->get_results($sql, ARRAY_A);
+    if ($glpi_db->last_error) {
+        return ['ok' => false, 'code' => 'dict_failed', 'which' => 'executors'];
+    }
+    if (!$rows) {
+        return ['ok' => false, 'code' => 'dict_empty', 'which' => 'executors'];
+    }
+    $list = array_map(function ($r) {
+        $name = trim($r['realname'] . ' ' . $r['firstname']);
+        return ['id' => (int) $r['id'], 'name' => $name];
+    }, $rows);
+    return ['ok' => true, 'list' => $list];
+}
+
+/**
+ * Create ticket transaction.
+ *
+ * @param array $payload
+ * @return array{ok:bool,code?:string,ticket_id?:int,assigned?:int|null}
+ */
+function glpi_db_create_ticket(array $payload) {
+    global $glpi_db;
+
+    $name   = (string) ($payload['name'] ?? '');
+    $desc   = (string) ($payload['content'] ?? '');
+    $cat    = (int) ($payload['category_id'] ?? 0);
+    $loc    = (int) ($payload['location_id'] ?? 0);
+    $req_id = (int) ($payload['requester_id'] ?? 0);
+    $exec   = (int) ($payload['executor_id'] ?? 0);
+    $assign_me = !empty($payload['assign_me']);
+    $entity = (int) ($payload['entities_id'] ?? 0);
+
+    if ($name === '' || $cat <= 0 || $loc <= 0 || $req_id <= 0) {
+        return ['ok' => false, 'code' => 'validation'];
+    }
+
+    $glpi_db->query('START TRANSACTION');
+
+    // Duplicate guard
+    $dup = $glpi_db->get_var($glpi_db->prepare(
+        "SELECT id FROM glpi_tickets WHERE name=%s AND itilcategories_id=%d AND locations_id=%d AND date_creation > (NOW() - INTERVAL 8 SECOND) LIMIT 1",
+        $name,
+        $cat,
+        $loc
+    ));
+    if ($dup) {
+        $glpi_db->query('ROLLBACK');
+        return ['ok' => false, 'code' => 'duplicate_submit'];
+    }
+
+    $now = current_time('mysql');
+    $sql = $glpi_db->prepare(
+        "INSERT INTO glpi_tickets (name, content, itilcategories_id, locations_id, status, date_creation, date_mod, entities_id) VALUES (%s,%s,%d,%d,1,%s,%s,%d)",
+        $name,
+        $desc,
+        $cat,
+        $loc,
+        $now,
+        $now,
+        $entity
+    );
+    if (!$glpi_db->query($sql)) {
+        $err = $glpi_db->last_error;
+        $glpi_db->query('ROLLBACK');
+        return ['ok' => false, 'code' => 'sql_error', 'msg' => $err];
+    }
+    $ticket_id = (int) $glpi_db->insert_id;
+
+    $assigned = null;
+    if ($exec > 0) {
+        $sql = $glpi_db->prepare(
+            'INSERT INTO glpi_tickets_users (tickets_id, users_id, type) VALUES (%d,%d,2)',
+            $ticket_id,
+            $exec
+        );
+        if (!$glpi_db->query($sql)) {
+            $err = $glpi_db->last_error;
+            $glpi_db->query('ROLLBACK');
+            return ['ok' => false, 'code' => 'sql_error', 'msg' => $err];
+        }
+        $assigned = $exec;
+    }
+
+    if ($assign_me) {
+        $sql = $glpi_db->prepare(
+            'INSERT IGNORE INTO glpi_tickets_users (tickets_id, users_id, type) VALUES (%d,%d,2)',
+            $ticket_id,
+            $req_id
+        );
+        if (!$glpi_db->query($sql)) {
+            $err = $glpi_db->last_error;
+            $glpi_db->query('ROLLBACK');
+            return ['ok' => false, 'code' => 'sql_error', 'msg' => $err];
+        }
+        if ($assigned === null) {
+            $assigned = $req_id;
+        }
+    }
+
+    if ($desc !== '') {
+        $sql = $glpi_db->prepare(
+            "INSERT INTO glpi_itilfollowups (items_id, itemtype, users_id, date, content, is_private) VALUES (%d,'Ticket',%d,NOW(),%s,0)",
+            $ticket_id,
+            $req_id,
+            $desc
+        );
+        if (!$glpi_db->query($sql)) {
+            $err = $glpi_db->last_error;
+            $glpi_db->query('ROLLBACK');
+            return ['ok' => false, 'code' => 'sql_error', 'msg' => $err];
+        }
+    }
+
+    $glpi_db->query('COMMIT');
+    return ['ok' => true, 'code' => 'ok', 'ticket_id' => $ticket_id, 'assigned' => $assigned];
+}
+
+/**
  * Resolve ticket by setting status to 6 and adding a followup.
  *
  * Similar to {@see sql_ticket_accept()} but checks current status and returns
