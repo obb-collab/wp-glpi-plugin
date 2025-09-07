@@ -71,54 +71,6 @@ function gexe_compose_short_name($realname, $firstname) {
     return '';
 }
 
-if (!function_exists('gexe_clean_html_text')) {
-    function gexe_clean_html_text($html) {
-        $s = (string)$html;
-        $s = html_entity_decode($s, ENT_QUOTES | ENT_HTML5, 'UTF-8');
-        $s = html_entity_decode($s, ENT_QUOTES | ENT_HTML5, 'UTF-8');
-        $s = preg_replace('~<\s*br\s*/?\s*>~i', "\n", $s);
-        $s = preg_replace('~</\s*p\s*>~i', "\n", $s);
-        $s = strip_tags($s);
-        $s = html_entity_decode($s, ENT_QUOTES | ENT_HTML5, 'UTF-8');
-        $s = preg_replace('/\s+/u', ' ', $s);
-        return trim($s);
-    }
-}
-
-if (!function_exists('gexe_trim_words')) {
-    function gexe_trim_words($text, $words = 40, $suffix = '…') {
-        $text = trim((string)$text);
-        if ($text === '') return '';
-        $parts = preg_split('/\s+/u', $text);
-        if (count($parts) <= $words) return $text;
-        $parts = array_slice($parts, 0, $words);
-        return implode(' ', $parts) . $suffix;
-    }
-}
-
-if (!function_exists('gexe_leaf_category')) {
-    function gexe_leaf_category($full) {
-        $full  = (string)$full;
-        $full  = html_entity_decode($full, ENT_QUOTES | ENT_HTML5, 'UTF-8');
-        $parts = preg_split('/\s*>\s*/u', $full);
-        $leaf  = trim((string)end($parts));
-        return ($leaf !== '') ? $leaf : $full;
-    }
-}
-
-if (!function_exists('gexe_cat_slug')) {
-    function gexe_cat_slug($leaf) {
-        if (function_exists('transliterator_transliterate')) {
-            $leaf = transliterator_transliterate('Any-Latin; Latin-ASCII', $leaf);
-        }
-        $leaf = strtolower($leaf);
-        $leaf = preg_replace('/[^a-z0-9]+/u', '-', $leaf);
-        $leaf = trim($leaf, '-');
-        if ($leaf === '') $leaf = substr(md5((string)$leaf), 0, 8);
-        return $leaf;
-    }
-}
-
 /** Очистка HTML комментария (текст в карточке модалки) */
 function gexe_clean_comment_html($html) {
     if (!is_string($html) || $html === '') return '';
@@ -676,8 +628,6 @@ function gexe_check_mapping() {
 
 /* -------- AJAX: добавить комментарий -------- */
 add_action('wp_ajax_glpi_comment_add', 'gexe_glpi_comment_add');
-add_action('wp_ajax_glpi_executors', 'gexe_glpi_executors');
-add_action('wp_ajax_glpi_filter_tickets', 'gexe_glpi_filter_tickets');
 function gexe_glpi_comment_add($action = 'comment', $content_override = null) {
     $ticket_id = isset($_POST['ticket_id']) ? intval($_POST['ticket_id']) : 0;
     if ($content_override !== null) {
@@ -736,127 +686,5 @@ function gexe_glpi_comment_add($action = 'comment', $content_override = null) {
     }
     $glpi_db->query('COMMIT');
     gexe_clear_comments_cache($ticket_id);
-gexe_action_response(true, 'ok', $ticket_id, $action, '', ['extra' => ['followup' => $res['followup']]]);
-}
-
-function gexe_glpi_executors() {
-    if (gexe_get_current_glpi_uid() !== 2) {
-        wp_send_json_error(['ok' => false, 'code' => 'no_rights'], 403);
-    }
-    $rows = glpi_db_get_executors();
-    $list = [];
-    foreach ($rows as $r) {
-        $list[] = [
-            'id'   => (int) ($r['glpi_user_id'] ?? 0),
-            'name' => gexe_compose_short_name($r['realname'] ?? '', $r['firstname'] ?? ''),
-        ];
-    }
-    wp_send_json_success(['ok' => true, 'list' => $list]);
-}
-
-function gexe_glpi_filter_tickets() {
-    if (!is_user_logged_in()) {
-        wp_send_json_error(['ok' => false, 'code' => 'not_logged_in'], 403);
-    }
-    $executor = isset($_POST['executor_id']) ? trim((string) wp_unslash($_POST['executor_id'])) : '';
-    $current  = gexe_get_current_glpi_uid();
-    if ($executor === '' || $executor === 'all') {
-        if ($current !== 2) {
-            $executor = $current;
-        } else {
-            $executor = 'all';
-        }
-    } elseif (!ctype_digit($executor) || (int) $executor <= 0) {
-        wp_send_json_error(['ok' => false, 'code' => 'validation'], 400);
-    }
-    if ($executor === 'all' && $current !== 2) {
-        wp_send_json_error(['ok' => false, 'code' => 'no_rights'], 403);
-    }
-    $rows = glpi_db_get_tickets_by_executor($executor, $current);
-    if (!is_array($rows)) $rows = [];
-    $tickets = [];
-    foreach ($rows as $r) {
-        $id = (int) ($r['id'] ?? 0);
-        if (!$id) continue;
-        if (!isset($tickets[$id])) {
-            $tickets[$id] = [
-                'id'           => $id,
-                'status'       => (int) ($r['status'] ?? 0),
-                'name'         => (string) ($r['name'] ?? ''),
-                'content'      => (string) ($r['content'] ?? ''),
-                'date'         => (string) ($r['date'] ?? ''),
-                'category'     => (string) ($r['category_name'] ?? ''),
-                'location'     => (string) ($r['location_name'] ?? ''),
-                'executors'    => [],
-                'assignee_ids' => [],
-                'author_id'    => (int) ($r['author_id'] ?? 0),
-                'late'         => ($r['time_to_resolve'] && strtotime($r['time_to_resolve']) < time()),
-            ];
-        }
-        if (!empty($r['realname']) || !empty($r['firstname'])) {
-            $who = gexe_compose_short_name($r['realname'] ?? '', $r['firstname'] ?? '');
-            if ($who && !in_array($who, $tickets[$id]['executors'], true)) {
-                $tickets[$id]['executors'][] = $who;
-            }
-        }
-        $aid = (int) ($r['assignee_id'] ?? 0);
-        if ($aid && !in_array($aid, $tickets[$id]['assignee_ids'], true)) {
-            $tickets[$id]['assignee_ids'][] = $aid;
-        }
-    }
-
-    $status_counts = [1 => 0, 2 => 0, 3 => 0, 4 => 0];
-    $category_counts = [];
-    foreach ($tickets as $t) {
-        $s = (int) $t['status'];
-        if (isset($status_counts[$s])) $status_counts[$s]++;
-        $leaf = gexe_leaf_category($t['category']);
-        if (!isset($category_counts[$leaf])) $category_counts[$leaf] = 0;
-        $category_counts[$leaf]++;
-    }
-    ksort($category_counts, SORT_NATURAL);
-
-    $categories = [];
-    foreach ($category_counts as $leaf => $cnt) {
-        $slug = gexe_cat_slug($leaf);
-        $icon = function_exists('glpi_get_icon_by_category') ? glpi_get_icon_by_category(mb_strtolower($leaf)) : '<i class="fa-solid fa-tag"></i>';
-        $categories[] = [
-            'slug'  => strtolower($slug),
-            'label' => $leaf,
-            'count' => (int) $cnt,
-            'icon'  => $icon,
-            'depth' => 0,
-        ];
-    }
-
-    ob_start();
-    foreach ($tickets as $t) {
-        $assignees_str = implode(',', $t['assignee_ids']);
-        $leaf_cat = gexe_leaf_category($t['category']);
-        $cat_slug = gexe_cat_slug($leaf_cat);
-        $icon = function_exists('glpi_get_icon_by_category') ? glpi_get_icon_by_category(mb_strtolower($leaf_cat)) : '';
-        $clean_desc = gexe_clean_html_text($t['content']);
-        $desc_short = esc_html(gexe_trim_words($clean_desc, 40, '…'));
-        $link = gexe_glpi_web_base() . '/front/ticket.form.php?id=' . $t['id'];
-        $executors_html = '';
-        if (!empty($t['executors'])) {
-            $exec_names = array_map('esc_html', $t['executors']);
-            $executors_html = '<span class="glpi-executors"><i class="fa-solid fa-user-tie glpi-executor"></i> ' . implode(', ', $exec_names) . '</span>';
-        }
-        echo '<div class="glpi-card" data-ticket-id="' . intval($t['id']) . '" data-assignees="' . esc_attr($assignees_str) . '" data-category="' . esc_attr(strtolower($cat_slug)) . '" data-late="' . ($t['late'] ? '1' : '0') . '" data-status="' . esc_attr((string) $t['status']) . '" data-unassigned="' . (empty($t['executors']) ? '1' : '0') . '" data-author="' . intval($t['author_id']) . '">';
-        echo '<div class="glpi-badge ' . esc_attr($cat_slug) . '">' . $icon . ' ' . esc_html($leaf_cat) . '</div>';
-        echo '<div class="glpi-card-header"><h3 class="ticket-card__title"><a href="' . esc_url($link) . '" class="glpi-topic" target="_blank" rel="noopener noreferrer">' . esc_html($t['name']) . '</a></h3><div class="glpi-ticket-id">#' . intval($t['id']) . '</div></div>';
-        echo '<div class="glpi-card-body"><p class="glpi-desc" data-full="' . esc_attr($clean_desc) . '">' . $desc_short . '</p></div>';
-        echo '<div class="glpi-executor-footer">' . $executors_html . '</div>';
-        echo '<div class="glpi-date-footer" data-date="' . esc_attr($t['date']) . '"></div>';
-        echo '</div>';
-    }
-    $html = ob_get_clean();
-
-    wp_send_json_success([
-        'ok'            => true,
-        'html'          => $html,
-        'status_counts' => $status_counts,
-        'categories'    => $categories,
-    ]);
+    gexe_action_response(true, 'ok', $ticket_id, $action, '', ['extra' => ['followup' => $res['followup']]]);
 }
