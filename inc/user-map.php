@@ -7,8 +7,9 @@ if (!defined('ABSPATH')) exit;
  * Historically some integrations stored the identifier in various formats
  * (hashed strings, empty values, etc.).  The plugin expects a positive
  * integer and falls back to `0` when the meta value does not represent a
- * valid mapping.  A small in‑memory cache is used to avoid repeated lookups
- * for the same user during a single request.
+ * valid mapping (which later results in a `not_mapped` error code). A small
+ * in‑memory cache is used to avoid repeated lookups for the same user during a
+ * single request.
  *
  * @param int $wp_user_id WordPress user identifier.
  * @return int GLPI users.id or 0 when not mapped.
