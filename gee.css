@@ -184,6 +184,7 @@ body {
 .gexe-action-btn:disabled{ background:#1e293b; color:#64748b; border-color:#334155; cursor:not-allowed; box-shadow:none; }
 .gexe-action-btn.is-error{ background:#dc2626; border-color:#b91c1c; color:#fff; }
 .gexe-action-btn.is-error:hover{ background:#b91c1c; }
+.gexe-preflight-tip{ color:#facc15; align-self:center; margin-left:4px; }
 
 /* ======= Модалка просмотра ======= */
 .gexe-modal{ position:fixed; inset:0; display:none; z-index:10000; }

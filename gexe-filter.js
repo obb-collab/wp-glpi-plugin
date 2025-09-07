@@ -20,15 +20,15 @@
     nonce_failed: 'Обновите страницу (просрочен ключ безопасности).',
     NONCE_EXPIRED: 'Обновите страницу (просрочен ключ безопасности).',
     NO_PERMISSION: 'Недостаточно прав.',
-    no_glpi_id_for_current_user: 'В профиле WP не указан GLPI ID.',
+    no_glpi_id_for_current_user: 'Не найден профиль исполнителя (GLPI).',
+    NO_GLPI_USER: 'Не найден профиль исполнителя (GLPI).',
     assignee_not_mapped_to_glpi: 'Выбранный исполнитель не привязан к GLPI.',
     ticket_not_found: 'Заявка не найдена.',
-    SQL_OP_FAILED: details => 'Ошибка записи в GLPI. Код: ' + (details || '') + '.',
+    SQL_OP_FAILED: details => details ? 'Ошибка записи в GLPI. Код: ' + details + '.' : 'Операция не выполнена',
     EMPTY_CONTENT: 'Введите комментарий',
     bad_response: 'Не удалось обработать ответ сервера.',
     network_error: 'Ошибка сети',
-    NO_PERMISSION: 'Нет прав на заявку',
-    SQL_OP_FAILED: 'Операция не выполнена',
+    SESSION_EXPIRED: 'Сессия истекла, обновите страницу.',
   };
 
   function ensureNoticeHost() {
@@ -119,6 +119,46 @@
       el.removeAttribute('disabled');
       el.removeAttribute('aria-disabled');
       el.classList.remove('is-loading');
+    }
+  }
+
+  function checkPreflight(show) {
+    const ajax = window.gexeAjax || window.glpiAjax;
+    if (!ajax || !ajax.url || !ajax.nonce) {
+      if (show) showError('SESSION_EXPIRED');
+      return { ok: false, code: 'SESSION_EXPIRED' };
+    }
+    if (!ajax.user_glpi_id || Number(ajax.user_glpi_id) <= 0) {
+      if (show) showError('no_glpi_id_for_current_user');
+      return { ok: false, code: 'no_glpi_id_for_current_user' };
+    }
+    return { ok: true };
+  }
+
+  function markPreflight(btn, code) {
+    if (!btn) return;
+    btn.disabled = true;
+    btn.setAttribute('aria-disabled', 'true');
+    const msg = ERROR_MAP[code] || '';
+    if (msg) btn.setAttribute('title', msg);
+    let tip = btn.nextElementSibling;
+    if (!tip || !tip.classList || !tip.classList.contains('gexe-preflight-tip')) {
+      tip = document.createElement('span');
+      tip.className = 'gexe-preflight-tip';
+      tip.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i>';
+      btn.insertAdjacentElement('afterend', tip);
+    }
+    tip.setAttribute('title', msg);
+  }
+
+  function clearPreflight(btn) {
+    if (!btn) return;
+    btn.disabled = false;
+    btn.removeAttribute('aria-disabled');
+    btn.removeAttribute('title');
+    const tip = btn.nextElementSibling;
+    if (tip && tip.classList && tip.classList.contains('gexe-preflight-tip')) {
+      tip.remove();
     }
   }
 
@@ -218,6 +258,9 @@
     e.preventDefault();
     e.stopPropagation();
 
+    const pre = checkPreflight(true);
+    if (!pre.ok) return;
+
     if (btn.classList.contains('gexe-open-comment')) {
       const cardEl = btn.closest('.glpi-card');
       const title = (cardEl && cardEl.querySelector('.glpi-topic') ? cardEl.querySelector('.glpi-topic').textContent : '')
@@ -265,11 +308,12 @@
       let data = null;
       try { data = await res.clone().json(); }
       catch (e) { try { await res.clone().text(); } catch (e2) {} }
-      if (res.status === 403 && data && data.error === 'nonce_failed' && !retry) {
+      if (res.status === 403 && data && data.error === 'NONCE_EXPIRED' && !retry) {
         await refreshActionsNonce();
         fd.set(nonceKey, ajax.nonce || '');
         fd.set('nonce', ajax.nonce || '');
         fd.set('_ajax_nonce', ajax.nonce || '');
+        showNotice('info', 'Повторяем...');
         return send(true);
       }
       return { res, data };
@@ -828,6 +872,12 @@
     cmntModal.setAttribute('data-ticket-id', String(ticketId || 0));
     const ta = $('#gexe-cmnt-text', cmntModal); if (ta) { ta.value = ''; ta.focus(); }
     updateCommentValidation();
+    const sendBtn = $('#gexe-cmnt-send', cmntModal);
+    const pre = checkPreflight(false);
+    if (sendBtn) {
+      if (pre.ok) clearPreflight(sendBtn);
+      else markPreflight(sendBtn, pre.code);
+    }
     cmntModal.classList.add('is-open'); document.body.classList.add('glpi-modal-open');
   }
   function closeCommentModal() {
@@ -836,15 +886,16 @@
   }
   async function sendComment(retried) {
     if (!cmntModal) return;
+    const pre = checkPreflight(true);
+    if (!pre.ok) return;
     const id  = Number(cmntModal.getAttribute('data-ticket-id') || '0');
     const txtEl = $('#gexe-cmnt-text', cmntModal);
     const btn = $('#gexe-cmnt-send', cmntModal);
     if (!id || !txtEl || !btn) return;
     if (!updateCommentValidation(true)) return;
     const txt = txtEl.value.trim();
-    const url = window.glpiAjax && glpiAjax.url;
-    const nonce = window.glpiAjax && glpiAjax.nonce;
-    if (!url || !nonce) return;
+    const url = glpiAjax.url;
+    const nonce = glpiAjax.nonce;
     lockAction(id, 'comment', true);
     setActionLoading(btn, true);
     clearCommentError();
@@ -870,7 +921,7 @@
         if (code === 'NONCE_EXPIRED' && !retried) {
           try {
             await refreshActionsNonce();
-            showNotice('success', 'Обновили доступ');
+            showNotice('info', 'Повторяем...');
             return sendComment(true);
           } catch (e) {
             showCommentError('network_error');
@@ -916,20 +967,28 @@
     document.body.appendChild(doneModal);
     $('.gexe-done__backdrop', doneModal).addEventListener('click', closeDoneModal);
     $('.gexe-done__close', doneModal).addEventListener('click', closeDoneModal);
-    $('#gexe-done-confirm', doneModal).addEventListener('click', sendDone);
+    $('#gexe-done-confirm', doneModal).addEventListener('click', () => sendDone());
     return doneModal;
   }
   function openDoneModal(ticketId) {
     ensureDoneModal();
     doneModal.setAttribute('data-ticket-id', String(ticketId || 0));
+    const btn = $('#gexe-done-confirm', doneModal);
+    const pre = checkPreflight(false);
+    if (btn) {
+      if (pre.ok) clearPreflight(btn);
+      else markPreflight(btn, pre.code);
+    }
     doneModal.classList.add('is-open'); document.body.classList.add('glpi-modal-open');
   }
   function closeDoneModal() {
     if (!doneModal) return;
     doneModal.classList.remove('is-open'); document.body.classList.remove('glpi-modal-open');
   }
-  async function sendDone() {
+  async function sendDone(retried) {
     if (!doneModal) return;
+    const pre = checkPreflight(true);
+    if (!pre.ok) return;
     const id = Number(doneModal.getAttribute('data-ticket-id') || '0');
     if (!id) return;
     const btn = $('#gexe-done-confirm', doneModal);
@@ -938,7 +997,7 @@
     lockAction(id, 'done', true);
     const fd = new FormData();
     fd.append('action', 'glpi_ticket_resolve');
-    const nonce = (window.glpiAjax && glpiAjax.nonce) || '';
+    const nonce = glpiAjax.nonce;
     const nonceKey = glpiAjax.nonce_key || 'nonce';
     fd.append(nonceKey, nonce);
     fd.append('nonce', nonce);
@@ -963,7 +1022,18 @@
         return;
       }
       if (!data.ok) {
-        showError(data.error, data.details, res.status);
+        const code = data.error;
+        if (code === 'NONCE_EXPIRED' && !retried) {
+          try {
+            await refreshActionsNonce();
+            showNotice('info', 'Повторяем...');
+            return sendDone(true);
+          } catch (e) {
+            showError('network_error');
+            return;
+          }
+        }
+        showError(code, data.details, res.status);
         return;
       }
       closeDoneModal();
@@ -1065,6 +1135,7 @@
   // Права/видимость
   function applyActionVisibility() {
     const uid = Number((window.glpiAjax && glpiAjax.user_glpi_id) || 0);
+    const pre = checkPreflight(false);
     $$('.glpi-card').forEach(card => {
       const bar = $('.gexe-card-actions', card);
       if (!bar) return;
@@ -1072,12 +1143,16 @@
       const btnAccept  = $('.gexe-open-accept',  bar);
       const btnClose   = $('.gexe-open-close',   bar);
 
-      if (uid <= 0) { // не авторизован — прячем все
-        if (btnComment) btnComment.style.display = 'none';
-        if (btnAccept)  btnAccept.style.display  = 'none';
-        if (btnClose)   btnClose.style.display   = 'none';
+      if (!pre.ok) {
+        markPreflight(btnComment, pre.code);
+        markPreflight(btnAccept, pre.code);
+        markPreflight(btnClose, pre.code);
         return;
       }
+
+      clearPreflight(btnComment);
+      clearPreflight(btnAccept);
+      clearPreflight(btnClose);
 
       const assignees = (card.getAttribute('data-assignees') || '')
         .split(',').map(s => parseInt(s, 10)).filter(n => n > 0);
@@ -1087,6 +1162,9 @@
       if (!isAssignee) {
         if (btnAccept) btnAccept.style.display = 'none';
         if (btnClose)  btnClose.style.display  = 'none';
+      } else {
+        if (btnAccept) btnAccept.style.display = '';
+        if (btnClose)  btnClose.style.display  = '';
       }
 
       // Если уже есть «Принято в работу» — блокируем «Принять в работу»
