@@ -437,6 +437,7 @@
         const opt = document.createElement('option');
         opt.value = it.id;
         opt.textContent = it.name;
+        if (it.completename) opt.setAttribute('data-path', it.completename);
         el.appendChild(opt);
       });
     } else if (el.tagName === 'INPUT') {
@@ -447,7 +448,7 @@
         const opt = document.createElement('option');
         opt.value = it.name;
         opt.setAttribute('data-id', it.id);
-        opt.setAttribute('data-path', it.name);
+        if (it.completename) opt.setAttribute('data-path', it.completename);
         dl.appendChild(opt);
       });
     }
@@ -461,11 +462,17 @@
     const execSel = modal.querySelector('#gnt-assignee');
     const submit = modal.querySelector('.gnt-submit');
 
+    // Disable all form controls until dictionaries are loaded.
+    $$('input,select,textarea,button.gnt-submit', modal).forEach(el => {
+      el.classList.add('disabled');
+      el.disabled = true;
+    });
+
     const setStatus = (el, type, text, retry) => {
       if (!el) return;
       const st = modal.querySelector('#' + el.id + '-status');
       if (st) {
-        st.className = 'gnt-inline-status' + (type ? ' ' + type : '');
+        st.className = 'gnt-inline-status dict-helper' + (type ? ' dict-' + type : '');
         if (type === 'error' && retry) {
           st.innerHTML = text + ' <button type="button" class="gnt-retry">Повторить</button>';
           const btn = st.querySelector('.gnt-retry');
@@ -478,16 +485,18 @@
 
     const loadOne = (which, el) => {
       if (!el) return Promise.resolve(null);
-      el.disabled = true;
       setStatus(el, 'loading', 'Загрузка…');
       return fetchDict(which).then(res => {
-        el.disabled = false;
         if (res && res.ok) {
           if (which === 'executors') fillSelect('#gnt-assignee', res.list);
           else if (which === 'categories') fillSelect('#gnt-category', res.list);
           else if (which === 'locations') fillSelect('#gnt-location', res.list);
+          el.disabled = false;
+          el.classList.remove('disabled');
           setStatus(el, '', '');
         } else if (res && res.code === 'dict_empty') {
+          el.disabled = false;
+          el.classList.remove('disabled');
           setStatus(el, 'empty', 'Нет данных');
         } else {
           setStatus(el, 'error', 'Не удалось загрузить', () => loadOne(which, el));
@@ -496,18 +505,42 @@
       });
     };
 
-    if (catSel) catSel.disabled = true;
-    if (locSel) locSel.disabled = true;
-    if (execSel) execSel.disabled = true;
-    if (submit) submit.disabled = true;
-
     Promise.all([
       loadOne('categories', catSel),
       loadOne('locations', locSel),
       loadOne('executors', execSel)
     ]).then(([cat, loc]) => {
-      if (submit && cat && cat.ok && loc && loc.ok) submit.disabled = false;
+      // Enable common fields once dictionaries have finished loading
+      $$('input,select,textarea', modal).forEach(el => {
+        if (el === catSel || el === locSel || el === execSel) return; // handled above
+        el.disabled = false;
+        el.classList.remove('disabled');
+      });
+      if (submit && cat && cat.ok && loc && loc.ok) {
+        submit.disabled = false;
+        submit.classList.remove('disabled');
+      }
     });
+
+    const updatePath = (input, pathId) => {
+      const helper = modal.querySelector(pathId);
+      if (!helper) return;
+      let text = '';
+      if (input.tagName === 'SELECT') {
+        const opt = input.options[input.selectedIndex];
+        text = opt ? opt.getAttribute('data-path') || '' : '';
+      } else {
+        const dl = document.getElementById(input.id + '-list');
+        if (dl) {
+          const opt = Array.from(dl.options).find(o => o.value === input.value);
+          text = opt ? opt.getAttribute('data-path') || '' : '';
+        }
+      }
+      helper.textContent = text;
+    };
+
+    if (catSel) on(catSel, 'input', () => updatePath(catSel, '#gnt-category-path'));
+    if (locSel) on(locSel, 'input', () => updatePath(locSel, '#gnt-location-path'));
   }
 
   window.addEventListener('gexe:newtask:open', loadNewTaskDicts);

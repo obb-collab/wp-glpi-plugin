@@ -209,15 +209,27 @@ function sql_insert_followup($ticket_id, $glpi_user_id, $content) {
  */
 function glpi_db_get_categories() {
     global $glpi_db;
-    $sql = "SELECT c.id, c.completename "
-         . "FROM glpi_itilcategories c "
-         . "WHERE c.is_active=1 AND c.is_helpdeskvisible=1 "
-         . "AND NOT EXISTS ("
-         . "  SELECT 1 FROM glpi_itilcategories ch "
-         . "  WHERE ch.is_active=1 "
-         . "    AND FIND_IN_SET(c.id, REPLACE(CONCAT(TRIM(BOTH ',' FROM ch.ancestors_cache), ',', ch.id), ',', ',')) > 0"
-         . ") "
-         . "ORDER BY c.completename";
+
+    $sql = "SELECT c.id, c.completename, c.name\n"
+         . "FROM glpi_itilcategories c\n"
+         . "WHERE c.is_active=1 AND c.is_helpdeskvisible=1\n"
+         . "  AND NOT EXISTS (\n"
+         . "    SELECT 1 FROM glpi_itilcategories ch\n"
+         . "    WHERE ch.is_active=1\n"
+         . "      AND ch.completename LIKE CONCAT(c.completename, ' > %')\n"
+         . "  )\n"
+         . "UNION\n"
+         . "SELECT p.id, p.completename, p.name\n"
+         . "FROM glpi_itilcategories p\n"
+         . "WHERE p.is_active=1 AND p.is_helpdeskvisible=1\n"
+         . "  AND EXISTS (\n"
+         . "    SELECT 1 FROM glpi_itilcategories ch\n"
+         . "    WHERE ch.is_active=1\n"
+         . "      AND ch.completename LIKE CONCAT(p.completename, ' > %')\n"
+         . "      AND ch.name = p.name\n"
+         . "  )\n"
+         . "ORDER BY completename";
+
     $rows = $glpi_db->get_results($sql, ARRAY_A);
     if ($glpi_db->last_error) {
         return ['ok' => false, 'code' => 'dict_failed', 'which' => 'categories'];
@@ -225,9 +237,15 @@ function glpi_db_get_categories() {
     if (!$rows) {
         return ['ok' => false, 'code' => 'dict_empty', 'which' => 'categories'];
     }
+
     $list = array_map(function ($r) {
-        return ['id' => (int) $r['id'], 'name' => $r['completename']];
+        return [
+            'id'          => (int) $r['id'],
+            'name'        => $r['name'],
+            'completename'=> $r['completename'],
+        ];
     }, $rows);
+
     return ['ok' => true, 'code' => 'ok', 'list' => $list];
 }
 
@@ -238,15 +256,27 @@ function glpi_db_get_categories() {
  */
 function glpi_db_get_locations() {
     global $glpi_db;
-    $sql = "SELECT c.id, c.completename "
-         . "FROM glpi_locations c "
-         . "WHERE c.is_active=1 "
-         . "AND NOT EXISTS ("
-         . "  SELECT 1 FROM glpi_locations ch "
-         . "  WHERE ch.is_active=1 "
-         . "    AND FIND_IN_SET(c.id, REPLACE(CONCAT(TRIM(BOTH ',' FROM ch.ancestors_cache), ',', ch.id), ',', ',')) > 0"
-         . ") "
-         . "ORDER BY c.completename";
+
+    $sql = "SELECT l.id, l.completename, l.name\n"
+         . "FROM glpi_locations l\n"
+         . "WHERE l.is_active=1\n"
+         . "  AND NOT EXISTS (\n"
+         . "    SELECT 1 FROM glpi_locations ch\n"
+         . "    WHERE ch.is_active=1\n"
+         . "      AND ch.completename LIKE CONCAT(l.completename, ' > %')\n"
+         . "  )\n"
+         . "UNION\n"
+         . "SELECT p.id, p.completename, p.name\n"
+         . "FROM glpi_locations p\n"
+         . "WHERE p.is_active=1\n"
+         . "  AND EXISTS (\n"
+         . "    SELECT 1 FROM glpi_locations ch\n"
+         . "    WHERE ch.is_active=1\n"
+         . "      AND ch.completename LIKE CONCAT(p.completename, ' > %')\n"
+         . "      AND ch.name = p.name\n"
+         . "  )\n"
+         . "ORDER BY completename";
+
     $rows = $glpi_db->get_results($sql, ARRAY_A);
     if ($glpi_db->last_error) {
         return ['ok' => false, 'code' => 'dict_failed', 'which' => 'locations'];
@@ -254,9 +284,15 @@ function glpi_db_get_locations() {
     if (!$rows) {
         return ['ok' => false, 'code' => 'dict_empty', 'which' => 'locations'];
     }
+
     $list = array_map(function ($r) {
-        return ['id' => (int) $r['id'], 'name' => $r['completename']];
+        return [
+            'id'          => (int) $r['id'],
+            'name'        => $r['name'],
+            'completename'=> $r['completename'],
+        ];
     }, $rows);
+
     return ['ok' => true, 'code' => 'ok', 'list' => $list];
 }
 

@@ -55,7 +55,9 @@ function glpi_ajax_get_executors() {
     if (!$map['ok']) {
         wp_send_json(['ok' => false, 'code' => $map['code']]);
     }
-    $res = gexe_get_executors_list();
+    // Executors come from WordPress users mapped to GLPI users.  Helper name
+    // changed to `gexe_get_executors_wp()`; keep compatibility via alias.
+    $res = gexe_get_executors_wp();
     wp_send_json($res);
 }
 

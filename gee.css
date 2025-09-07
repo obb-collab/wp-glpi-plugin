@@ -166,6 +166,21 @@ body {
 .gnt-inline-status.error{color:#f87171;}
 .gnt-inline-status.empty{color:#94a3b8;}
 
+/* Generic dictionary helper classes used by the "New ticket" modal */
+.dict-helper{font-size:12px;margin-top:4px;color:#94a3b8;}
+.dict-loading{color:#94a3b8;}
+.dict-error{color:#f87171;}
+.dict-empty{color:#94a3b8;}
+
+/* Selected completename path under inputs */
+.gnt-path{font-size:12px;margin-top:4px;color:#94a3b8;}
+
+/* Disabled state for modal controls */
+.gnt-input.disabled,
+.gnt-select.disabled,
+textarea.disabled,
+button.disabled{opacity:.5;cursor:not-allowed;}
+
 /* Инлайн-категории */
 .glpi-categories-inline{
   display:flex;
