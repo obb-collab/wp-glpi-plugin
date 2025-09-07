@@ -463,6 +463,7 @@
     const catSel = modal.querySelector('#gnt-category');
     const locSel = modal.querySelector('#gnt-location');
     const execSel = modal.querySelector('#gnt-assignee');
+    const assignChk = modal.querySelector('#gnt-assign-me');
     const submit = modal.querySelector('.gnt-submit');
     const loader = modal.querySelector('.glpi-form-loader');
 
@@ -476,6 +477,15 @@
       el.classList.add('disabled');
       el.disabled = true;
     });
+
+    if (execSel) {
+      fillAssigneeOptions(execSel, '—');
+      const selfId = (window.gexeAjax || window.glpiAjax || {}).user_glpi_id || 0;
+      if (assignChk && assignChk.checked && selfId) {
+        execSel.value = String(selfId);
+      }
+      execSel.disabled = assignChk && assignChk.checked;
+    }
 
     const setStatus = (el, type, text, retry) => {
       if (!el) return;
@@ -497,8 +507,7 @@
       setStatus(el, 'loading', 'Загрузка…');
       return fetchDict(which).then(res => {
         if (res && res.ok) {
-          if (which === 'executors') fillSelect('#gnt-assignee', res.list);
-          else if (which === 'categories') fillSelect('#gnt-category', res.list);
+          if (which === 'categories') fillSelect('#gnt-category', res.list);
           else if (which === 'locations') fillSelect('#gnt-location', res.list);
           el.disabled = false;
           el.classList.remove('disabled');
@@ -516,8 +525,7 @@
 
     Promise.all([
       loadOne('categories', catSel),
-      loadOne('locations', locSel),
-      loadOne('executors', execSel)
+      loadOne('locations', locSel)
     ]).then(([cat, loc]) => {
       // Enable common fields once dictionaries have finished loading
       $$('input,select,textarea', modal).forEach(el => {
@@ -525,6 +533,10 @@
         el.disabled = false;
         el.classList.remove('disabled');
       });
+      if (execSel) {
+        execSel.classList.remove('disabled');
+        execSel.disabled = assignChk && assignChk.checked;
+      }
       if (submit && cat && cat.ok && loc && loc.ok) {
         submit.disabled = false;
         submit.classList.remove('disabled');
@@ -567,6 +579,25 @@
       e.preventDefault();
       submitNewTask(modal, btn);
     });
+
+    const assignChk = modal.querySelector('#gnt-assign-me');
+    const assSel = modal.querySelector('#gnt-assignee');
+    const selfId = (window.gexeAjax || window.glpiAjax || {}).user_glpi_id || 0;
+    if (assignChk && assSel) {
+      assignChk.addEventListener('change', () => {
+        assSel.disabled = assignChk.checked;
+        if (assignChk.checked) {
+          assSel.value = selfId ? String(selfId) : '';
+        } else {
+          assSel.value = '';
+        }
+      });
+      assSel.addEventListener('change', () => {
+        if (!assSel.disabled && assignChk.checked) {
+          assignChk.checked = false;
+        }
+      });
+    }
   }
 
   function submitNewTask(modal, btn) {
@@ -576,22 +607,24 @@
     const locId = parseInt($('#gnt-location', modal)?.value, 10) || 0;
     const assignMe = $('#gnt-assign-me', modal)?.checked;
     const execSel = $('#gnt-assignee', modal);
-    const execId = execSel && !execSel.disabled ? (parseInt(execSel.value, 10) || 0) : 0;
+    const selfId = (window.gexeAjax || window.glpiAjax || {}).user_glpi_id || 0;
+    let assigneeId = 0;
+    if (assignMe) assigneeId = selfId;
+    else if (execSel && !execSel.disabled) assigneeId = parseInt(execSel.value, 10) || 0;
 
-    if (!name || !desc || !catId) {
+    if (!name || !desc || !catId || (!assignMe && !assigneeId)) {
       showNotice('error', 'Заполните обязательные поля');
       return;
     }
 
     setActionLoading(btn, true);
     ajaxPost({
-      action: 'glpi_create_ticket',
-      name: name,
-      description: desc,
+      action: 'gexe_create_ticket_sql',
+      title: name,
+      content: desc,
       category_id: catId,
       location_id: locId,
-      assign_me: assignMe ? 1 : 0,
-      executor_id: execId
+      assignee_glpi_id: assigneeId
     }).then(res => {
       if (res && res.ok) {
         showNotice('success', 'Заявка создана #' + (res.data.ticket_id || ''));
@@ -1204,10 +1237,11 @@
     }
   }
 
-  function fillAssigneeOptions(sel) {
+  function fillAssigneeOptions(sel, placeholder) {
     if (!sel) return;
     const list = (window.gexeAjax || window.glpiAjax || {}).assignees || [];
-    sel.innerHTML = '<option value="">Сменить исполнителя</option>';
+    const first = placeholder !== undefined ? placeholder : 'Сменить исполнителя';
+    sel.innerHTML = '<option value="">' + first + '</option>';
     list.forEach(a => {
       const opt = document.createElement('option');
       opt.value = String(a.id);
