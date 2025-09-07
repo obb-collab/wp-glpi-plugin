@@ -471,6 +471,50 @@ function gexe_glpi_count_comments_batch() {
     wp_send_json(['counts' => $out]);
 }
 
+/* -------- AJAX: поиск заявок по тексту и комментариям -------- */
+add_action('wp_ajax_gexe_search_tickets', 'gexe_search_tickets');
+function gexe_search_tickets() {
+    if (!check_ajax_referer('gexe_actions', 'nonce', false)) {
+        wp_send_json_error(['code' => 'csrf']);
+    }
+    if (!is_user_logged_in()) {
+        wp_send_json_error(['code' => 'not_logged_in']);
+    }
+    $q = isset($_POST['q']) ? trim((string)$_POST['q']) : '';
+    if ($q === '' || mb_strlen($q) < 2) {
+        wp_send_json_success(['ids' => []]);
+    }
+
+    $current_user   = wp_get_current_user();
+    $glpi_user_id   = '';
+    $glpi_show_all  = false;
+    if ($current_user && $current_user->ID) {
+        $glpi_user_id  = trim((string) get_user_meta($current_user->ID, 'glpi_user_id', true));
+        $glpi_show_all = (get_user_meta($current_user->ID, 'glpi_show_all_cards', true) === '1');
+    }
+
+    global $glpi_db;
+    $like = '%' . $glpi_db->esc_like($q) . '%';
+    $where_assignee = '';
+    if (!$glpi_show_all && $glpi_user_id !== '' && ctype_digit($glpi_user_id)) {
+        $where_assignee = $glpi_db->prepare(' AND tu.users_id = %d ', (int) $glpi_user_id);
+    }
+    $sql = "SELECT DISTINCT t.id\n"
+        . "FROM glpi_tickets t\n"
+        . "LEFT JOIN glpi_tickets_users tu ON t.id = tu.tickets_id AND tu.type = 2\n"
+        . "LEFT JOIN glpi_itilfollowups f ON f.items_id = t.id AND f.itemtype = 'Ticket'\n"
+        . "WHERE t.status IN (1,2,3,4) AND t.is_deleted = 0"
+        . $where_assignee
+        . " AND (t.name LIKE %s OR t.content LIKE %s OR f.content LIKE %s)\n"
+        . "ORDER BY t.date DESC\n"
+        . "LIMIT 500";
+    $ids = $glpi_db->get_col($glpi_db->prepare($sql, $like, $like, $like));
+    if (defined('WP_DEBUG') && WP_DEBUG) {
+        error_log('gexe_search_tickets SQL: ' . $glpi_db->last_query . '; found=' . count($ids));
+    }
+    wp_send_json_success(['ids' => array_map('intval', $ids ?: [])]);
+}
+
 /* -------- AJAX: проверка "Принято в работу" -------- */
 add_action('wp_ajax_glpi_ticket_started', 'gexe_glpi_ticket_started');
 function gexe_glpi_ticket_started() {

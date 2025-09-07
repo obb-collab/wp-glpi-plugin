@@ -15,6 +15,7 @@
   const glpiAjax = ajaxConfig;
   window.GEXE_DEBUG = window.GEXE_DEBUG || false;
   const plannedStatus = Number(glpiAjax && glpiAjax.planned_status_id) || 3;
+  let commentSearchIds = new Set();
 
   const ERROR_MAP = {
     csrf: 'Сессия устарела. Обновите страницу.',
@@ -1644,7 +1645,10 @@
     const inp = document.getElementById('glpi-unified-search');
     const q = (inp && inp.value || '').trim().toLowerCase();
     if (!q) return true;
-    return (card.textContent || '').toLowerCase().includes(q);
+    const txt = (card.textContent || '').toLowerCase();
+    if (txt.includes(q)) return true;
+    const id = String(card.getAttribute('data-ticket-id') || '');
+    return commentSearchIds.has(id);
   }
 
   function filterCards() {
@@ -1707,6 +1711,29 @@
     el.textContent = String(n);
   }
 
+  function updateSearchMatches() {
+    const inp = document.getElementById('glpi-unified-search');
+    const q = (inp && inp.value || '').trim();
+    if (!q || q.length < 2) {
+      commentSearchIds.clear();
+      filterCards();
+      return;
+    }
+    ajaxPost({ action: 'gexe_search_tickets', q: q }).then(res => {
+      if (res && res.ok && res.data && Array.isArray(res.data.ids)) {
+        commentSearchIds = new Set(res.data.ids.map(id => String(id)));
+      } else {
+        commentSearchIds = new Set();
+        showNotice('error', 'Ошибка поиска');
+      }
+      filterCards();
+    }).catch(() => {
+      commentSearchIds.clear();
+      showNotice('error', 'Ошибка поиска');
+      filterCards();
+    });
+  }
+
   function bindStatusAndSearch() {
     $$('.status-filter-btn').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -1727,12 +1754,13 @@
     const clearBtn = document.querySelector('.gexe-search-clear');
     if (inp) {
       const toggleClear = () => { if (clearBtn) clearBtn.hidden = !(inp.value && inp.value.length); };
-      const debouncedFilter = debounce(() => { filterCards(); }, 120);
-      inp.addEventListener('input', () => { toggleClear(); debouncedFilter(); });
+      const debouncedSearch = debounce(() => { updateSearchMatches(); }, 200);
+      inp.addEventListener('input', () => { toggleClear(); debouncedSearch(); });
       inp.addEventListener('keydown', e => {
         if (e.key === 'Escape') {
           inp.value = '';
           toggleClear();
+          commentSearchIds.clear();
           filterCards();
         }
       });
@@ -1741,6 +1769,7 @@
           inp.value = '';
           inp.focus();
           toggleClear();
+          commentSearchIds.clear();
           filterCards();
         });
       }
