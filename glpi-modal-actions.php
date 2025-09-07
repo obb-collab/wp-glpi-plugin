@@ -15,19 +15,23 @@ function gexe_glpi_localize_runtime() {
     if (!function_exists('wp_localize_script')) return;
     if (!wp_script_is('gexe-filter', 'enqueued')) return;
 
-    $current = function_exists('glpi_current_user_id') ? (int) glpi_current_user_id() : 0;
+    $current = function_exists('glpi_current_user_id') ? glpi_current_user_id() : 0;
     $can_view_all = false;
     if (is_user_logged_in() && function_exists('get_current_user_id')) {
         $can_view_all = (get_user_meta(get_current_user_id(), 'glpi_show_all_cards', true) === '1');
     }
-    $runtime = [
-        'ajax_url'             => admin_url('admin-ajax.php'),
-        'nonce'                => wp_create_nonce('gexe_actions'),
-        'current_glpi_user_id' => $current,
-        'can_view_all'         => (bool) $can_view_all,
-        'features'             => ['executors' => false],
+    $features = [
+        'executors' => ($current === 2),
     ];
-    wp_localize_script('gexe-filter', 'GLPI_RUNTIME', $runtime);
+
+    wp_localize_script('gexe-filter', 'GLPI_RUNTIME', [
+        'ajax_url' => admin_url('admin-ajax.php'),
+        'nonce'    => wp_create_nonce('gexe_actions'),
+        'user_glpi_id' => $current,
+        'current_glpi_user_id' => $current,
+        'can_view_all' => $can_view_all,
+        'features' => $features,
+    ]);
 }
 
 function gexe_action_response($ok, $code, $ticket_id, $action, $msg = '', $extra = []) {
@@ -407,7 +411,7 @@ function gexe_glpi_get_comments() {
     $ticket_id = isset($_POST['ticket_id']) ? intval($_POST['ticket_id']) : 0;
     $page      = isset($_POST['page']) ? intval($_POST['page']) : 1;
     $per_page  = isset($_POST['per_page']) ? intval($_POST['per_page']) : 20;
-    wp_send_json_success(gexe_render_comments($ticket_id, $page, $per_page));
+    wp_send_json(gexe_render_comments($ticket_id, $page, $per_page));
 }
 
 function gexe_render_followup($id) {
@@ -481,7 +485,7 @@ function gexe_glpi_count_comments_batch() {
     $ids_raw = isset($_POST['ticket_ids']) ? (string)$_POST['ticket_ids'] : '';
     $ids = array_filter(array_map('intval', explode(',', $ids_raw)));
     if (empty($ids)) {
-        wp_send_json_success(['counts' => []]);
+        wp_send_json(['counts' => []]);
     }
 
     $out = [];
@@ -522,7 +526,7 @@ function gexe_glpi_count_comments_batch() {
         }
     }
 
-    wp_send_json_success(['counts' => $out]);
+    wp_send_json(['counts' => $out]);
 }
 
 /* -------- AJAX: проверка "Принято в работу" -------- */

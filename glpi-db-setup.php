@@ -204,59 +204,6 @@ function glpi_db_get_locations() {
 }
 
 /**
- * Safely fetch list of active executors.
- *
- * @return array<int,array{id:int,name:string}>
- */
-function glpi_db_get_executors() {
-    global $glpi_db;
-    try {
-        $sql  = "SELECT id, realname AS name FROM glpi_users WHERE is_active=1 ORDER BY realname";
-        $rows = $glpi_db->get_results($sql, ARRAY_A);
-        if (!$rows) return [];
-        return array_map(function ($r) {
-            return [
-                'id'   => (int) ($r['id'] ?? 0),
-                'name' => (string) ($r['name'] ?? ''),
-            ];
-        }, $rows);
-    } catch (Throwable $e) {
-        if (defined('WP_DEBUG') && WP_DEBUG) {
-            error_log('glpi_db_get_executors: ' . $e->getMessage());
-        }
-        return [];
-    }
-}
-
-/**
- * Safely fetch ticket identifiers assigned to an executor.
- *
- * @param int $executor_id
- * @return array<int>
- */
-function glpi_db_get_tasks_by_executor($executor_id) {
-    global $glpi_db;
-    $executor_id = (int) $executor_id;
-    if ($executor_id <= 0) return [];
-    try {
-        $sql  = $glpi_db->prepare(
-            "SELECT t.id FROM glpi_tickets_users tu JOIN glpi_tickets t ON t.id = tu.tickets_id WHERE tu.users_id=%d AND tu.type=2",
-            $executor_id
-        );
-        $rows = $glpi_db->get_results($sql, ARRAY_A);
-        if (!$rows) return [];
-        return array_map(function ($r) {
-            return (int) ($r['id'] ?? 0);
-        }, $rows);
-    } catch (Throwable $e) {
-        if (defined('WP_DEBUG') && WP_DEBUG) {
-            error_log('glpi_db_get_tasks_by_executor: ' . $e->getMessage());
-        }
-        return [];
-    }
-}
-
-/**
  * Create ticket transaction.
  *
  * @param array $payload
