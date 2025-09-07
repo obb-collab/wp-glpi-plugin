@@ -19,6 +19,10 @@
 .glpi-create-modal .gnt-submit { width: 100%; background: #2563eb; border: 0; color: #fff; padding: 10px 14px; border-radius: 10px; cursor: pointer; display: block; }
 .glpi-create-modal .gnt-submit:disabled { opacity: .7; cursor: default; }
 .glpi-create-modal .gnt-path { margin-top: 4px; font-size: 12px; color: #94a3b8; }
+.glpi-create-modal .gnt-field-error { color:#f87171; font-size:12px; margin-top:4px; }
+.glpi-create-modal .gnt-input.gnt-invalid,
+.glpi-create-modal .gnt-textarea.gnt-invalid,
+.glpi-create-modal .gnt-select.gnt-invalid { border-color:#f87171; }
 @media (max-width: 720px) {
   .glpi-create-modal .gnt-row { grid-template-columns: 1fr; }
 }
@@ -37,8 +41,7 @@
 .gnt-success-modal.open{display:block;}
 .gnt-success-modal .gnt-success-backdrop{position:absolute;inset:0;background:rgba(0,0,0,.55);backdrop-filter:blur(2px);}
 .gnt-success-modal .gnt-success-dialog{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:min(520px,94vw);background:#0f172a;color:#e5e7eb;border-radius:12px;box-shadow:0 20px 60px rgba(0,0,0,.5);padding:24px;text-align:center;}
-.gnt-success-modal .gnt-success-title{font-weight:700;margin-bottom:8px;}
-.gnt-success-modal .gnt-success-text{margin-bottom:20px;}
+.gnt-success-modal .gnt-success-title{font-weight:700;margin-bottom:20px;}
 .gnt-success-modal .gnt-success-actions{display:flex;flex-direction:column;gap:8px;}
 .gnt-success-modal .gnt-success-actions button{padding:10px 14px;border-radius:10px;border:0;cursor:pointer;}
 .gnt-success-modal .gnt-open-ticket{background:#2563eb;color:#fff;}

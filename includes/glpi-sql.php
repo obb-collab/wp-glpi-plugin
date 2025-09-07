@@ -85,16 +85,18 @@ function create_ticket_sql(array $data) {
         'itilcategories_id'=> 0,
         'locations_id'     => 0,
         'entities_id'      => 0,
+        'due_date'         => null,
         'status'           => 1,
     ];
     $p = array_merge($defaults, $data);
 
     $glpi_db->query('START TRANSACTION');
     $sql = $glpi_db->prepare(
-        'INSERT INTO glpi_tickets (name, content, status, date, date_mod, users_id_recipient, users_id_lastupdater, entities_id, itilcategories_id, locations_id) VALUES (%s,%s,%d,NOW(),NOW(),%d,%d,%d,%d,%d)',
+        'INSERT INTO glpi_tickets (name, content, status, date, date_mod, due_date, users_id_recipient, users_id_lastupdater, entities_id, itilcategories_id, locations_id) VALUES (%s,%s,%d,NOW(),NOW(),%s,%d,%d,%d,%d,%d)',
         $p['name'],
         $p['content'],
         $p['status'],
+        $p['due_date'],
         $p['requester_id'],
         $p['requester_id'],
         $p['entities_id'],
@@ -102,9 +104,8 @@ function create_ticket_sql(array $data) {
         $p['locations_id']
     );
     if (!$glpi_db->query($sql)) {
-        $err = $glpi_db->last_error;
         $glpi_db->query('ROLLBACK');
-        return ['ok' => false, 'code' => 'SQL_ERROR', 'message' => $err];
+        return ['ok' => false, 'code' => 'SQL_OP_FAILED', 'message' => 'Не удалось создать заявку'];
     }
     $ticket_id = (int) $glpi_db->insert_id;
 
@@ -115,9 +116,8 @@ function create_ticket_sql(array $data) {
         $p['requester_id']
     );
     if (!$glpi_db->query($sql)) {
-        $err = $glpi_db->last_error;
         $glpi_db->query('ROLLBACK');
-        return ['ok' => false, 'code' => 'SQL_ERROR', 'message' => $err];
+        return ['ok' => false, 'code' => 'SQL_OP_FAILED', 'message' => 'Не удалось создать заявку'];
     }
 
     if (!empty($p['assignee_id'])) {
@@ -127,9 +127,8 @@ function create_ticket_sql(array $data) {
             (int) $p['assignee_id']
         );
         if (!$glpi_db->query($sql)) {
-            $err = $glpi_db->last_error;
             $glpi_db->query('ROLLBACK');
-            return ['ok' => false, 'code' => 'SQL_ERROR', 'message' => $err];
+            return ['ok' => false, 'code' => 'SQL_OP_FAILED', 'message' => 'Не удалось создать заявку'];
         }
     }
 
