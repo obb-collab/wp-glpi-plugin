@@ -162,7 +162,7 @@
       if (btn) btn.addEventListener('click', function(){
         box.innerHTML = '';
         box.hidden = true;
-        retry();
+        setTimeout(retry, 500);
       });
     }
   }
@@ -267,7 +267,15 @@
         if (gexeAjax && gexeAjax.debug) {
           console.error('wp-glpi:new-task', err);
         }
-        showError(err.message || 'Не удалось загрузить справочники', () => startDictLoad(true), err.details);
+        let msg = err.message || 'Не удалось загрузить справочники';
+        let details = err.details;
+        if (err.type === 'ENTITY_ACCESS') {
+          msg = 'Нет доступа к сущности';
+        }
+        if (details && typeof details !== 'string') {
+          try { details = JSON.stringify(details); } catch(e) { details = String(details); }
+        }
+        showError(msg, () => startDictLoad(true), details);
       }
     });
   }

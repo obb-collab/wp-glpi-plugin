@@ -99,14 +99,14 @@ function glpi_ajax_load_dicts() {
         ]);
     }
 
-    $user_id = get_current_user_id();
+    $user_id      = get_current_user_id();
     $glpi_user_id = (int) get_user_meta($user_id, 'glpi_user_id', true);
     if ($glpi_user_id <= 0) {
         wp_send_json_error([
             'error' => [
                 'type'    => 'MAPPING',
-                'scope'   => 'executors',
-                'code'    => 'NO_MAPPING',
+                'scope'   => 'all',
+                'code'    => 'NO_GLPI_USER',
                 'message' => 'Ваш профиль не привязан к GLPI пользователю',
             ]
         ]);
@@ -116,41 +116,105 @@ function glpi_ajax_load_dicts() {
         $pdo = glpi_get_pdo();
         $pdo->beginTransaction();
 
+        // Verify GLPI user exists and get its default entity
         $stmt = $pdo->prepare('SELECT entities_id FROM glpi_users WHERE id = :id AND is_deleted = 0');
         $stmt->execute([':id' => $glpi_user_id]);
-        $entity_id = (int) $stmt->fetchColumn();
-        if ($entity_id <= 0) {
-            throw new Exception('no_entity');
+        $default_entity = (int) $stmt->fetchColumn();
+        if ($default_entity <= 0) {
+            $pdo->rollBack();
+            wp_send_json_error([
+                'error' => [
+                    'type'    => 'MAPPING',
+                    'scope'   => 'all',
+                    'code'    => 'BROKEN',
+                    'message' => 'GLPI пользователь не найден',
+                ]
+            ]);
+        }
+
+        // Collect allowed entities from profiles
+        $stmtP = $pdo->prepare('SELECT entities_id, is_recursive FROM glpi_profiles_users WHERE users_id = :uid');
+        $stmtP->execute([':uid' => $glpi_user_id]);
+        $profiles = $stmtP->fetchAll();
+
+        $allowed = [];
+        foreach ($profiles as $p) {
+            $eid = (int) ($p['entities_id'] ?? 0);
+            if ($eid <= 0) continue;
+            if ((int) ($p['is_recursive'] ?? 0) === 1) {
+                $stmtE = $pdo->prepare('SELECT e2.id FROM glpi_entities e2 WHERE e2.id = :id OR FIND_IN_SET(:id, e2.ancestors_cache)');
+                $stmtE->execute([':id' => $eid]);
+                $allowed = array_merge($allowed, array_map('intval', $stmtE->fetchAll(PDO::FETCH_COLUMN)));
+            } else {
+                $allowed[] = $eid;
+            }
+        }
+
+        if (empty($allowed) && $default_entity > 0) {
+            $allowed[] = $default_entity;
+        }
+        $allowed = array_values(array_unique(array_map('intval', $allowed)));
+
+        if (empty($allowed) && !(defined('WP_GLPI_DISABLE_ENTITY_CHECK') && WP_GLPI_DISABLE_ENTITY_CHECK)) {
+            $pdo->rollBack();
+            error_log('[wp-glpi:new-task] ENTITY_ACCESS user=' . $user_id . ' glpi=' . $glpi_user_id . ' allowed=0');
+            wp_send_json_error([
+                'error' => [
+                    'type'    => 'ENTITY_ACCESS',
+                    'scope'   => 'all',
+                    'code'    => 'NO_ENTITY',
+                    'message' => 'Нет доступа к сущности',
+                    'details' => WP_GLPI_DEBUG ? ['glpi_user_id' => $glpi_user_id, 'profiles_count' => count($profiles)] : null,
+                ]
+            ]);
         }
 
         $scope = 'categories';
-        $stmtC = $pdo->prepare("SELECT c.id, c.name, c.completename, c.level, c.ancestors_cache FROM glpi_itilcategories c WHERE c.is_deleted = 0 AND c.is_helpdeskvisible = 1 AND (c.entities_id = :entity_id OR c.is_recursive = 1) ORDER BY c.completename ASC");
-        $stmtC->execute([':entity_id' => $entity_id]);
+        if (defined('WP_GLPI_DISABLE_ENTITY_CHECK') && WP_GLPI_DISABLE_ENTITY_CHECK) {
+            $stmtC = $pdo->prepare('SELECT c.id, c.name, c.completename, c.level, c.ancestors_cache FROM glpi_itilcategories c WHERE c.is_deleted = 0 AND c.is_helpdeskvisible = 1 ORDER BY c.completename ASC');
+            $stmtC->execute();
+        } else {
+            $placeholders = implode(',', array_fill(0, count($allowed), '?'));
+            $sqlC = "SELECT c.id, c.name, c.completename, c.level, c.ancestors_cache FROM glpi_itilcategories c JOIN glpi_entities e ON e.id = c.entities_id WHERE c.is_deleted = 0 AND c.is_helpdeskvisible = 1 AND c.entities_id IN ($placeholders) ORDER BY c.completename ASC";
+            $stmtC = $pdo->prepare($sqlC);
+            $stmtC->execute($allowed);
+        }
         $categories = $stmtC->fetchAll();
         if (!$categories) {
             throw new CatalogEmpty('categories');
         }
 
         $scope = 'locations';
-        $stmtL = $pdo->prepare("SELECT l.id, l.name, l.completename FROM glpi_locations l WHERE l.is_deleted = 0 ORDER BY l.completename ASC");
-        $stmtL->execute();
+        if (defined('WP_GLPI_DISABLE_ENTITY_CHECK') && WP_GLPI_DISABLE_ENTITY_CHECK) {
+            $stmtL = $pdo->prepare('SELECT l.id, l.name, l.completename FROM glpi_locations l WHERE l.is_deleted = 0 ORDER BY l.completename ASC');
+            $stmtL->execute();
+        } else {
+            $placeholders = implode(',', array_fill(0, count($allowed), '?'));
+            $sqlL = "SELECT l.id, l.name, l.completename FROM glpi_locations l JOIN glpi_entities e2 ON e2.id = l.entities_id WHERE l.is_deleted = 0 AND l.entities_id IN ($placeholders) ORDER BY l.completename ASC";
+            $stmtL = $pdo->prepare($sqlL);
+            $stmtL->execute($allowed);
+        }
         $locations = $stmtL->fetchAll();
         if (!$locations) {
             throw new CatalogEmpty('locations');
         }
 
-        $scope = 'executors';
-        $executors = glpi_get_wp_executors();
+        $scope      = 'executors';
+        $executors  = glpi_get_wp_executors();
         if (!$executors) {
             throw new CatalogEmpty('executors');
         }
 
         $pdo->commit();
-        wp_send_json_success([
+        $resp = [
             'categories' => $categories,
             'locations'  => $locations,
             'executors'  => $executors,
-        ]);
+        ];
+        if (WP_GLPI_DEBUG) {
+            $resp['meta'] = ['allowed_entities' => $allowed];
+        }
+        wp_send_json_success($resp);
     } catch (CatalogEmpty $e) {
         if (isset($pdo) && $pdo->inTransaction()) {
             $pdo->rollBack();
@@ -181,16 +245,13 @@ function glpi_ajax_load_dicts() {
         if (isset($pdo) && $pdo->inTransaction()) {
             $pdo->rollBack();
         }
-        $msg = $e->getMessage() === 'no_entity' ? 'Нет доступа к сущности' : 'Не удалось загрузить справочники';
-        $code = $e->getMessage() === 'no_entity' ? 'NO_ENTITY' : 'UNHANDLED';
-        $type = $e->getMessage() === 'no_entity' ? 'ENTITY' : 'UNKNOWN';
         error_log('[wp-glpi:new-task] [all] ' . $e->getMessage());
         wp_send_json_error([
             'error' => [
-                'type'    => $type,
+                'type'    => 'UNKNOWN',
                 'scope'   => 'all',
-                'code'    => $code,
-                'message' => $msg,
+                'code'    => 'UNHANDLED',
+                'message' => 'Не удалось загрузить справочники',
                 'details' => WP_GLPI_DEBUG ? $e->getMessage() : null,
             ]
         ]);

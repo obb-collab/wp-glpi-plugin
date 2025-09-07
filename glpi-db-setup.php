@@ -15,6 +15,10 @@ if (!defined('WP_GLPI_DEBUG')) {
     define('WP_GLPI_DEBUG', false);
 }
 
+if (!defined('WP_GLPI_DISABLE_ENTITY_CHECK')) {
+    define('WP_GLPI_DISABLE_ENTITY_CHECK', false);
+}
+
 function glpi_get_pdo(): PDO {
     static $pdo = null;
     if ($pdo instanceof PDO) {
@@ -27,6 +31,12 @@ function glpi_get_pdo(): PDO {
         PDO::ATTR_TIMEOUT            => 5,
     ]);
     return $pdo;
+}
+
+if (!function_exists('wp_glpi_get_connection')) {
+    function wp_glpi_get_connection(): PDO {
+        return glpi_get_pdo();
+    }
 }
 
 define('GEXE_TRIGGERS_VERSION', '2');
