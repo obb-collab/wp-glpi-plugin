@@ -13,6 +13,8 @@ if (!defined('ABSPATH')) exit;
 
 require_once __DIR__ . '/glpi-utils.php';
 require_once __DIR__ . '/includes/glpi-profile-fields.php';
+require_once __DIR__ . '/includes/glpi-new-task.php';
+require_once __DIR__ . '/includes/glpi-ajax.php';
 
 // [manager-switcher] local helper to detect manager account
 function gexe_is_manager_local() {
@@ -53,17 +55,20 @@ register_uninstall_hook(__FILE__, 'gexe_glpi_uninstall');
 
 // ====== СТАТИКА (CSS/JS) с принудительным обновлением версий ======
 add_action('wp_enqueue_scripts', function () {
-    $css_path = plugin_dir_path(__FILE__) . 'assets/css/gee.css';
-    $js_path  = plugin_dir_path(__FILE__) . 'assets/js/gexe-filter.js';
+    $css_path   = plugin_dir_path(__FILE__) . 'assets/css/gee.css';
+    $js_path    = plugin_dir_path(__FILE__) . 'assets/js/gexe-filter.js';
+    $js_newtask = plugin_dir_path(__FILE__) . 'assets/js/gexe-new-task.js';
 
     $css_ver = file_exists($css_path) ? filemtime($css_path) : null;
     $js_ver  = file_exists($js_path)  ? filemtime($js_path)  : null;
+    $js_nt   = file_exists($js_newtask) ? filemtime($js_newtask) : null;
 
     wp_enqueue_style('gexe-gee', plugin_dir_url(__FILE__) . 'assets/css/gee.css', [], $css_ver);
     wp_enqueue_style('gexe-fa', 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css', [], '6.5.0');
     wp_enqueue_script('gexe-filter', plugin_dir_url(__FILE__) . 'assets/js/gexe-filter.js', [], $js_ver, true);
+    wp_enqueue_script('gexe-new-task', plugin_dir_url(__FILE__) . 'assets/js/gexe-new-task.js', ['gexe-filter'], $js_nt, true);
 
-    wp_localize_script('gexe-filter', 'glpiAjax', [
+    $data = [
         'url'               => admin_url('admin-ajax.php'),
         'nonce'             => wp_create_nonce('gexe_actions'),
         'user_glpi_id'      => (int) gexe_get_current_glpi_uid(),
@@ -77,7 +82,9 @@ add_action('wp_enqueue_scripts', function () {
         // [manager-switcher]
         'is_manager'        => gexe_is_manager_local() ? 1 : 0,
         'executors'         => gexe_get_assignee_options(),
-    ]);
+    ];
+    wp_localize_script('gexe-filter', 'glpiAjax', $data);
+    wp_localize_script('gexe-new-task', 'glpiAjax', $data);
 });
 
 // ====== ПОДКЛЮЧЕНИЕ К БД GLPI ======
