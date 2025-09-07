@@ -30,24 +30,10 @@ function gexe_glpi_api_headers(array $extra = []): array {
     return array_merge($base, $extra);
 }
 
-/**
- * Trigger helpers retained for backwards compatibility.
- * They intentionally avoid privileged queries on page load.
- */
 function gexe_glpi_triggers_present() {
-    return false;
-}
-
-function gexe_glpi_install_triggers($force = false) {
-    // no-op: triggers are not managed automatically
-}
-
-function gexe_glpi_remove_triggers() {
-    delete_option('glpi_triggers_version');
-}
-
-function gexe_glpi_triggers_status() {
-    return [];
+    global $glpi_db;
+    $sql = "SELECT COUNT(*) FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA='glpi' AND TRIGGER_NAME IN ('glpi_followups_ai','glpi_followups_ad')";
+    return (int)$glpi_db->get_var($sql) === 2;
 }
 
 /** Whether followups_count column is available. */
@@ -66,7 +52,114 @@ function gexe_glpi_use_followups_count() {
     return $cached;
 }
 
-// legacy trigger management removed
+function gexe_glpi_install_triggers($force = false) {
+    global $glpi_db;
+
+    if (!$force && get_option('glpi_triggers_version') === GEXE_TRIGGERS_VERSION) {
+        return;
+    }
+
+    $existing = gexe_glpi_triggers_present();
+
+    $grants = $glpi_db->get_col('SHOW GRANTS');
+    $has_trigger = false;
+    $has_alter   = false;
+    if ($grants) {
+        foreach ($grants as $g) {
+            if (preg_match('~GRANT (ALL PRIVILEGES|.*TRIGGER.*) ON `?glpi`?\.\\*~i', $g)) {
+                $has_trigger = true;
+            }
+            if (preg_match('~GRANT (ALL PRIVILEGES|.*ALTER.*) ON `?glpi`?\.\\*~i', $g)) {
+                $has_alter = true;
+            }
+        }
+    }
+    if (!$has_trigger) {
+        error_log('gexe/triggers: missing TRIGGER privilege on glpi schema');
+        update_option('glpi_triggers_version', GEXE_TRIGGERS_VERSION);
+        update_option('glpi_use_followups_count', 0);
+        return;
+    }
+
+    $glpi_db->query('SET sql_notes=0');
+    $glpi_db->query('START TRANSACTION');
+    $ok = true;
+
+    $col = $glpi_db->get_var("SHOW COLUMNS FROM glpi.glpi_tickets LIKE 'last_followup_at'");
+    if (!$col) {
+        $glpi_db->query("ALTER TABLE glpi.glpi_tickets ADD COLUMN last_followup_at DATETIME NULL AFTER date_mod");
+        if ($glpi_db->last_error) $ok = false;
+        if ($ok) {
+            $glpi_db->query("UPDATE glpi.glpi_tickets t LEFT JOIN (SELECT items_id, MAX(date) AS d FROM glpi.glpi_itilfollowups WHERE itemtype='Ticket' GROUP BY items_id) f ON t.id = f.items_id SET t.last_followup_at = f.d");
+            if ($glpi_db->last_error) $ok = false;
+        }
+    }
+
+    $use_counter = (bool)$glpi_db->get_var("SHOW COLUMNS FROM glpi.glpi_tickets LIKE 'followups_count'");
+    if (!$use_counter && $has_alter && $ok) {
+        $glpi_db->query("ALTER TABLE glpi.glpi_tickets ADD COLUMN followups_count INT UNSIGNED NOT NULL DEFAULT 0 AFTER last_followup_at");
+        if ($glpi_db->last_error) {
+            $ok = false;
+        } else {
+            $glpi_db->query("UPDATE glpi.glpi_tickets t LEFT JOIN (SELECT items_id, COUNT(*) c FROM glpi.glpi_itilfollowups WHERE itemtype='Ticket' GROUP BY items_id) f ON f.items_id = t.id SET t.followups_count = COALESCE(f.c,0)");
+            if ($glpi_db->last_error) $ok = false; else $use_counter = true;
+        }
+    }
+    if (!$use_counter && !$has_alter) {
+        error_log('gexe/triggers: no ALTER privilege, falling back to COUNT(*)');
+    }
+    if ($use_counter && $ok) {
+        $idx = $glpi_db->get_var("SHOW INDEX FROM glpi.glpi_itilfollowups WHERE Key_name='idx_followups_item'");
+        if (!$idx) {
+            $glpi_db->query("CREATE INDEX idx_followups_item ON glpi.glpi_itilfollowups (itemtype, items_id)");
+            if ($glpi_db->last_error) $ok = false;
+        }
+    }
+
+    if ($ok) {
+        if ($use_counter) {
+            $glpi_db->query("CREATE OR REPLACE TRIGGER glpi.glpi_followups_ai AFTER INSERT ON glpi.glpi_itilfollowups FOR EACH ROW BEGIN IF NEW.itemtype='Ticket' THEN UPDATE glpi.glpi_tickets SET last_followup_at = NEW.date, followups_count = followups_count + 1 WHERE id = NEW.items_id; END IF; END;");
+        } else {
+            $glpi_db->query("CREATE OR REPLACE TRIGGER glpi.glpi_followups_ai AFTER INSERT ON glpi.glpi_itilfollowups FOR EACH ROW BEGIN IF NEW.itemtype='Ticket' THEN UPDATE glpi.glpi_tickets SET last_followup_at = NEW.date WHERE id = NEW.items_id; END IF; END;");
+        }
+        if ($glpi_db->last_error) $ok = false;
+    }
+    if ($ok) {
+        if ($use_counter) {
+            $glpi_db->query("CREATE OR REPLACE TRIGGER glpi.glpi_followups_ad AFTER DELETE ON glpi.glpi_itilfollowups FOR EACH ROW BEGIN IF OLD.itemtype='Ticket' THEN UPDATE glpi.glpi_tickets t SET last_followup_at = (SELECT MAX(f.date) FROM glpi.glpi_itilfollowups f WHERE f.itemtype='Ticket' AND f.items_id = t.id), followups_count = (SELECT COUNT(*) FROM glpi.glpi_itilfollowups f WHERE f.itemtype='Ticket' AND f.items_id = t.id) WHERE t.id = OLD.items_id; END IF; END;");
+        } else {
+            $glpi_db->query("CREATE OR REPLACE TRIGGER glpi.glpi_followups_ad AFTER DELETE ON glpi.glpi_itilfollowups FOR EACH ROW BEGIN IF OLD.itemtype='Ticket' THEN UPDATE glpi.glpi_tickets t SET last_followup_at = (SELECT MAX(f.date) FROM glpi.glpi_itilfollowups f WHERE f.itemtype='Ticket' AND f.items_id = t.id) WHERE t.id = OLD.items_id; END IF; END;");
+        }
+        if ($glpi_db->last_error) $ok = false;
+    }
+
+    if ($ok) {
+        $glpi_db->query('COMMIT');
+        update_option('glpi_triggers_installed', time());
+        update_option('glpi_triggers_version', GEXE_TRIGGERS_VERSION);
+        update_option('glpi_use_followups_count', $use_counter ? 1 : 0);
+        error_log('gexe/triggers: installation completed');
+    } else {
+        $glpi_db->query('ROLLBACK');
+        error_log('gexe/triggers: install failed: ' . $glpi_db->last_error);
+        update_option('glpi_triggers_version', GEXE_TRIGGERS_VERSION);
+        update_option('glpi_use_followups_count', $use_counter ? 1 : 0);
+    }
+}
+
+function gexe_glpi_remove_triggers() {
+    global $glpi_db;
+    $glpi_db->query('SET sql_notes=0');
+    $glpi_db->query('DROP TRIGGER IF EXISTS glpi.glpi_followups_ai');
+    $glpi_db->query('DROP TRIGGER IF EXISTS glpi.glpi_followups_ad');
+    delete_option('glpi_triggers_installed');
+    delete_option('glpi_triggers_version');
+}
+
+function gexe_glpi_triggers_status() {
+    global $glpi_db;
+    return $glpi_db->get_results("SELECT TRIGGER_NAME, ACTION_TIMING, EVENT_MANIPULATION, ACTION_STATEMENT FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA='glpi' AND TRIGGER_NAME IN ('glpi_followups_ai','glpi_followups_ad')");
+}
 
 /**
  * Insert a followup for a ticket.
@@ -154,6 +247,82 @@ function glpi_db_get_categories() {
     }, $rows);
 
     return ['ok' => true, 'code' => 'ok', 'list' => $list];
+}
+
+/**
+ * Fetch list of executors (users).
+ *
+ * @return array<array{glpi_user_id:int,realname:string,firstname:string}>
+ */
+function glpi_db_get_executors() {
+    global $glpi_db, $wpdb;
+    try {
+        $sql = $glpi_db->prepare(
+            "SELECT u.id AS glpi_user_id, u.realname, u.firstname\n"
+            . "FROM glpi_users u\n"
+            . "INNER JOIN {$wpdb->usermeta} m ON m.meta_key = %s AND CAST(m.meta_value AS UNSIGNED) = u.id\n"
+            . "INNER JOIN {$wpdb->users} w ON w.ID = m.user_id\n"
+            . "WHERE u.is_active = 1\n"
+            . "ORDER BY u.realname, u.firstname",
+            'glpi_user_id'
+        );
+        $rows = $glpi_db->get_results($sql, ARRAY_A);
+        if ($glpi_db->last_error) {
+            return [];
+        }
+        return $rows ? $rows : [];
+    } catch (Throwable $e) {
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log('glpi_db_get_executors: ' . $e->getMessage());
+        }
+        return [];
+    }
+}
+
+/**
+ * Fetch tickets filtered by executor id.
+ *
+ * @param string|int $executor_id 'all' or GLPI user id
+ * @param int        $current_id  current GLPI user id for permission check
+ * @return array<int,array>
+ */
+function glpi_db_get_tickets_by_executor($executor_id, $current_id) {
+    global $glpi_db;
+    try {
+        $where_status = " t.status IN (1,2,3,4) AND t.is_deleted = 0 ";
+        $join_assignee = " LEFT JOIN glpi_tickets_users tu ON t.id = tu.tickets_id AND tu.type = 2 ";
+        if ($executor_id !== 'all') {
+            $where_status .= $glpi_db->prepare(' AND tu.users_id = %d ', (int) $executor_id);
+        }
+        $sql = "
+            SELECT  t.id, t.status, t.time_to_resolve,
+                    t.name, t.content, t.date,
+                    tu.users_id AS assignee_id,
+                    tu_req.users_id AS author_id,
+                    u.realname, u.firstname,
+                    c.completename AS category_name,
+                    l.completename AS location_name
+            FROM glpi_tickets t
+            $join_assignee
+            LEFT JOIN glpi_tickets_users tu_req ON t.id = tu_req.tickets_id AND tu_req.type = 1
+            LEFT JOIN glpi_users u ON tu.users_id = u.id
+            LEFT JOIN glpi_itilcategories c ON t.itilcategories_id = c.id
+            LEFT JOIN glpi_locations l ON t.locations_id = l.id
+            WHERE $where_status
+            ORDER BY t.date DESC
+            LIMIT 500
+        ";
+        $rows = $glpi_db->get_results($sql, ARRAY_A);
+        if ($glpi_db->last_error) {
+            return [];
+        }
+        return $rows ? $rows : [];
+    } catch (Throwable $e) {
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log('glpi_db_get_tickets_by_executor: ' . $e->getMessage());
+        }
+        return [];
+    }
 }
 
 /**

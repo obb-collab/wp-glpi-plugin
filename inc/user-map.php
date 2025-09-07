@@ -27,7 +27,7 @@ function gexe_get_glpi_user_id($wp_user_id) {
     }
 
     // Read raw meta, cast to integer and ensure positivity.
-    $raw = function_exists('get_user_meta') ? get_user_meta($wp_user_id, 'glpi_user_id', true) : 0;
+    $raw = get_user_meta($wp_user_id, 'glpi_user_id', true);
     $id  = (int) $raw;
     $id  = $id > 0 ? $id : 0;
 
