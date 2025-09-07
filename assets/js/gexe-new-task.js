@@ -30,8 +30,7 @@
         <button type="button" class="gnt-close" aria-label="Закрыть">×</button>
       </div>
         <div class="gnt-body">
-            <div class="gexe-dict-status" role="status" aria-live="polite" hidden></div>
-            <div class="form-alert" hidden></div>
+          <div class="gexe-dict-status" role="status" aria-live="polite" hidden></div>
           <label for="gnt-name" class="gnt-label">Тема</label>
           <textarea id="gnt-name" class="gnt-textarea"></textarea>
           <div id="gnt-name-err" class="gnt-field-error" hidden></div>
@@ -170,33 +169,19 @@
     }
   }
 
-  function showFormAlert(message, type, details){
-    const box = modal.querySelector('.form-alert');
-    if (!box) return;
-    let html = esc(message || '');
-    if (details) {
-      html += ' <details><code>' + esc(details) + '</code></details>';
-    }
-    box.innerHTML = html;
-    box.className = 'form-alert' + (type ? ' ' + type : '');
-    box.hidden = !message;
-  }
-
   function showSubmitError(message){
-    showFormAlert(message, 'error');
+    showSubmitStatus(message, 'error');
   }
 
-  function showSubmitStatus(message, type, details){
-    const box = modal.querySelector('.form-alert');
+  function showSubmitStatus(message, type){
+    const box = modal.querySelector('.gexe-dict-status');
     if (!box) return;
     const cls = type === 'error' ? 'error' : (type === 'success' ? 'success' : 'loading');
-    box.className = 'form-alert ' + cls;
+    box.className = 'gexe-dict-status ' + cls;
     if (cls === 'loading') {
       box.innerHTML = '<span class="spinner"></span>' + (message || '');
     } else {
-      let html = esc(message || '');
-      if (details) html += ' <details><code>' + esc(details) + '</code></details>';
-      box.innerHTML = html;
+      box.textContent = message || '';
     }
     box.hidden = false;
   }
@@ -265,27 +250,6 @@
       .catch(() => ({ ok: false, error: { type: 'NETWORK', message: 'Ошибка соединения с сервером' } }));
   }
 
-  function reloadExecutors(){
-    if (isLoading) return;
-    isLoading = true;
-    showLoading();
-    fetchDicts(true).then(res => {
-      isLoading = false;
-      if (res.ok) {
-        fillDropdowns({ executors: res.executors });
-        if (res.executors && res.executors.length) {
-          hideStatus();
-          lockForm(false);
-        } else {
-          showError('Список исполнителей недоступен', reloadExecutors);
-        }
-      } else {
-        const err = res.error || {};
-        showError(err.message || 'Ошибка загрузки исполнителей', reloadExecutors, err.details);
-      }
-    });
-  }
-
   function startDictLoad(force){
     if (isLoading) return;
     const now = Date.now();
@@ -323,13 +287,8 @@
         if (res.meta && res.meta.note === 'fallback_no_entities' && gexeAjax && gexeAjax.debug) {
           console.warn('wp-glpi:new-task', 'entity filter fallback (no entities)');
         }
-        if (!executorsLoaded) {
-          showError('Список исполнителей недоступен', reloadExecutors);
-        } else if (warns.length) {
-          showError(warns.join('. '));
-        } else {
-          hideStatus();
-        }
+        if (warns.length) showError(warns.join('. '));
+        else hideStatus();
       } else {
         const err = res.error || {};
         if (gexeAjax && gexeAjax.debug) {
@@ -356,8 +315,7 @@
         if (err && err.details) {
           try { details = typeof err.details === 'string' ? err.details : JSON.stringify(err.details); } catch(e) { details = String(err.details); }
         }
-        const retry = err.scope === 'executors' ? reloadExecutors : () => startDictLoad(true);
-        showError(msg, retry, details);
+        showError(msg, () => startDictLoad(true), details);
       }
     });
   }
@@ -391,8 +349,6 @@
     assigneeSel.disabled = true;
     ['name','content','category','location','assignee'].forEach(function(f){ setFieldError(f); });
     updatePaths();
-    const alertBox = modal.querySelector('.form-alert');
-    if (alertBox) { alertBox.innerHTML=''; alertBox.hidden = true; }
   }
 
   function ensureSuccessModal(){
@@ -599,7 +555,7 @@
     };
     const makeBody = () => {
       const params = new URLSearchParams();
-      params.append('action','wpglpi_create_ticket_api');
+      params.append('action','glpi_create_ticket');
       params.append('nonce', gexeAjax.nonce);
       Object.keys(payload).forEach(k=>{ if(payload[k] !== undefined && payload[k] !== null) params.append(k, payload[k]); });
       return params.toString();
@@ -632,15 +588,10 @@
           window.dispatchEvent(new CustomEvent('gexe:tickets:refresh', {detail:{ticketId:data.id}}));
         }
       } else {
-        const errObj = (data && data.error) || {};
-        const msg = errObj.message ? errObj.message : 'Ошибка создания заявки';
-        let details = null;
-        if (errObj.details) {
-          try { details = typeof errObj.details === 'string' ? errObj.details : JSON.stringify(errObj.details); } catch(e) { details = String(errObj.details); }
-        }
-        showSubmitStatus(msg,'error', details);
-        if (errObj.details && typeof errObj.details === 'object') {
-          Object.keys(errObj.details).forEach(function(f){ setFieldError(f, errObj.details[f]); });
+        const msg = data && data.error && data.error.message ? data.error.message : 'Ошибка создания заявки';
+        showSubmitStatus(msg,'error');
+        if (data && data.error && data.error.details) {
+          Object.keys(data.error.details).forEach(function(f){ setFieldError(f, data.error.details[f]); });
         }
       }
     }).catch(err=>{
