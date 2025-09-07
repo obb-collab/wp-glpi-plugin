@@ -73,18 +73,39 @@ function glpi_ajax_create_ticket() {
         wp_send_json(['ok' => false, 'code' => $map['code']]);
     }
 
+    $name = sanitize_text_field($_POST['name'] ?? '');
+    $desc = sanitize_textarea_field($_POST['description'] ?? '');
+    $cat  = (int) ($_POST['category_id'] ?? 0);
+    $loc  = (int) ($_POST['location_id'] ?? 0);
+    $assign_me = !empty($_POST['assign_me']);
+    $exec = (int) ($_POST['executor_id'] ?? 0);
+
+    $author = (int) $map['id'];
+    $can_assign = ($author === 2);
+    $forced = false;
+    if (!$can_assign) {
+        $forced = (!$assign_me || ($exec && $exec !== $author));
+        $exec = $author;
+        $assign_me = true;
+    } elseif ($assign_me || $exec <= 0) {
+        $exec = $author;
+        $assign_me = true;
+    }
+
     $payload = [
-        'name'        => sanitize_text_field($_POST['name'] ?? ''),
-        'content'     => sanitize_textarea_field($_POST['description'] ?? ''),
-        'category_id' => (int) ($_POST['category_id'] ?? 0),
-        'location_id' => (int) ($_POST['location_id'] ?? 0),
-        'executor_glpi_id' => (int) ($_POST['executor_glpi_id'] ?? 0),
-        'assign_me'   => !empty($_POST['assign_me']),
-        'requester_id'=> $map['id'],
-        'entities_id' => (int) ($_POST['entities_id'] ?? 0),
+        'name' => $name,
+        'content' => $desc,
+        'category_id' => $cat,
+        'location_id' => $loc,
+        'executor_glpi_id' => $exec,
+        'assign_me' => $assign_me,
+        'requester_id' => $author,
     ];
 
     $res = glpi_db_create_ticket($payload);
+    if ($forced && isset($res['ok']) && $res['ok']) {
+        $res['message'] = 'forced_self_executor';
+    }
     wp_send_json($res);
 }
 
