@@ -55,7 +55,7 @@ function glpi_ajax_get_executors() {
     if (!$map['ok']) {
         wp_send_json(['ok' => false, 'code' => $map['code']]);
     }
-    $res = glpi_db_get_executors();
+    $res = gexe_get_executors_list();
     wp_send_json($res);
 }
 
@@ -76,7 +76,7 @@ function glpi_ajax_create_ticket() {
         'content'     => sanitize_textarea_field($_POST['description'] ?? ''),
         'category_id' => (int) ($_POST['category_id'] ?? 0),
         'location_id' => (int) ($_POST['location_id'] ?? 0),
-        'executor_id' => (int) ($_POST['executor_id'] ?? 0),
+        'executor_glpi_id' => (int) ($_POST['executor_glpi_id'] ?? 0),
         'assign_me'   => !empty($_POST['assign_me']),
         'requester_id'=> $map['id'],
         'entities_id' => (int) ($_POST['entities_id'] ?? 0),

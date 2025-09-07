@@ -51,3 +51,41 @@ function gexe_require_glpi_user($wp_user_id) {
     }
     return ['ok' => false, 'code' => 'not_mapped'];
 }
+
+/**
+ * Fetch list of executors from WordPress users mapped to GLPI.
+ *
+ * Returns a unified JSON-style response used by AJAX handlers. Each list
+ * item contains the WordPress user identifier (`wp_id`), display name and the
+ * mapped GLPI `users_id`.
+ *
+ * @return array{ok:bool,code:string,which?:string,list?:array}
+ */
+function gexe_get_executors_list() {
+    global $wpdb;
+
+    $sql = "SELECT u.ID AS wp_id, u.display_name, "
+         . "CAST(um.meta_value AS UNSIGNED) AS glpi_user_id "
+         . "FROM {$wpdb->users} u "
+         . "JOIN {$wpdb->usermeta} um ON um.user_id=u.ID AND um.meta_key='glpi_user_id' "
+         . "WHERE CAST(um.meta_value AS UNSIGNED) > 0 "
+         . "ORDER BY u.display_name";
+
+    $rows = $wpdb->get_results($sql, ARRAY_A);
+    if ($wpdb->last_error) {
+        return ['ok' => false, 'code' => 'dict_failed', 'which' => 'executors'];
+    }
+    if (!$rows) {
+        return ['ok' => false, 'code' => 'dict_empty', 'which' => 'executors'];
+    }
+
+    $list = array_map(function ($r) {
+        return [
+            'wp_id'        => (int) $r['wp_id'],
+            'display_name' => $r['display_name'],
+            'glpi_user_id' => (int) $r['glpi_user_id'],
+        ];
+    }, $rows);
+
+    return ['ok' => true, 'code' => 'ok', 'list' => $list];
+}

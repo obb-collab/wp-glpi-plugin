@@ -209,7 +209,15 @@ function sql_insert_followup($ticket_id, $glpi_user_id, $content) {
  */
 function glpi_db_get_categories() {
     global $glpi_db;
-    $sql  = "SELECT id, completename FROM glpi_itilcategories WHERE is_helpdeskvisible=1 AND is_active=1 ORDER BY completename";
+    $sql = "SELECT c.id, c.completename "
+         . "FROM glpi_itilcategories c "
+         . "WHERE c.is_active=1 AND c.is_helpdeskvisible=1 "
+         . "AND NOT EXISTS ("
+         . "  SELECT 1 FROM glpi_itilcategories ch "
+         . "  WHERE ch.is_active=1 "
+         . "    AND FIND_IN_SET(c.id, REPLACE(CONCAT(TRIM(BOTH ',' FROM ch.ancestors_cache), ',', ch.id), ',', ',')) > 0"
+         . ") "
+         . "ORDER BY c.completename";
     $rows = $glpi_db->get_results($sql, ARRAY_A);
     if ($glpi_db->last_error) {
         return ['ok' => false, 'code' => 'dict_failed', 'which' => 'categories'];
@@ -220,7 +228,7 @@ function glpi_db_get_categories() {
     $list = array_map(function ($r) {
         return ['id' => (int) $r['id'], 'name' => $r['completename']];
     }, $rows);
-    return ['ok' => true, 'list' => $list];
+    return ['ok' => true, 'code' => 'ok', 'list' => $list];
 }
 
 /**
@@ -230,7 +238,15 @@ function glpi_db_get_categories() {
  */
 function glpi_db_get_locations() {
     global $glpi_db;
-    $sql  = "SELECT id, completename FROM glpi_locations WHERE is_active=1 ORDER BY completename";
+    $sql = "SELECT c.id, c.completename "
+         . "FROM glpi_locations c "
+         . "WHERE c.is_active=1 "
+         . "AND NOT EXISTS ("
+         . "  SELECT 1 FROM glpi_locations ch "
+         . "  WHERE ch.is_active=1 "
+         . "    AND FIND_IN_SET(c.id, REPLACE(CONCAT(TRIM(BOTH ',' FROM ch.ancestors_cache), ',', ch.id), ',', ',')) > 0"
+         . ") "
+         . "ORDER BY c.completename";
     $rows = $glpi_db->get_results($sql, ARRAY_A);
     if ($glpi_db->last_error) {
         return ['ok' => false, 'code' => 'dict_failed', 'which' => 'locations'];
@@ -241,7 +257,7 @@ function glpi_db_get_locations() {
     $list = array_map(function ($r) {
         return ['id' => (int) $r['id'], 'name' => $r['completename']];
     }, $rows);
-    return ['ok' => true, 'list' => $list];
+    return ['ok' => true, 'code' => 'ok', 'list' => $list];
 }
 
 /**
@@ -249,22 +265,6 @@ function glpi_db_get_locations() {
  *
  * @return array{ok:bool,code?:string,which?:string,list?:array}
  */
-function glpi_db_get_executors() {
-    global $glpi_db;
-    $sql  = "SELECT id, realname, firstname FROM glpi_users WHERE is_active=1 ORDER BY realname, firstname";
-    $rows = $glpi_db->get_results($sql, ARRAY_A);
-    if ($glpi_db->last_error) {
-        return ['ok' => false, 'code' => 'dict_failed', 'which' => 'executors'];
-    }
-    if (!$rows) {
-        return ['ok' => false, 'code' => 'dict_empty', 'which' => 'executors'];
-    }
-    $list = array_map(function ($r) {
-        $name = trim($r['realname'] . ' ' . $r['firstname']);
-        return ['id' => (int) $r['id'], 'name' => $name];
-    }, $rows);
-    return ['ok' => true, 'list' => $list];
-}
 
 /**
  * Create ticket transaction.
@@ -280,11 +280,14 @@ function glpi_db_create_ticket(array $payload) {
     $cat    = (int) ($payload['category_id'] ?? 0);
     $loc    = (int) ($payload['location_id'] ?? 0);
     $req_id = (int) ($payload['requester_id'] ?? 0);
-    $exec   = (int) ($payload['executor_id'] ?? 0);
+    $exec   = (int) ($payload['executor_glpi_id'] ?? 0);
     $assign_me = !empty($payload['assign_me']);
     $entity = (int) ($payload['entities_id'] ?? 0);
 
-    if ($name === '' || $cat <= 0 || $loc <= 0 || $req_id <= 0) {
+    if ($name === '' || strlen($name) > 200 || $cat <= 0 || $loc <= 0 || $req_id <= 0 || $exec < 0) {
+        return ['ok' => false, 'code' => 'validation'];
+    }
+    if (strlen($desc) > 4000) {
         return ['ok' => false, 'code' => 'validation'];
     }
 
@@ -292,25 +295,23 @@ function glpi_db_create_ticket(array $payload) {
 
     // Duplicate guard
     $dup = $glpi_db->get_var($glpi_db->prepare(
-        "SELECT id FROM glpi_tickets WHERE name=%s AND itilcategories_id=%d AND locations_id=%d AND date_creation > (NOW() - INTERVAL 8 SECOND) LIMIT 1",
+        "SELECT id FROM glpi_tickets WHERE name=%s AND itilcategories_id=%d AND locations_id=%d AND SHA1(content)=SHA1(%s) AND date_creation > (NOW() - INTERVAL 8 SECOND) LIMIT 1",
         $name,
         $cat,
-        $loc
+        $loc,
+        $desc
     ));
     if ($dup) {
         $glpi_db->query('ROLLBACK');
         return ['ok' => false, 'code' => 'duplicate_submit'];
     }
 
-    $now = current_time('mysql');
     $sql = $glpi_db->prepare(
-        "INSERT INTO glpi_tickets (name, content, itilcategories_id, locations_id, status, date_creation, date_mod, entities_id) VALUES (%s,%s,%d,%d,1,%s,%s,%d)",
+        "INSERT INTO glpi_tickets (name, content, itilcategories_id, locations_id, status, date_creation, date_mod, due_date, entities_id) VALUES (%s,%s,%d,%d,1,NOW(),NOW(),CONCAT(CURDATE(),' 17:30:00'),%d)",
         $name,
         $desc,
         $cat,
         $loc,
-        $now,
-        $now,
         $entity
     );
     if (!$glpi_db->query($sql)) {
