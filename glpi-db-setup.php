@@ -19,6 +19,10 @@ if (!defined('WP_GLPI_DISABLE_ENTITY_CHECK')) {
     define('WP_GLPI_DISABLE_ENTITY_CHECK', false);
 }
 
+if (!defined('WP_GLPI_DISABLE_MAPPING_CHECK')) {
+    define('WP_GLPI_DISABLE_MAPPING_CHECK', false);
+}
+
 function glpi_get_pdo(): PDO {
     static $pdo = null;
     if ($pdo instanceof PDO) {

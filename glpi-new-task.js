@@ -162,7 +162,7 @@
       if (btn) btn.addEventListener('click', function(){
         box.innerHTML = '';
         box.hidden = true;
-        setTimeout(retry, 500);
+        setTimeout(retry, 400);
       });
     }
   }
@@ -249,11 +249,6 @@
     dictLoading = true;
     lockForm(true);
     showLoading();
-    if (!gexeAjax || !gexeAjax.user_glpi_id) {
-      dictLoading = false;
-      showError('Ваш профиль не привязан к GLPI пользователю', () => startDictLoad(true));
-      return;
-    }
     fetchDicts(force).then(res => {
       dictLoading = false;
       if (res.ok) {
@@ -267,12 +262,25 @@
         if (gexeAjax && gexeAjax.debug) {
           console.error('wp-glpi:new-task', err);
         }
-        let msg = err.message || 'Не удалось загрузить справочники';
-        let details = err.details;
-        if (err.type === 'ENTITY_ACCESS') {
-          msg = 'Нет доступа к сущности';
+        let msg = 'Не удалось загрузить справочники';
+        switch (err.type) {
+          case 'MAPPING_NOT_SET':
+            msg = 'Ваш профиль не привязан к GLPI пользователю';
+            break;
+          case 'MAPPING_NONINT':
+            msg = 'Некорректный GLPI user ID в профиле (должно быть число)';
+            break;
+          case 'MAPPING_BROKEN':
+            msg = 'GLPI пользователь не найден';
+            break;
+          case 'ENTITY_ACCESS':
+            msg = 'Нет доступа к сущности';
+            break;
+          default:
+            if (err.message) msg = err.message;
         }
-        if (details && typeof details !== 'string') {
+        let details = err.details;
+        if (gexeAjax && gexeAjax.debug && details && typeof details !== 'string') {
           try { details = JSON.stringify(details); } catch(e) { details = String(details); }
         }
         showError(msg, () => startDictLoad(true), details);

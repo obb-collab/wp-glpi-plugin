@@ -12,6 +12,7 @@ Update URI: https://github.com/obb-collab/wp-glpi-plugin
 if (!defined('ABSPATH')) exit;
 
 require_once __DIR__ . '/glpi-utils.php';
+require_once __DIR__ . '/includes/glpi-profile-fields.php';
 
 // [manager-switcher] local helper to detect manager account
 function gexe_is_manager_local() {
@@ -308,50 +309,6 @@ function gexe_glpi_cards_shortcode($atts) {
     ob_start();
     include $tpl;
     return ob_get_clean();
-}
-
-// ====== ПОЛЯ ПРОФИЛЯ WP-ПОЛЬЗОВАТЕЛЯ ======
-add_action('show_user_profile',  'gexe_show_glpi_profile_fields');
-add_action('edit_user_profile',  'gexe_show_glpi_profile_fields');
-add_action('personal_options_update', 'gexe_save_glpi_profile_fields');
-add_action('edit_user_profile_update', 'gexe_save_glpi_profile_fields');
-
-function gexe_show_glpi_profile_fields($user) {
-    if (!($user instanceof WP_User)) return;
-    $glpi_user_id  = get_user_meta($user->ID, 'glpi_user_id', true);
-    $glpi_show_all = (get_user_meta($user->ID, 'glpi_show_all_cards', true) === '1'); ?>
-    <h2>GLPI ↔ WordPress</h2>
-    <table class="form-table" role="presentation">
-        <tr>
-            <th><label for="glpi_user_id">GLPI user ID</label></th>
-            <td>
-                <input type="text" name="glpi_user_id" id="glpi_user_id" class="regular-text" value="<?php echo esc_attr($glpi_user_id); ?>" />
-                <p class="description">Укажите <strong>числовой users.id</strong> из GLPI.</p>
-            </td>
-        </tr>
-        <tr>
-            <th><label for="glpi_show_all_cards">Показывать все карточки</label></th>
-            <td>
-                <label><input type="checkbox" name="glpi_show_all_cards" id="glpi_show_all_cards" value="1" <?php checked($glpi_show_all); ?> /> Отключить фильтрацию по сопоставленному пользователю GLPI</label>
-            </td>
-        </tr>
-    </table>
-<?php }
-
-function gexe_save_glpi_profile_fields($user_id) {
-    if (!current_user_can('edit_user', $user_id)) return;
-
-    if (isset($_POST['glpi_user_id'])) {
-        $raw = trim((string) wp_unslash($_POST['glpi_user_id']));
-        if ($raw === '' || !ctype_digit($raw)) {
-            delete_user_meta($user_id, 'glpi_user_id');
-        } else {
-            update_user_meta($user_id, 'glpi_user_id', (int) $raw);
-        }
-    }
-
-    $show = isset($_POST['glpi_show_all_cards']) ? '1' : '0';
-    update_user_meta($user_id, 'glpi_show_all_cards', $show);
 }
 
 // ====== ПРОЧИЕ ФАЙЛЫ ПЛАГИНА ======
