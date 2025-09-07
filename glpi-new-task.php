@@ -47,13 +47,13 @@ function gexe_create_ticket() {
     }
 
     if (!is_user_logged_in()) {
-        wp_send_json(['error' => 'not_logged_in'], 401);
+        wp_send_json(['error' => 'NONCE_EXPIRED'], 401);
     }
 
     $wp_uid   = get_current_user_id();
     $glpi_uid = gexe_get_current_glpi_user_id($wp_uid);
     if (!$glpi_uid) {
-        wp_send_json(['error' => 'no_glpi_id_for_current_user'], 422);
+        wp_send_json(['error' => 'NO_GLPI_USER'], 422);
     }
 
     $payload_raw = isset($_POST['payload']) ? stripslashes((string)$_POST['payload']) : '';
@@ -95,7 +95,7 @@ function gexe_create_ticket() {
         if ($assignee_wp_id > 0) {
             $assign_glpi_id = gexe_get_current_glpi_user_id($assignee_wp_id);
             if (!$assign_glpi_id) {
-                wp_send_json(['error' => 'assignee_not_mapped_to_glpi'], 422);
+                wp_send_json(['error' => 'NO_GLPI_USER'], 422);
             }
         } else {
             $assign_glpi_id = null;

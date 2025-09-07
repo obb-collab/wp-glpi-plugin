@@ -131,10 +131,12 @@
     });
   }
 
-  function showSubmitError(message){
+  function showSubmitError(code){
     const box = modal.querySelector('.glpi-form-loader');
     if (!box) return;
-    box.innerHTML = '<span class="error">' + (message || 'Ошибка создания заявки') + '</span>';
+    const map = window.GLPI_UI_MESSAGES || {};
+    const msg = map[code] || 'Ошибка создания заявки';
+    box.innerHTML = '<span class="error">' + msg + '</span>';
     box.hidden = false;
   }
 
@@ -188,10 +190,9 @@
     }).then(function(resp){
       const status = resp.status;
       const data = resp.data;
-      if (status === 403 && data && data.code === 'AJAX_FORBIDDEN' && data.reason === 'nonce') {
-        const e = new Error('AJAX_FORBIDDEN');
-        e.code = 'AJAX_FORBIDDEN';
-        e.reason = 'nonce';
+      if (status === 403 && data && data.code === 'NONCE_EXPIRED') {
+        const e = new Error('NONCE_EXPIRED');
+        e.code = 'NONCE_EXPIRED';
         throw e;
       }
       if (status >= 400 || !data || !data.ok){
@@ -211,8 +212,11 @@
       }
       return data;
     }).catch(function(err){
-      if (err && err.code === 'AJAX_FORBIDDEN' && err.reason === 'nonce' && !retry) {
+      if (err && err.code === 'NONCE_EXPIRED' && !retry) {
         loadingPromise = null;
+        if (window.GLPI_UI_MESSAGES && GLPI_UI_MESSAGES.NONCE_EXPIRED_RETRY) {
+          showSubmitError('NONCE_EXPIRED_RETRY');
+        }
         return refreshNonce().then(function(){
           return fetchFormData(true);
         });
@@ -454,7 +458,10 @@
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: makeBody()
       }).then(r=>r.json().then(data=>({status:r.status,data:data}))).then(resp=>{
-        if (resp.status === 403 && resp.data && resp.data.error === 'AJAX_FORBIDDEN' && !retry) {
+        if (resp.status === 403 && resp.data && resp.data.error === 'NONCE_EXPIRED' && !retry) {
+          if (window.GLPI_UI_MESSAGES && GLPI_UI_MESSAGES.NONCE_EXPIRED_RETRY) {
+            showSubmitError('NONCE_EXPIRED_RETRY');
+          }
           return refreshNonce().then(()=>send(true));
         }
         return resp;
@@ -468,11 +475,11 @@
           showSuccessModal(data.ticket_id);
         }
       } else {
-        showSubmitError(data && data.error ? data.error : 'Ошибка создания заявки');
+        showSubmitError(data && data.error ? data.error : 'SQL_OP_FAILED');
       }
     }).catch(err=>{
       logClientError((err && err.code ? err.code + ': ' : '') + (err && err.message ? err.message : String(err)));
-      showSubmitError(err && err.message ? err.message : 'Ошибка отправки');
+      showSubmitError('SQL_OP_FAILED');
     }).finally(()=>{btn.disabled = false;});
   }
 

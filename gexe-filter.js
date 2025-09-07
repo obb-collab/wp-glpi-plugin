@@ -15,17 +15,7 @@
   const glpiAjax = ajaxConfig;
   window.GEXE_DEBUG = window.GEXE_DEBUG || false;
 
-  const ERROR_MAP = {
-    not_logged_in: 'Сессия истекла. Войдите в систему.',
-    nonce_failed: 'Обновите страницу (просрочен ключ безопасности).',
-    no_glpi_id_for_current_user: 'В профиле WP не указан GLPI ID.',
-    assignee_not_mapped_to_glpi: 'Выбранный исполнитель не привязан к GLPI.',
-    ticket_not_found: 'Заявка не найдена.',
-    sql_error: details => 'Ошибка записи в GLPI. Код: ' + (details || '') + '.',
-    empty_comment: 'Введите комментарий',
-    bad_response: 'Не удалось обработать ответ сервера.',
-    network_error: 'Ошибка сети',
-  };
+  const ERROR_MAP = window.GLPI_UI_MESSAGES || {};
 
   function ensureNoticeHost() {
     let parent = null;
@@ -74,7 +64,7 @@
     const m = ERROR_MAP[code];
     if (typeof m === 'function') msg = m(details);
     else if (typeof m === 'string') msg = m;
-    if (!msg) msg = 'Неизвестная ошибка' + (status ? ' (' + status + ')' : '');
+    if (!msg) msg = 'Не удалось выполнить операцию. Попробуйте ещё раз.';
     showNotice('error', msg);
   }
 
@@ -212,7 +202,8 @@
       let data = null;
       try { data = await res.clone().json(); }
       catch (e) { try { await res.clone().text(); } catch (e2) {} }
-      if (res.status === 403 && data && data.error === 'nonce_failed' && !retry) {
+      if (res.status === 403 && data && data.error === 'NONCE_EXPIRED' && !retry) {
+        if (ERROR_MAP.NONCE_EXPIRED_RETRY) showNotice('info', ERROR_MAP.NONCE_EXPIRED_RETRY);
         await refreshActionsNonce();
         fd.set(nonceKey, ajax.nonce || '');
         fd.set('nonce', ajax.nonce || '');
