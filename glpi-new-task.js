@@ -250,6 +250,9 @@
         if (d.meta.empty.categories) warns.push('Справочник «Категории» пуст');
         if (d.meta.empty.locations) warns.push('Справочник «Местоположения» пуст');
       }
+      if (d.meta && d.meta.note === 'fallback_no_entities' && gexeAjax && gexeAjax.debug) {
+        console.warn('wp-glpi:new-task', 'entity filter fallback (no entities)');
+      }
       if (warns.length) showError(warns.join('. '));
       else hideStatus();
       return;
@@ -268,6 +271,9 @@
         if (res.meta && res.meta.empty) {
           if (res.meta.empty.categories) warns.push('Справочник «Категории» пуст');
           if (res.meta.empty.locations) warns.push('Справочник «Местоположения» пуст');
+        }
+        if (res.meta && res.meta.note === 'fallback_no_entities' && gexeAjax && gexeAjax.debug) {
+          console.warn('wp-glpi:new-task', 'entity filter fallback (no entities)');
         }
         if (warns.length) showError(warns.join('. '));
         else hideStatus();
