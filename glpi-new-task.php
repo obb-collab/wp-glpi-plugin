@@ -90,170 +90,105 @@ function glpi_ajax_load_dicts() {
             ]
         ]);
     }
-
-    $user_id = get_current_user_id();
-    $raw_map = get_user_meta($user_id, 'glpi_user_id', true);
-    if ($raw_map === null || trim((string)$raw_map) === '') {
-        error_log('[wp-glpi:mapping] type=MAPPING_NOT_SET wp=' . $user_id . ' glpi_id=0');
-        wp_send_json_error([
-            'error' => [
-                'type'    => 'MAPPING_NOT_SET',
-                'scope'   => 'all',
-                'code'    => 'MAPPING_NOT_SET',
-                'message' => 'Ваш профиль не привязан к GLPI пользователю',
-            ]
-        ]);
-    }
-    $raw_trim = trim((string)$raw_map);
-    if ($raw_trim === '' || !ctype_digit($raw_trim)) {
-        error_log('[wp-glpi:mapping] type=MAPPING_NONINT wp=' . $user_id . ' glpi_id=' . $raw_trim);
-        wp_send_json_error([
-            'error' => [
-                'type'    => 'MAPPING_NONINT',
-                'scope'   => 'all',
-                'code'    => 'MAPPING_NONINT',
-                'message' => 'GLPI user ID должен быть числом',
-            ]
-        ]);
-    }
-    $glpi_user_id = (int) $raw_trim;
-    if ($glpi_user_id <= 0) {
-        error_log('[wp-glpi:mapping] type=MAPPING_NONINT wp=' . $user_id . ' glpi_id=' . $raw_trim);
-        wp_send_json_error([
-            'error' => [
-                'type'    => 'MAPPING_NONINT',
-                'scope'   => 'all',
-                'code'    => 'MAPPING_NONINT',
-                'message' => 'GLPI user ID должен быть числом',
-            ]
-        ]);
-    }
-
     try {
         $pdo = glpi_get_pdo();
         $pdo->beginTransaction();
-
         $scope = 'all';
-        $stmt = $pdo->prepare('SELECT u.entities_id, u.is_active FROM glpi_users u WHERE u.id = :id LIMIT 1');
-        $stmt->execute([':id' => $glpi_user_id]);
-        $user_row = $stmt->fetch();
-        if (!$user_row || (int)($user_row['is_active'] ?? 0) !== 1) {
-            $pdo->rollBack();
-            error_log('[wp-glpi:mapping] type=MAPPING_BROKEN wp=' . $user_id . ' glpi_id=' . $glpi_user_id);
-            wp_send_json_error([
-                'error' => [
-                    'type'    => 'MAPPING_BROKEN',
-                    'scope'   => 'all',
-                    'code'    => 'MAPPING_BROKEN',
-                    'message' => 'GLPI пользователь не найден',
-                    'details' => WP_GLPI_DEBUG ? ['glpi_user_id' => $glpi_user_id] : null,
-                ]
-            ]);
-        }
-        $user_eid = (int) ($user_row['entities_id'] ?? 0);
+        $note = null;
 
-        $entity_mode = defined('WP_GLPI_ENTITY_MODE') ? WP_GLPI_ENTITY_MODE : 'user_fallback';
+        $use_filter = defined('WP_GLPI_FILTER_CATALOGS_BY_ENTITY') && WP_GLPI_FILTER_CATALOGS_BY_ENTITY;
         $allowed = [];
-        $profiles = [];
-        $profiles_count = 0;
-        $source = $entity_mode;
-
-        if ($entity_mode !== 'all') {
-            $cache_key = 'wp_glpi_allowed_' . $glpi_user_id . '_' . $entity_mode;
-            $cached = get_transient($cache_key);
-            if (is_array($cached) && $cached) {
-                $allowed = array_map('intval', $cached);
-                $source  = 'cache';
-            } else {
-                $stmtP = $pdo->prepare('SELECT pu.entities_id, pu.is_recursive FROM glpi_profiles_users pu WHERE pu.users_id = :uid');
-                $stmtP->execute([':uid' => $glpi_user_id]);
-                $profiles = $stmtP->fetchAll();
-                $profiles_count = count($profiles);
-
-                if ($profiles_count > 0 || $entity_mode === 'profiles') {
-                    $source = 'profiles';
-                    foreach ($profiles as $p) {
-                        $eid = (int) ($p['entities_id'] ?? 0);
-                        if ($eid <= 0) continue;
-                        $stmtE = $pdo->prepare('SELECT e2.id FROM glpi_entities e2 WHERE e2.id = :eid OR e2.ancestors_cache LIKE CONCAT(\'%$\', :eid, \'$%\')');
-                        $stmtE->bindValue(':eid', $eid, PDO::PARAM_INT);
-                        $stmtE->execute();
-                        $allowed = array_merge($allowed, array_map('intval', $stmtE->fetchAll(PDO::FETCH_COLUMN)));
+        if ($use_filter) {
+            $glpi_user_id = gexe_get_glpi_user_id(get_current_user_id());
+            if ($glpi_user_id > 0) {
+                $stmt = $pdo->prepare('SELECT u.entities_id, u.is_active FROM glpi_users u WHERE u.id = :id LIMIT 1');
+                $stmt->execute([':id' => $glpi_user_id]);
+                $user_row = $stmt->fetch();
+                if ($user_row && (int)($user_row['is_active'] ?? 0) === 1) {
+                    $user_eid = (int) ($user_row['entities_id'] ?? 0);
+                    $entity_mode = defined('WP_GLPI_ENTITY_MODE') ? WP_GLPI_ENTITY_MODE : 'user_fallback';
+                    if ($entity_mode !== 'all') {
+                        $cache_key = 'wp_glpi_allowed_' . $glpi_user_id . '_' . $entity_mode;
+                        $cached = get_transient($cache_key);
+                        if (is_array($cached) && $cached) {
+                            $allowed = array_map('intval', $cached);
+                        } else {
+                            $stmtP = $pdo->prepare('SELECT pu.entities_id, pu.is_recursive FROM glpi_profiles_users pu WHERE pu.users_id = :uid');
+                            $stmtP->execute([':uid' => $glpi_user_id]);
+                            $profiles = $stmtP->fetchAll();
+                            $profiles_count = count($profiles);
+                            if ($profiles_count > 0 || $entity_mode === 'profiles') {
+                                foreach ($profiles as $p) {
+                                    $eid = (int) ($p['entities_id'] ?? 0);
+                                    if ($eid <= 0) continue;
+                                    $stmtE = $pdo->prepare('SELECT e2.id FROM glpi_entities e2 WHERE e2.id = :eid OR e2.ancestors_cache LIKE CONCAT(\'%$\', :eid, \'$%\')');
+                                    $stmtE->bindValue(':eid', $eid, PDO::PARAM_INT);
+                                    $stmtE->execute();
+                                    $allowed = array_merge($allowed, array_map('intval', $stmtE->fetchAll(PDO::FETCH_COLUMN)));
+                                }
+                            } else {
+                                $stmtE = $pdo->prepare('SELECT e2.id FROM glpi_entities e2 WHERE e2.id = :eid OR e2.ancestors_cache LIKE CONCAT(\'%$\', :eid, \'$%\')');
+                                $stmtE->bindValue(':eid', $user_eid, PDO::PARAM_INT);
+                                $stmtE->execute();
+                                $allowed = array_map('intval', $stmtE->fetchAll(PDO::FETCH_COLUMN));
+                            }
+                            $allowed = array_values(array_unique($allowed));
+                            set_transient($cache_key, $allowed, 5 * MINUTE_IN_SECONDS);
+                        }
                     }
-                } else {
-                    $source = 'user_fallback';
-                    $stmtE = $pdo->prepare('SELECT e2.id FROM glpi_entities e2 WHERE e2.id = :eid OR e2.ancestors_cache LIKE CONCAT(\'%$\', :eid, \'$%\')');
-                    $stmtE->bindValue(':eid', $user_eid, PDO::PARAM_INT);
-                    $stmtE->execute();
-                    $allowed = array_map('intval', $stmtE->fetchAll(PDO::FETCH_COLUMN));
                 }
-                $allowed = array_values(array_unique($allowed));
-                set_transient($cache_key, $allowed, 5 * MINUTE_IN_SECONDS);
             }
-
-            if (empty($allowed)) {
-                $pdo->rollBack();
-                error_log('[wp-glpi:new-task] ENTITY_ACCESS user=' . $glpi_user_id . ' user_eid=' . $user_eid . ' profiles=' . $profiles_count);
-                wp_send_json_error([
-                    'error' => [
-                        'type'    => 'ENTITY_ACCESS',
-                        'scope'   => 'all',
-                        'code'    => 'NO_ENTITY',
-                        'message' => 'Нет доступа к сущности',
-                        'details' => WP_GLPI_DEBUG ? [
-                            'glpi_user_id'     => $glpi_user_id,
-                            'user_eid'         => $user_eid,
-                            'profiles_count'   => $profiles_count,
-                            'allowed_entities' => $allowed,
-                        ] : null,
-                    ]
-                ]);
+            if (!$allowed) {
+                $use_filter = false;
+                $note = 'fallback_no_entities';
             }
-        } else {
-            $source = 'all';
         }
-
-        error_log('[wp-glpi:new-task] source=' . $source . ' allowed=' . ($entity_mode === 'all' ? 'all' : count($allowed)) . ' user=' . $glpi_user_id);
 
         $scope = 'categories';
-        if ($entity_mode === 'all') {
-            $stmtC = $pdo->prepare('SELECT c.id, c.name, c.completename, c.level, c.ancestors_cache FROM glpi_itilcategories c WHERE c.is_deleted = 0 AND c.is_helpdeskvisible = 1 ORDER BY c.completename ASC');
-            $stmtC->execute();
-        } else {
+        $sqlC = 'SELECT c.id, c.name, c.completename, c.level FROM glpi_itilcategories c WHERE c.is_deleted = 0 AND c.is_helpdeskvisible = 1';
+        if ($use_filter) {
             $ph = implode(',', array_map(function ($i) { return ':e' . $i; }, array_keys($allowed)));
-            $sqlC = 'SELECT c.id, c.name, c.completename, c.level, c.ancestors_cache FROM glpi_itilcategories c WHERE c.is_deleted = 0 AND c.is_helpdeskvisible = 1 AND c.entities_id IN (' . $ph . ') ORDER BY c.completename ASC';
-            $stmtC = $pdo->prepare($sqlC);
+            $sqlC .= ' AND c.entities_id IN (' . $ph . ')';
+        }
+        $sqlC .= ' ORDER BY c.completename ASC';
+        $stmtC = $pdo->prepare($sqlC);
+        if ($use_filter) {
             foreach ($allowed as $i => $id) {
                 $stmtC->bindValue(':e' . $i, $id, PDO::PARAM_INT);
             }
-            $stmtC->execute();
         }
+        $stmtC->execute();
         $categories = $stmtC->fetchAll();
         $meta_empty = ['categories' => empty($categories), 'locations' => false];
 
         $scope = 'locations';
-        if ($entity_mode === 'all') {
-            $stmtL = $pdo->prepare('SELECT l.id, l.name, l.completename FROM glpi_locations l WHERE l.is_deleted = 0 ORDER BY l.completename ASC');
-            $stmtL->execute();
-        } else {
+        $sqlL = 'SELECT l.id, l.name, l.completename FROM glpi_locations l WHERE l.is_deleted = 0';
+        if ($use_filter) {
             $ph = implode(',', array_map(function ($i) { return ':e' . $i; }, array_keys($allowed)));
-            $sqlL = 'SELECT l.id, l.name, l.completename FROM glpi_locations l WHERE l.is_deleted = 0 AND l.entities_id IN (' . $ph . ') ORDER BY l.completename ASC';
-            $stmtL = $pdo->prepare($sqlL);
+            $sqlL .= ' AND l.entities_id IN (' . $ph . ')';
+        }
+        $sqlL .= ' ORDER BY l.completename ASC';
+        $stmtL = $pdo->prepare($sqlL);
+        if ($use_filter) {
             foreach ($allowed as $i => $id) {
                 $stmtL->bindValue(':e' . $i, $id, PDO::PARAM_INT);
             }
-            $stmtL->execute();
         }
+        $stmtL->execute();
         $locations = $stmtL->fetchAll();
         $meta_empty['locations'] = empty($locations);
 
         $pdo->commit();
 
         $executors = glpi_get_wp_executors();
-        $meta = ['source' => $source, 'empty' => $meta_empty];
+        $meta = ['entity_filter' => $use_filter ? 'on' : 'off', 'empty' => $meta_empty];
+        if ($note) {
+            $meta['note'] = $note;
+        }
         if (WP_GLPI_DEBUG) {
             $meta['allowed_entities'] = $allowed;
         }
+        error_log('[wp-glpi:new-task catalogs] mode=' . ($use_filter ? 'on' : 'off') . ' cats=' . count($categories) . ' locs=' . count($locations));
 
         wp_send_json_success([
             'categories' => $categories,

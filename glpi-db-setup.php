@@ -20,6 +20,11 @@ if (!defined('WP_GLPI_ENTITY_MODE')) {
     define('WP_GLPI_ENTITY_MODE', 'user_fallback');
 }
 
+// Whether category/location dictionaries should respect entity restrictions.
+if (!defined('WP_GLPI_FILTER_CATALOGS_BY_ENTITY')) {
+    define('WP_GLPI_FILTER_CATALOGS_BY_ENTITY', false);
+}
+
 function glpi_get_pdo(): PDO {
     static $pdo = null;
     if ($pdo instanceof PDO) {
