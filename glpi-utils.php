@@ -46,9 +46,9 @@ function gexe_resolve_glpi_mapping($wp_user_id) {
 /**
  * Determine GLPI user ID for a WordPress user based on stored meta.
  *
- * The mapping is always derived from the `glpi_user_key` meta which may contain
- * a numeric identifier or an MD5 hash of the user's name. Numeric identifiers
- * are trusted as-is without checking the GLPI database.
+ * Reads the `glpi_user_key` meta value. When it contains a numeric value it is
+ * returned as the GLPI ID and also cached in `glpi_user_id`. Any non-numeric
+ * value results in cache cleanup and a zero return value.
  *
  * @param int $wp_user_id WordPress user identifier.
  * @return int GLPI `users.id` or 0 when not found.
@@ -59,10 +59,10 @@ function gexe_get_current_glpi_user_id($wp_user_id) {
         return 0;
     }
 
-    $map  = gexe_resolve_glpi_mapping($wp_user_id);
-    $glpi = (int) $map['glpi_user_id'];
-
-    if ($glpi > 0) {
+    $key = get_user_meta($wp_user_id, 'glpi_user_key', true);
+    $key = is_string($key) ? trim($key) : '';
+    if ($key !== '' && ctype_digit($key)) {
+        $glpi = (int) $key;
         update_user_meta($wp_user_id, 'glpi_user_id', $glpi);
         return $glpi;
     }
@@ -94,28 +94,45 @@ function gexe_glpi_log($action, $url, $response, $start_time) {
 /**
  * Send unified AJAX success response.
  */
-function gexe_ajax_success(array $data = [], $status = 200) {
+function gexe_ajax_success_compat(array $data = [], $status = 200) {
     wp_send_json([
         'success' => true,
         'data'    => $data,
+        'ok'      => true,
+        'payload' => $data,
     ], $status);
+}
+
+function gexe_ajax_success(array $data = [], $status = 200) {
+    gexe_ajax_success_compat($data, $status);
 }
 
 /**
  * Send unified AJAX error response.
  */
-function gexe_ajax_error($code, $message, $status = 400, $details = null) {
-    $error = [
-        'code'    => (string) $code,
-        'message' => (string) $message,
+function gexe_ajax_error_compat($code, $message, $extra = [], $status = 400) {
+    $response = [
+        'success'       => false,
+        'error'         => [
+            'code'    => (string) $code,
+            'message' => (string) $message,
+        ],
+        'ok'            => false,
+        'error_code'    => (string) $code,
+        'error_message' => (string) $message,
     ];
-    if ($details !== null) {
-        $error['details'] = $details;
+    if (is_array($extra) && !empty($extra)) {
+        $response = array_merge($response, $extra);
     }
-    wp_send_json([
-        'success' => false,
-        'error'   => $error,
-    ], $status);
+    wp_send_json($response, $status);
+}
+
+function gexe_ajax_error($code, $message, $status = 400, $details = null) {
+    $extra = [];
+    if ($details !== null) {
+        $extra['details'] = $details;
+    }
+    gexe_ajax_error_compat($code, $message, $extra, $status);
 }
 
 /**

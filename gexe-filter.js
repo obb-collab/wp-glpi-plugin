@@ -16,22 +16,50 @@
   window.GEXE_DEBUG = window.GEXE_DEBUG || false;
 
   const ERROR_MAP = {
-    not_logged_in: 'Сессия истекла. Войдите в систему.',
-    nonce_failed: 'Сессия истекла. Обновите страницу.',
     NONCE_EXPIRED: 'Сессия истекла. Обновите страницу.',
-    NO_PERMISSION: 'У вас нет прав для этой заявки.',
-    no_glpi_id_for_current_user: 'Не найден профиль исполнителя GLPI. Обратитесь к администратору.',
     NO_GLPI_USER: 'Не найден профиль исполнителя GLPI. Обратитесь к администратору.',
-    assignee_not_mapped_to_glpi: 'Выбранный исполнитель не привязан к GLPI.',
-    ticket_not_found: 'Заявка не найдена.',
-    SQL_OP_FAILED: details => details || 'Не удалось выполнить операцию. Попробуйте ещё раз.',
+    NO_PERMISSION: 'У вас нет прав для этой заявки.',
     EMPTY_CONTENT: 'Введите текст комментария.',
     ALREADY_ACCEPTED: 'Уже принято в работу.',
+    SQL_OP_FAILED: details => details || 'Не удалось выполнить операцию. Попробуйте ещё раз.',
     INVALID_INPUT: 'Проверьте заполнение полей.',
     bad_response: 'Не удалось обработать ответ сервера.',
     network_error: 'Ошибка сети',
     SESSION_EXPIRED: 'Сессия истекла. Обновите страницу.',
   };
+
+  function normalizeResponse(res) {
+    if (!res || typeof res !== 'object') {
+      return { ok: false, code: 'bad_response', message: 'bad_response' };
+    }
+    if (res.success === true || res.ok === true) {
+      const data = res.data !== undefined ? res.data : (res.payload !== undefined ? res.payload : res);
+      return { ok: true, data: data };
+    }
+    const code = (res.error && res.error.code) || res.error_code || res.code || '';
+    const message = (res.error && res.error.message) || res.error_message || res.message || '';
+    return { ok: false, code: code, message: message, data: res.data || res.payload || null };
+  }
+
+  function ajaxPost(params, retry) {
+    const ajax = window.gexeAjax || window.glpiAjax;
+    if (!ajax || !ajax.url) return Promise.resolve({ ok: false, code: 'network_error' });
+    const fd = new FormData();
+    Object.keys(params).forEach(k => fd.append(k, params[k]));
+    if (!params.nonce && ajax.nonce) {
+      fd.append('nonce', ajax.nonce);
+    }
+    return fetch(ajax.url, { method: 'POST', body: fd })
+      .then(r => r.json())
+      .then(normalizeResponse)
+      .then(res => {
+        if (!res.ok && res.code === 'NONCE_EXPIRED' && !retry) {
+          return refreshActionsNonce().then(() => ajaxPost(params, true));
+        }
+        return res;
+      })
+      .catch(() => ({ ok: false, code: 'network_error', message: 'network_error' }));
+  }
 
   function ensureNoticeHost() {
     let parent = null;
@@ -185,7 +213,7 @@
       wrap.style.padding = '5px 10px';
       wrap.style.textAlign = 'center';
       wrap.style.boxShadow = '0 2px 5px rgba(0,0,0,0.1)';
-      wrap.innerHTML = '<span class="gexe-map-msg">GLPI профиль не найден. Нажмите «Проверить» для диагностики.</span> '
+      wrap.innerHTML = '<span class="gexe-map-msg">Не найден профиль GLPI. Укажите users.id в профиле WP.</span> '
         + '<button type="button" class="gexe-map-check glpi-act">Проверить</button>'
         + '<span class="gexe-map-resp"></span>';
       document.body.prepend(wrap);
@@ -205,23 +233,10 @@
     const btn = document.querySelector('#gexe-mapping-warning .gexe-map-check');
     if (btn) btn.disabled = true;
     const ajax = window.gexeAjax || window.glpiAjax;
-    if (!ajax || !ajax.url) return;
-    const fd = new FormData();
-    fd.append('action', 'gexe_check_mapping');
-    const nonceKey = ajax.nonce_key || 'nonce';
-    fd.append(nonceKey, ajax.nonce || '');
-    fd.append('nonce', ajax.nonce || '');
-    fd.append('_ajax_nonce', ajax.nonce || '');
-    let data = null;
-    try {
-      const res = await fetch(ajax.url, { method: 'POST', body: fd });
-      data = await res.json();
-    } catch (e) {
-      showNotice('error', 'Ошибка сети');
-    }
-    if (btn) btn.disabled = false;
     const resp = document.querySelector('#gexe-mapping-warning .gexe-map-resp');
-    if (data && data.success && data.data) {
+    const data = await ajaxPost({ action: 'gexe_check_mapping' });
+    if (btn) btn.disabled = false;
+    if (data.ok && data.data) {
       const info = data.data;
       if (resp) {
         resp.textContent = ' wp: ' + info.wp_user_id + ' / key: ' + info.glpi_user_key + ' / glpi: ' + info.glpi_user_id + ' / source: ' + info.source;
@@ -231,7 +246,7 @@
         hideMappingWarning();
         unblockActions();
       } else {
-        blockActions('no_glpi_id_for_current_user');
+        blockActions('NO_GLPI_USER');
       }
     } else if (resp) {
       resp.textContent = ' Проверка не удалась';
@@ -242,7 +257,7 @@
     const ajax = window.gexeAjax || window.glpiAjax;
     if (!ajax || !ajax.user_glpi_id || Number(ajax.user_glpi_id) <= 0) {
       showMappingWarning();
-      blockActions('no_glpi_id_for_current_user');
+      blockActions('NO_GLPI_USER');
     }
   }
 
@@ -308,17 +323,10 @@
   function refreshActionsNonce() {
     const ajax = window.gexeAjax || window.glpiAjax;
     if (!ajax) return Promise.reject(new Error('no_ajax'));
-    const params = new URLSearchParams();
-    params.append('action', 'gexe_refresh_actions_nonce');
-    return fetch(ajax.url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: params.toString(),
-    })
-      .then(r => r.json())
-      .then(data => {
-        if (data && data.success && data.data && data.data.nonce) {
-          ajax.nonce = data.data.nonce;
+    return ajaxPost({ action: 'gexe_refresh_actions_nonce' })
+      .then(res => {
+        if (res.ok && res.data && res.data.nonce) {
+          ajax.nonce = res.data.nonce;
           return ajax.nonce;
         }
         throw new Error('nonce_refresh_failed');

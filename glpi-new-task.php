@@ -45,17 +45,17 @@ add_action('wp_enqueue_scripts', function () {
 add_action('wp_ajax_gexe_create_ticket', 'gexe_create_ticket');
 function gexe_create_ticket() {
     if (!check_ajax_referer('gexe_form_data', 'nonce', false)) {
-        wp_send_json(['ok' => false, 'error' => 'AJAX_FORBIDDEN'], 403);
+        gexe_ajax_error_compat('NONCE_EXPIRED', 'nonce_failed', [], 403);
     }
 
     if (!is_user_logged_in()) {
-        wp_send_json(['error' => 'not_logged_in'], 401);
+        gexe_ajax_error_compat('NO_PERMISSION', 'not_logged_in', [], 401);
     }
 
     $wp_uid   = get_current_user_id();
     $glpi_uid = gexe_get_current_glpi_user_id($wp_uid);
     if (!$glpi_uid) {
-        wp_send_json(['error' => 'no_glpi_id_for_current_user'], 422);
+        gexe_ajax_error_compat('NO_GLPI_USER', 'no_glpi_id', [], 422);
     }
 
     $payload_raw = isset($_POST['payload']) ? stripslashes((string)$_POST['payload']) : '';
@@ -87,7 +87,7 @@ function gexe_create_ticket() {
     if (!$due_date) { $errors['due'] = 'required'; }
     if (!$assign_me && $assignee_wp_id <= 0) { $errors['assignee'] = 'required'; }
     if (!empty($errors)) {
-        wp_send_json(['ok' => false, 'error' => 'VALIDATION', 'details' => $errors], 400);
+        gexe_ajax_error_compat('INVALID_INPUT', 'validation', ['details' => $errors], 400);
     }
 
     $assignee_glpi = $glpi_uid;
@@ -106,8 +106,8 @@ function gexe_create_ticket() {
     ]);
 
     if (!empty($resp['ok'])) {
-        wp_send_json(['ok' => true, 'ticket_id' => $resp['ticket_id']]);
+        gexe_ajax_success_compat(['ticket_id' => $resp['ticket_id']]);
     }
 
-    wp_send_json(['ok' => false, 'error' => $resp['code'] ?? 'SQL_OP_FAILED', 'message' => $resp['message'] ?? 'Не удалось создать заявку'], 500);
+    gexe_ajax_error_compat($resp['code'] ?? 'SQL_OP_FAILED', $resp['message'] ?? 'Не удалось создать заявку', [], 500);
 }
