@@ -431,26 +431,82 @@
   function fillSelect(sel, list) {
     const el = document.querySelector(sel);
     if (!el) return;
-    el.innerHTML = '';
-    list.forEach(it => {
-      const opt = document.createElement('option');
-      opt.value = it.id;
-      opt.textContent = it.name;
-      el.appendChild(opt);
-    });
+    if (el.tagName === 'SELECT') {
+      el.innerHTML = '';
+      list.forEach(it => {
+        const opt = document.createElement('option');
+        opt.value = it.id;
+        opt.textContent = it.name;
+        el.appendChild(opt);
+      });
+    } else if (el.tagName === 'INPUT') {
+      const dl = document.getElementById(el.id + '-list');
+      if (!dl) return;
+      dl.innerHTML = '';
+      list.forEach(it => {
+        const opt = document.createElement('option');
+        opt.value = it.name;
+        opt.setAttribute('data-id', it.id);
+        opt.setAttribute('data-path', it.name);
+        dl.appendChild(opt);
+      });
+    }
   }
 
   function loadNewTaskDicts() {
     const modal = document.querySelector('.glpi-create-modal');
     if (!modal) return;
+    const catSel = modal.querySelector('#gnt-category');
+    const locSel = modal.querySelector('#gnt-location');
+    const execSel = modal.querySelector('#gnt-assignee');
+    const submit = modal.querySelector('.gnt-submit');
+
+    const setStatus = (el, type, text, retry) => {
+      if (!el) return;
+      const st = modal.querySelector('#' + el.id + '-status');
+      if (st) {
+        st.className = 'gnt-inline-status' + (type ? ' ' + type : '');
+        if (type === 'error' && retry) {
+          st.innerHTML = text + ' <button type="button" class="gnt-retry">Повторить</button>';
+          const btn = st.querySelector('.gnt-retry');
+          if (btn) btn.addEventListener('click', retry);
+        } else {
+          st.textContent = text || '';
+        }
+      }
+    };
+
+    const loadOne = (which, el) => {
+      if (!el) return Promise.resolve(null);
+      el.disabled = true;
+      setStatus(el, 'loading', 'Загрузка…');
+      return fetchDict(which).then(res => {
+        el.disabled = false;
+        if (res && res.ok) {
+          if (which === 'executors') fillSelect('#gnt-assignee', res.list);
+          else if (which === 'categories') fillSelect('#gnt-category', res.list);
+          else if (which === 'locations') fillSelect('#gnt-location', res.list);
+          setStatus(el, '', '');
+        } else if (res && res.code === 'dict_empty') {
+          setStatus(el, 'empty', 'Нет данных');
+        } else {
+          setStatus(el, 'error', 'Не удалось загрузить', () => loadOne(which, el));
+        }
+        return res;
+      });
+    };
+
+    if (catSel) catSel.disabled = true;
+    if (locSel) locSel.disabled = true;
+    if (execSel) execSel.disabled = true;
+    if (submit) submit.disabled = true;
+
     Promise.all([
-      fetchDict('categories'),
-      fetchDict('locations'),
-      fetchDict('executors')
-    ]).then(([cat, loc, exec]) => {
-      if (cat && cat.ok) fillSelect('#gnt-category', cat.list);
-      if (loc && loc.ok) fillSelect('#gnt-location', loc.list);
-      if (exec && exec.ok) fillSelect('#gnt-assignee', exec.list);
+      loadOne('categories', catSel),
+      loadOne('locations', locSel),
+      loadOne('executors', execSel)
+    ]).then(([cat, loc]) => {
+      if (submit && cat && cat.ok && loc && loc.ok) submit.disabled = false;
     });
   }
 
