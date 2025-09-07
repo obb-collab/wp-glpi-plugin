@@ -9,18 +9,6 @@ require_once __DIR__ . '/glpi-utils.php';
 require_once __DIR__ . '/includes/glpi-sql.php';
 require_once __DIR__ . '/includes/glpi-auth-map.php';
 
-add_action('wp_enqueue_scripts', function () {
-    wp_localize_script('gexe-filter', 'glpiAjax', [
-        'url'          => admin_url('admin-ajax.php'),
-        'nonce'        => wp_create_nonce('gexe_actions'),
-        'user_glpi_id' => gexe_get_current_glpi_uid(),
-        'rest'         => esc_url_raw(rest_url('glpi/v1/')),
-        'restNonce'    => wp_create_nonce('wp_rest'),
-        'solvedStatus' => (int) get_option('glpi_solved_status', 6),
-        'webBase'      => gexe_glpi_web_base(),
-    ]);
-});
-
 /** Права: глобальные + назначенный исполнитель */
 function gexe_can_touch_glpi_ticket($ticket_id) {
     if (!is_user_logged_in()) return false;
@@ -713,6 +701,36 @@ function gexe_refresh_actions_nonce() {
         wp_send_json(['error' => 'no_glpi_id_for_current_user'], 422);
     }
     wp_send_json_success(['nonce' => wp_create_nonce('gexe_actions')]);
+}
+
+add_action('wp_ajax_gexe_check_mapping', 'gexe_check_mapping');
+function gexe_check_mapping() {
+    if (!check_ajax_referer('gexe_actions', 'nonce', false)) {
+        gexe_ajax_error('NONCE_EXPIRED', 'nonce_failed', 403);
+    }
+    if (!is_user_logged_in()) {
+        gexe_ajax_error('not_logged_in', 'User not logged in', 401);
+    }
+
+    $wp_user_id = get_current_user_id();
+    $glpi_user_key = get_user_meta($wp_user_id, 'glpi_user_key', true);
+    $glpi_user_key = is_string($glpi_user_key) ? trim($glpi_user_key) : '';
+    $source = 'none';
+    if ($glpi_user_key !== '') {
+        if (preg_match('/^\d+$/', $glpi_user_key)) {
+            $source = 'numeric';
+        } elseif (preg_match('/^[a-f0-9]{32}$/i', $glpi_user_key)) {
+            $source = 'md5';
+        }
+    }
+    $glpi_user_id = gexe_get_current_glpi_user_id($wp_user_id);
+
+    gexe_ajax_success([
+        'wp_user_id'    => $wp_user_id,
+        'glpi_user_key' => $glpi_user_key,
+        'glpi_user_id'  => $glpi_user_id,
+        'source'        => $source,
+    ]);
 }
 
 /* -------- AJAX: добавить комментарий -------- */

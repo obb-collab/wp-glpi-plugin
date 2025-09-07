@@ -22,15 +22,27 @@ function gexe_get_current_glpi_user_id($wp_user_id) {
         return 0;
     }
 
-    $key   = get_user_meta($wp_user_id, 'glpi_user_key', true);
-    $key   = is_string($key) ? trim($key) : '';
-    $glpi  = 0;
+    // Cached numeric value takes precedence. Only accept positive integers.
+    $cached = get_user_meta($wp_user_id, 'glpi_user_id', true);
+    if (is_string($cached)) {
+        $cached = trim($cached);
+    }
+    if (preg_match('/^\d+$/', (string) $cached)) {
+        return (int) $cached;
+    }
+    // Remove non-numeric cache to keep meta clean.
+    delete_user_meta($wp_user_id, 'glpi_user_id');
 
-    if (preg_match('/^\d+$/', $key)) {
-        // Direct numeric mapping
+    // Read user-provided key and normalize.
+    $key  = get_user_meta($wp_user_id, 'glpi_user_key', true);
+    $key  = is_string($key) ? trim($key) : '';
+    $glpi = 0;
+
+    if ($key !== '' && preg_match('/^\d+$/', $key)) {
+        // Direct numeric mapping.
         $glpi = (int) $key;
     } elseif (preg_match('/^[a-f0-9]{32}$/i', $key)) {
-        // MD5 hash -> lookup in glpi_users
+        // MD5 hash -> lookup in glpi_users.
         global $glpi_db;
         if ($glpi_db instanceof wpdb) {
             $sql = $glpi_db->prepare(
@@ -42,11 +54,13 @@ function gexe_get_current_glpi_user_id($wp_user_id) {
     }
 
     if ($glpi > 0) {
-        // Cache numeric identifiers for faster future lookups
+        // Cache numeric identifiers for faster future lookups.
         update_user_meta($wp_user_id, 'glpi_user_id', $glpi);
         return $glpi;
     }
 
+    // Ensure non-numeric values are not stored.
+    delete_user_meta($wp_user_id, 'glpi_user_id');
     return 0;
 }
 
