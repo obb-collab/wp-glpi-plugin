@@ -221,17 +221,38 @@ function gexe_glpi_cards_shortcode($atts) {
     }
     $total_count = array_sum($status_counts);
 
-    // ---- Предзагрузка комментариев для задач текущего исполнителя ----
+    // ---- Предзагрузка комментариев и отметка «Принято в работу» ----
     $prefetched_comments = [];
     $current_glpi_id = gexe_get_current_glpi_uid();
+    $accepted_map = [];
     if ($current_glpi_id > 0) {
-        foreach ($tickets as $t) {
+        $ids = array_column($tickets, 'id');
+        if (!empty($ids)) {
+            $placeholders = implode(',', array_fill(0, count($ids), '%d'));
+            $like = '%' . $glpi_db->esc_like('Принято в работу') . '%';
+            $sql = $glpi_db->prepare(
+                "SELECT DISTINCT items_id FROM glpi_itilfollowups WHERE itemtype='Ticket' AND users_id=%d AND items_id IN ($placeholders) AND content LIKE %s",
+                array_merge([$current_glpi_id], array_map('intval', $ids), [$like])
+            );
+            $accepted_ids = $glpi_db->get_col($sql);
+            foreach ((array) $accepted_ids as $tid) {
+                $accepted_map[(int) $tid] = true;
+            }
+        }
+        foreach ($tickets as &$t) {
             if (in_array($current_glpi_id, $t['assignee_ids'], true)) {
                 $data = gexe_render_comments((int)$t['id']);
                 $data['count'] = gexe_get_comment_count((int)$t['id']);
                 $prefetched_comments[$t['id']] = $data;
             }
+            $t['accepted'] = !empty($accepted_map[$t['id']]);
         }
+        unset($t);
+    } else {
+        foreach ($tickets as &$t) {
+            $t['accepted'] = false;
+        }
+        unset($t);
     }
 
     // ---- Map исполнителей (для фильтра «Категории», когда show_all = true) ----

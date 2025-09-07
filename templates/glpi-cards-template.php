@@ -250,7 +250,8 @@ function gexe_cat_slug($leaf) {
            data-late="<?php echo $is_late ? '1':'0'; ?>"
            data-status="<?php echo esc_attr((string)$t['status']); ?>"
            data-unassigned="<?php echo $is_unassigned ? '1':'0'; ?>"
-           data-author="<?php echo intval($t['author_id'] ?? 0); ?>">
+           data-author="<?php echo intval($t['author_id'] ?? 0); ?>"
+           <?php if (!empty($t['accepted'])) echo 'data-accepted="1"'; ?>>
         <div class="glpi-badge <?php echo esc_attr($cat_slug); ?>"><?php echo $icon; ?> <?php echo esc_html($leaf_cat); ?></div>
         <div class="glpi-card-header<?php echo $is_late ? ' late':''; ?>">
           <a href="<?php echo esc_url($link); ?>" class="glpi-topic" target="_blank" rel="noopener noreferrer"><?php echo $name; ?></a>

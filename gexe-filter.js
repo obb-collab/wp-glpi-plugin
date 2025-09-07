@@ -118,6 +118,14 @@
     }
   }
 
+  function setAcceptDone(btn) {
+    if (!btn) return;
+    btn.disabled = true;
+    btn.setAttribute('aria-disabled', 'true');
+    btn.innerHTML = '<i class="fa-solid fa-check"></i>';
+    btn.setAttribute('title', 'Уже принято');
+  }
+
   function debugRequest(url, payload) {
     if (!window.GEXE_DEBUG) return;
     const safe = {};
@@ -236,22 +244,19 @@
         showError(data.error, data.details, res.status);
         return;
       }
-      btn.innerHTML = '<i class="fa-solid fa-check"></i>';
-      btn.disabled = true;
-      btn.setAttribute('aria-disabled', 'true');
+      setAcceptDone(btn);
       const cardEl = document.querySelector('.glpi-card[data-ticket-id="'+ticketId+'"]');
       if (cardEl) {
         cardEl.setAttribute('data-status', '2');
         cardEl.setAttribute('data-unassigned', '0');
+        cardEl.setAttribute('data-accepted', '1');
         if (data.payload && data.payload.assigned_glpi_id) {
           cardEl.setAttribute('data-assignees', String(data.payload.assigned_glpi_id));
         }
         const cardBtn = cardEl.querySelector('.gexe-open-accept');
         if (cardBtn && cardBtn !== btn) {
           setActionLoading(cardBtn, false);
-          cardBtn.disabled = true;
-          cardBtn.innerHTML = '<i class="fa-solid fa-check"></i>';
-          cardBtn.setAttribute('aria-disabled', 'true');
+          setAcceptDone(cardBtn);
         }
         const footer = cardEl.querySelector('.glpi-executor-footer');
         if (footer && !footer.querySelector('.glpi-executors')) {
@@ -265,9 +270,7 @@
         const mb = modalEl.querySelector('.gexe-open-accept');
         if (mb && mb !== btn) {
           setActionLoading(mb, false);
-          mb.disabled = true;
-          mb.innerHTML = '<i class="fa-solid fa-check"></i>';
-          mb.setAttribute('aria-disabled', 'true');
+          setAcceptDone(mb);
         }
       }
       insertFollowup(ticketId, data.payload && data.payload.followup);
@@ -573,7 +576,7 @@
     // Синхронизируем состояние кнопки с исходной карточкой
     const origAccept = cardEl.querySelector('.gexe-open-accept');
     if (origAccept && origAccept.disabled && btnAccept) {
-      btnAccept.disabled = true;
+      setAcceptDone(btnAccept);
     }
 
     wrap.appendChild(clone);
@@ -638,8 +641,12 @@
     if (data && data.html && data.html.includes('Принято в работу')) {
       const cardBtn  = document.querySelector('.glpi-card[data-ticket-id="'+ticketId+'"] .gexe-open-accept');
       const modalBtn = modalEl && modalEl.querySelector('.gexe-open-accept');
-      if (cardBtn)  cardBtn.disabled  = true;
-      if (modalBtn) modalBtn.disabled = true;
+      if (cardBtn) {
+        setAcceptDone(cardBtn);
+        const cardEl = cardBtn.closest('.glpi-card');
+        if (cardEl) cardEl.setAttribute('data-accepted', '1');
+      }
+      if (modalBtn) setAcceptDone(modalBtn);
     }
     if (data && typeof data.time_ms === 'number') {
       const stat = document.getElementById('glpi-comments-time');
@@ -1012,25 +1019,8 @@
       }
 
       // Если уже есть «Принято в работу» — блокируем «Принять в работу»
-      const url = window.glpiAjax && glpiAjax.url;
-      const nonce = window.glpiAjax && glpiAjax.nonce;
-      const ticketId = Number(card.getAttribute('data-ticket-id') || '0');
-      if (btnAccept && url && nonce && ticketId) {
-        const fd = new FormData();
-        fd.append('action', 'glpi_ticket_started');
-        const nonceKey = glpiAjax.nonce_key || 'nonce';
-        fd.append(nonceKey, nonce);
-        fd.append('nonce', nonce);
-        fd.append('_ajax_nonce', nonce);
-        fd.append('ticket_id', String(ticketId));
-        fetch(url, { method: 'POST', body: fd })
-          .then(r => r.json())
-          .then(resp => {
-            if (resp && resp.success && resp.data && resp.data.started) {
-              btnAccept.disabled = true;
-            }
-          })
-          .catch(()=>{});
+      if (btnAccept && card.getAttribute('data-accepted') === '1') {
+        setAcceptDone(btnAccept);
       }
     });
   }
