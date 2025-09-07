@@ -179,16 +179,16 @@
       wrap.style.position = 'fixed';
       wrap.style.left = '0';
       wrap.style.right = '0';
-      wrap.style.bottom = '0';
+      wrap.style.top = '0';
       wrap.style.zIndex = '9999';
       wrap.style.background = '#fdecea';
-      wrap.style.padding = '10px';
+      wrap.style.padding = '5px 10px';
       wrap.style.textAlign = 'center';
-      wrap.style.boxShadow = '0 -2px 5px rgba(0,0,0,0.1)';
-      wrap.innerHTML = '<span class="gexe-map-msg">Не найден профиль GLPI. Укажите числовой <strong>users.id</strong> в поле “Ключ пользователя GLPI” в своём профиле WordPress (или md5 “Фамилия И.”).</span> '
+      wrap.style.boxShadow = '0 2px 5px rgba(0,0,0,0.1)';
+      wrap.innerHTML = '<span class="gexe-map-msg">GLPI профиль не найден. Нажмите «Проверить» для диагностики.</span> '
         + '<button type="button" class="gexe-map-check glpi-act">Проверить</button>'
         + '<span class="gexe-map-resp"></span>';
-      document.body.appendChild(wrap);
+      document.body.prepend(wrap);
       const btn = wrap.querySelector('.gexe-map-check');
       if (btn) btn.addEventListener('click', checkMapping);
     } else {
@@ -224,12 +224,14 @@
     if (data && data.success && data.data) {
       const info = data.data;
       if (resp) {
-        resp.textContent = ' ID: ' + info.glpi_user_id + ' / key: ' + info.glpi_user_key + ' / source: ' + info.source;
+        resp.textContent = ' wp: ' + info.wp_user_id + ' / key: ' + info.glpi_user_key + ' / glpi: ' + info.glpi_user_id + ' / source: ' + info.source;
       }
       ajax.user_glpi_id = Number(info.glpi_user_id) || 0;
       if (ajax.user_glpi_id > 0) {
         hideMappingWarning();
         unblockActions();
+      } else {
+        blockActions('no_glpi_id_for_current_user');
       }
     } else if (resp) {
       resp.textContent = ' Проверка не удалась';
