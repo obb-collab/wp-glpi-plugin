@@ -130,6 +130,11 @@ function gexe_cat_slug($leaf) {
         <div class="glpi-category-block">
           <button type="button" class="glpi-cat-toggle" aria-expanded="false" aria-controls="glpi-categories-inline">Категории</button>
         </div>
+        <?php
+        $show_executors = function_exists('glpi_current_user_id') && glpi_current_user_id() === 2;
+        if ($show_executors): ?>
+          <div class="glpi-executor-block" data-executors-menu></div>
+        <?php endif; ?>
       </div>
 
       <div class="glpi-header-center">
@@ -199,7 +204,8 @@ function gexe_cat_slug($leaf) {
       $assignees     = array_values(array_unique($assignees, SORT_NUMERIC));
       $assignees_str = implode(',', $assignees);
 
-      $is_late       = !empty($t['late']);
+      $is_late       = !empty($t['late']); 
+      $is_unassigned = empty($t['executors']);
 
       $name_raw      = trim((string)$t['name']);
       $name          = esc_html($name_raw);
@@ -222,7 +228,22 @@ function gexe_cat_slug($leaf) {
       // Прямая ссылка в GLPI
       $link = 'http://192.168.100.12/glpi/front/ticket.form.php?id=' . intval($t['id']);
 
-      $footer_html = $location_html;
+        $executors_html = '';
+        if (!empty($t['executors'])) {
+          $exec_names = $t['executors'];
+          if ($is_logged_in) {
+            // Hide executor icon and initials for authorized users
+            $exec_names = [];
+          }
+          $exec_names = array_map('esc_html', $exec_names);
+          $exec_names = array_filter($exec_names, 'strlen');
+          if (!empty($exec_names)) {
+            $names = implode(', ', $exec_names);
+            $executors_html = '<span class="glpi-executors"><i class="fa-solid fa-user-tie glpi-executor"></i> ' . $names . '</span>';
+          }
+        }
+
+      $footer_html = $location_html . $executors_html;
     ?>
       <div class="glpi-card"
            data-ticket-id="<?php echo intval($t['id']); ?>"
@@ -230,6 +251,7 @@ function gexe_cat_slug($leaf) {
            data-category="<?php echo esc_attr(strtolower($cat_slug)); ?>"
            data-late="<?php echo $is_late ? '1':'0'; ?>"
            data-status="<?php echo esc_attr((string)$t['status']); ?>"
+           data-unassigned="<?php echo $is_unassigned ? '1':'0'; ?>"
            data-author="<?php echo intval($t['author_id'] ?? 0); ?>">
         <div class="glpi-badge <?php echo esc_attr($cat_slug); ?>"><?php echo $icon; ?> <?php echo esc_html($leaf_cat); ?></div>
         <div class="glpi-card-header<?php echo $is_late ? ' late':''; ?>">
