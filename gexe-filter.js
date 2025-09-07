@@ -605,6 +605,11 @@
       if (full) desc.textContent = full;
     }
     const chip = $('.glpi-comments-chip', clone); if (chip) chip.remove();
+    const titleWrap = $('.ticket-card__title', clone);
+    if (titleWrap) {
+      titleWrap.classList.remove('ticket-card__title');
+      titleWrap.classList.add('modal-ticket__title');
+    }
 
     const id = Number(clone.getAttribute('data-ticket-id') || '0');
     const bar = document.createElement('div');

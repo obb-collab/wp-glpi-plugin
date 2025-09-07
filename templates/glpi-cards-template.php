@@ -248,7 +248,9 @@ function gexe_cat_slug($leaf) {
            data-author="<?php echo intval($t['author_id'] ?? 0); ?>">
         <div class="glpi-badge <?php echo esc_attr($cat_slug); ?>"><?php echo $icon; ?> <?php echo esc_html($leaf_cat); ?></div>
         <div class="glpi-card-header<?php echo $is_late ? ' late':''; ?>">
-          <a href="<?php echo esc_url($link); ?>" class="glpi-topic" target="_blank" rel="noopener noreferrer"><?php echo $name; ?></a>
+          <h3 class="ticket-card__title" title="<?php echo esc_attr($name); ?>">
+            <a href="<?php echo esc_url($link); ?>" class="glpi-topic" target="_blank" rel="noopener noreferrer"><?php echo $name; ?></a>
+          </h3>
           <div class="glpi-ticket-id">#<?php echo intval($t['id']); ?></div>
         </div>
         <div class="glpi-card-body">
