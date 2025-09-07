@@ -16,7 +16,7 @@
 
   let successModal = null;
   let successTimer = null;
-  let submitLock = false;
+  let isSubmitting = false;
 
   function buildModal(){
     if (modal) return;
@@ -66,6 +66,7 @@
           </div>
         </div>
         <div class="gnt-footer">
+          <div id="gnt-form-alert" class="form-alert" hidden></div>
           <button type="button" class="gnt-submit">Создать заявку</button>
         </div>
       </div>
@@ -83,10 +84,7 @@
       if (this.checked) {
         const glpiId = Number((gexeAjax && gexeAjax.user_glpi_id) || 0);
         if (glpiId > 0) {
-          const opt = assigneeSel.querySelector('option[data-glpi-id="' + glpiId + '"]');
-          if (opt) {
-            assigneeSel.value = opt.value;
-          }
+          assigneeSel.value = String(glpiId);
         }
         setFieldError('assignee');
       } else {
@@ -169,21 +167,28 @@
     }
   }
 
-  function showSubmitError(message){
-    showSubmitStatus(message, 'error');
+  function showFormAlert(message, details){
+    const box = modal.querySelector('#gnt-form-alert');
+    if (!box) return;
+    let html = esc(message);
+    if (details) {
+      html += '<details><code>' + esc(details) + '</code></details>';
+    }
+    box.innerHTML = html;
+    box.hidden = false;
   }
 
-  function showSubmitStatus(message, type){
-    const box = modal.querySelector('.gexe-dict-status');
+  function hideFormAlert(){
+    const box = modal.querySelector('#gnt-form-alert');
     if (!box) return;
-    const cls = type === 'error' ? 'error' : (type === 'success' ? 'success' : 'loading');
-    box.className = 'gexe-dict-status ' + cls;
-    if (cls === 'loading') {
-      box.innerHTML = '<span class="spinner"></span>' + (message || '');
-    } else {
-      box.textContent = message || '';
+    box.hidden = true;
+    box.innerHTML = '';
+  }
+
+  function showToast(message, type){
+    if (window.dispatchEvent) {
+      window.dispatchEvent(new CustomEvent('gexe:toast', {detail:{type:type||'info', message:message}}));
     }
-    box.hidden = false;
   }
 
   function setFieldError(field, message){
@@ -235,7 +240,7 @@
       return Promise.resolve({ ok: false, error: { type: 'NETWORK', message: 'Ошибка соединения с сервером' } });
     }
     const fd = new FormData();
-    fd.append('action', 'glpi_load_dicts');
+    fd.append('action', 'wpglpi_load_catalogs');
     if (gexeAjax.nonce) fd.append('nonce', gexeAjax.nonce);
     return fetch(gexeAjax.url, { method: 'POST', body: fd })
       .then(r => r.json())
@@ -348,6 +353,9 @@
     assigneeSel.value = '';
     assigneeSel.disabled = true;
     ['name','content','category','location','assignee'].forEach(function(f){ setFieldError(f); });
+    const status = modal.querySelector('#gnt-assignee-status');
+    if (status) status.innerHTML = '';
+    hideFormAlert();
     updatePaths();
   }
 
@@ -462,32 +470,10 @@
       categoriesLoaded = true;
     }
     if (!executorsLoaded) {
-      const sel = modal.querySelector('#gnt-assignee');
       if (data.executors && data.executors.length) {
-        sel.innerHTML = '<option value="">—</option>';
-        data.executors.forEach(function(u){
-          const opt = document.createElement('option');
-          opt.value = u.user_id;
-          opt.textContent = u.display_name;
-          if (u.glpi_user_id) {
-            opt.setAttribute('data-glpi-id', u.glpi_user_id);
-          }
-          sel.appendChild(opt);
-        });
-        executorsLoaded = true;
-        sel.disabled = modal.querySelector('#gnt-assign-me').checked;
-        const assignChk = modal.querySelector('#gnt-assign-me');
-        if (assignChk) assignChk.dispatchEvent(new Event('change'));
-      } else {
-        sel.innerHTML = '';
-        const opt = document.createElement('option');
-        opt.value = '';
-        opt.textContent = 'Список исполнителей временно недоступен. Обновите страницу или попробуйте позже';
-        opt.disabled = true;
-        opt.selected = true;
-        sel.appendChild(opt);
-        sel.disabled = true;
-        executorsLoaded = false;
+        populateExecutors(data.executors);
+      } else if (data.executors !== undefined) {
+        showExecutorsError();
       }
     }
     if (data.locations) {
@@ -515,6 +501,69 @@
     }
   }
 
+  function populateExecutors(list){
+    const sel = modal.querySelector('#gnt-assignee');
+    if (!sel) return;
+    sel.innerHTML = '';
+    list.forEach(function(u){
+      const opt = document.createElement('option');
+      opt.value = u.id;
+      opt.textContent = u.label;
+      sel.appendChild(opt);
+    });
+    executorsLoaded = true;
+    const status = modal.querySelector('#gnt-assignee-status');
+    if (status) status.innerHTML = '';
+    const assignChk = modal.querySelector('#gnt-assign-me');
+    if (assignChk) {
+      sel.disabled = assignChk.checked;
+      assignChk.dispatchEvent(new Event('change'));
+    }
+  }
+
+  function showExecutorsError(){
+    const sel = modal.querySelector('#gnt-assignee');
+    if (sel) {
+      sel.innerHTML = '<option value="0">—</option>';
+      sel.disabled = true;
+    }
+    const status = modal.querySelector('#gnt-assignee-status');
+    if (status) {
+      status.innerHTML = '<span class="error">Список исполнителей временно недоступен…</span> <button type="button" class="gnt-retry">Повторить</button>';
+      const btn = status.querySelector('.gnt-retry');
+      if (btn) btn.addEventListener('click', function(){ btn.disabled = true; loadExecutorsOnly(); });
+    }
+    executorsLoaded = false;
+  }
+
+  function fetchExecutors(){
+    const fd = new FormData();
+    fd.append('action','wpglpi_load_catalogs');
+    fd.append('scope','executors');
+    if (gexeAjax.nonce) fd.append('nonce', gexeAjax.nonce);
+    return fetch(gexeAjax.url,{method:'POST',body:fd})
+      .then(r=>r.json())
+      .then(resp=>{
+        if (resp && resp.success && resp.data && Array.isArray(resp.data.executors)) {
+          return {ok:true, executors:resp.data.executors};
+        }
+        return {ok:false};
+      })
+      .catch(()=>({ok:false}));
+  }
+
+  function loadExecutorsOnly(){
+    const status = modal.querySelector('#gnt-assignee-status');
+    if (status) status.innerHTML = '<span class="spinner"></span> Загрузка...';
+    fetchExecutors().then(res=>{
+      if (res.ok) {
+        populateExecutors(res.executors);
+      } else {
+        showExecutorsError();
+      }
+    });
+  }
+
   function getSelectedId(listId, value){
     const list = modal.querySelector('#'+listId);
     if (!list) return 0;
@@ -523,9 +572,8 @@
   }
 
   function submit(){
-    if (!window.gexeAjax || submitLock) return;
-    submitLock = true;
-    setTimeout(()=>{ submitLock = false; }, 3000);
+    if (!window.gexeAjax || isSubmitting) return;
+    isSubmitting = true;
     hideLoader();
     const name = modal.querySelector('#gnt-name').value.trim();
     const content = modal.querySelector('#gnt-content').value.trim();
@@ -535,14 +583,20 @@
     const locId = getSelectedId('gnt-location-list', locInput.value);
     const assignMe = modal.querySelector('#gnt-assign-me').checked;
     const assigneeSel = modal.querySelector('#gnt-assignee');
-    const assigneeId = assigneeSel.disabled ? 0 : parseInt(assigneeSel.value,10) || 0;
+    let assigneeId = 0;
+    if (assignMe) {
+      assigneeId = Number((gexeAjax && gexeAjax.user_glpi_id) || 0);
+    } else {
+      assigneeId = parseInt(assigneeSel.value,10) || 0;
+    }
     const errors = {};
     if (name.length < 3 || name.length > 255) errors.name = 'Тема 3-255 символов';
     if (!content || content.length > 5000) errors.content = 'Описание 1-5000 символов';
     if (!assignMe && !assigneeId) errors.assignee = 'Обязательное поле';
     if (Object.keys(errors).length) {
       Object.keys(errors).forEach(function(f){ setFieldError(f, errors[f]); });
-      showSubmitError('Заполните обязательные поля');
+      showFormAlert('Ошибка отправки: Заполните обязательные поля');
+      isSubmitting = false;
       return;
     }
     const payload = {
@@ -550,12 +604,12 @@
       description: content,
       category_id: catId,
       location_id: locId,
-      assign_me: assignMe ? 1 : 0,
+      iam_executor: assignMe ? 1 : 0,
       executor_id: assigneeId
     };
     const makeBody = () => {
       const params = new URLSearchParams();
-      params.append('action','glpi_create_ticket');
+      params.append('action','wpglpi_create_ticket_api');
       params.append('nonce', gexeAjax.nonce);
       Object.keys(payload).forEach(k=>{ if(payload[k] !== undefined && payload[k] !== null) params.append(k, payload[k]); });
       return params.toString();
@@ -565,7 +619,7 @@
     btn.disabled = true;
     btn.classList.add('is-loading');
     btn.textContent = 'Создаю...';
-    showSubmitStatus('Создаю...', 'loading');
+    hideFormAlert();
     const send = (retry) => {
       return fetch(gexeAjax.url, {
         method: 'POST',
@@ -581,26 +635,35 @@
     send(false).then(resp=>{
       const data = resp.data || resp;
       if (data && data.success) {
-        showSubmitStatus('Заявка №'+data.id+' создана','success');
+        hideFormAlert();
         close();
         if (data.id) {
           showSuccessModal(data.id);
+          showToast('Заявка №'+data.id+' создана','success');
+          if (data.warning && data.message) {
+            showToast('Назначение исполнителя не удалось: '+data.message,'error');
+          }
           window.dispatchEvent(new CustomEvent('gexe:tickets:refresh', {detail:{ticketId:data.id}}));
         }
       } else {
         const msg = data && data.error && data.error.message ? data.error.message : 'Ошибка создания заявки';
-        showSubmitStatus(msg,'error');
-        if (data && data.error && data.error.details) {
+        let det = data && data.error && data.error.details ? data.error.details : null;
+        if (det && typeof det !== 'string') {
+          try { det = JSON.stringify(det); } catch(e) { det = String(det); }
+        }
+        showFormAlert('Ошибка отправки: ' + msg, det);
+        if (data && data.error && data.error.details && typeof data.error.details === 'object') {
           Object.keys(data.error.details).forEach(function(f){ setFieldError(f, data.error.details[f]); });
         }
       }
     }).catch(err=>{
       logClientError((err && err.code ? err.code + ': ' : '') + (err && err.message ? err.message : String(err)));
-      showSubmitStatus(err && err.message ? err.message : 'Ошибка отправки','error');
+      showFormAlert('Ошибка отправки: ' + (err && err.message ? err.message : 'Ошибка отправки'));
     }).finally(()=>{
       btn.disabled = false;
       btn.classList.remove('is-loading');
       btn.textContent = oldText;
+      isSubmitting = false;
     });
   }
 
