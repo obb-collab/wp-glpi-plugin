@@ -25,6 +25,8 @@ plugin-root/
 │  ├─ glpi-form-data.php — AJAX endpoint loading categories/locations (SQL with REST fallback) and nonce refresh.
 │  ├─ logger.php — file logger plus `gexe_log_client_error` AJAX action.
 │  └─ rest-client.php — simple REST helper; defines another `gexe_glpi_rest_request` and `gexe_glpi_submit_comment`.
+├─ partials/
+│  └─ glpi-modal.php — markup for status change modal.
 ├─ templates/
 │  └─ glpi-cards-template.php — mixed PHP/HTML template rendering ticket cards from `$GLOBALS` data.
 └─ docs/
@@ -50,7 +52,7 @@ plugin-root/
 
 **AJAX actions**
 - `gexe_get_form_data`, `gexe_refresh_nonce`, `gexe_create_ticket`
-- `glpi_resolve`
+- `glpi_change_status`, `glpi_resolve`
 - `glpi_get_comments`, `glpi_ticket_meta`, `glpi_count_comments_batch`
 - `glpi_ticket_started`, `glpi_card_action`, `glpi_accept`
 - `gexe_refresh_actions_nonce`, `glpi_comment_add`

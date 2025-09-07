@@ -67,8 +67,8 @@
     let parent = null;
     if (cmntModal && cmntModal.classList.contains('is-open')) {
       parent = $('.gexe-cmnt__dialog', cmntModal);
-    } else if (doneModal && doneModal.classList.contains('is-open')) {
-      parent = $('.gexe-done__dialog', doneModal);
+    } else if (statusModal && statusModal.classList.contains('is-open')) {
+      parent = $('.gexe-status__dialog', statusModal);
     } else if (modalEl && modalEl.classList.contains('gexe-modal--open')) {
       parent = $('.gexe-modal__dialog', modalEl);
     } else {
@@ -251,7 +251,7 @@
     }
 
     if (btn.classList.contains('gexe-open-close')) {
-      openDoneModal(ticketId);
+      openStatusModal(ticketId);
       return;
     }
 
@@ -828,7 +828,7 @@
   /* ========================= МОДАЛКА КОММЕНТАРИЯ ========================= */
   const MAX_COMMENT_LEN = 4000;
   let cmntModal = null;
-  let doneModal = null;
+  let statusModal = null;
   function ensureCommentModal() {
     if (cmntModal) return cmntModal;
     cmntModal = document.createElement('div');
@@ -972,133 +972,154 @@
     }
   }
 
-  /* ========================= МОДАЛКА ПОДТВЕРЖДЕНИЯ ЗАВЕРШЕНИЯ ========================= */
-  let resolveConfirmTimer = null;
-  function ensureDoneModal() {
-    if (doneModal) return doneModal;
-    doneModal = document.createElement('div');
-    doneModal.className = 'gexe-done';
-    doneModal.innerHTML =
-      '<div class="gexe-done__backdrop"></div>' +
-      '<div class="gexe-done__dialog" role="dialog" aria-modal="true">' +
-        '<div class="gexe-done__head">' +
-          '<div class="gexe-done__title">Подтверждение</div>' +
-          '<button class="gexe-done__close" aria-label="Закрыть"><i class="fa-solid fa-xmark"></i></button>' +
+  /* ========================= МОДАЛКА СМЕНЫ СТАТУСА ========================= */
+  const STATUS_NAMES = { 2: 'в работе', 3: 'в плане', 4: 'в стопе', 6: 'решено' };
+  const statusConfirmTimers = {};
+  function ensureStatusModal() {
+    if (statusModal) return statusModal;
+    statusModal = document.createElement('div');
+    statusModal.className = 'gexe-status';
+    statusModal.innerHTML =
+      '<div class="gexe-status__backdrop"></div>' +
+      '<div class="gexe-status__dialog" role="dialog" aria-modal="true">' +
+        '<div class="gexe-status__head">' +
+          '<div class="gexe-status__title">Статус заявки</div>' +
+          '<button class="gexe-status__close" aria-label="Закрыть"><i class="fa-solid fa-xmark"></i></button>' +
         '</div>' +
-        '<div class="gexe-done__body">' +
-          '<button id="gexe-done-confirm" class="glpi-act">Завершить</button>' +
+        '<div class="gexe-status__body">' +
+          '<div class="gexe-status__top">' +
+            '<button class="glpi-act glpi-status-btn" data-status="2">В работе</button>' +
+            '<button class="glpi-act glpi-status-btn" data-status="3">В плане</button>' +
+            '<button class="glpi-act glpi-status-btn" data-status="4">В стопе</button>' +
+          '</div>' +
+          '<div class="gexe-status__bottom">' +
+            '<button class="glpi-act glpi-status-btn glpi-status-resolve" data-status="6">Решить</button>' +
+            '<div class="gexe-status__hint">Требуется двойное подтверждение</div>' +
+          '</div>' +
+          '<div class="gexe-status__alert" aria-live="polite" style="display:none"></div>' +
         '</div>' +
       '</div>';
-    document.body.appendChild(doneModal);
-    $('.gexe-done__backdrop', doneModal).addEventListener('click', closeDoneModal);
-    $('.gexe-done__close', doneModal).addEventListener('click', closeDoneModal);
-    const confirmBtn = $('#gexe-done-confirm', doneModal);
-    confirmBtn.addEventListener('click', () => {
-      if (confirmBtn.classList.contains('is-confirm')) {
-        resetDoneButton(confirmBtn);
-        sendDone();
-      } else {
-        confirmBtn.classList.add('is-confirm');
-        confirmBtn.textContent = 'Точно завершить?';
-        resolveConfirmTimer = setTimeout(() => {
-          resetDoneButton(confirmBtn);
-        }, 10000);
-      }
+    document.body.appendChild(statusModal);
+    $('.gexe-status__backdrop', statusModal).addEventListener('click', closeStatusModal);
+    $('.gexe-status__close', statusModal).addEventListener('click', closeStatusModal);
+    $$('.glpi-status-btn', statusModal).forEach(btn => {
+      btn.addEventListener('click', () => handleStatusClick(btn));
     });
-    return doneModal;
+    return statusModal;
   }
-  function resetDoneButton(btn) {
+  function resetStatusButton(btn) {
     if (!btn) return;
-    if (resolveConfirmTimer) { clearTimeout(resolveConfirmTimer); resolveConfirmTimer = null; }
-    btn.textContent = 'Завершить';
-    btn.classList.remove('is-confirm');
-    btn.removeAttribute('data-confirm');
-  }
-  function openDoneModal(ticketId) {
-    ensureDoneModal();
-    doneModal.setAttribute('data-ticket-id', String(ticketId || 0));
-    const btn = $('#gexe-done-confirm', doneModal);
-    resetDoneButton(btn);
-    const pre = checkPreflight(false);
-    if (btn) {
-      if (pre.ok) clearPreflight(btn);
-      else markPreflight(btn, pre.code);
+    const st = btn.getAttribute('data-status');
+    if (statusConfirmTimers[st]) {
+      clearTimeout(statusConfirmTimers[st]);
+      delete statusConfirmTimers[st];
     }
-    doneModal.classList.add('is-open'); document.body.classList.add('glpi-modal-open');
+    btn.classList.remove('is-confirm');
+    const name = STATUS_NAMES[st] || '';
+    btn.textContent = name.charAt(0).toUpperCase() + name.slice(1);
+    btn.disabled = false;
   }
-  function closeDoneModal() {
-    if (!doneModal) return;
-    doneModal.classList.remove('is-open'); document.body.classList.remove('glpi-modal-open');
-    resetDoneButton($('#gexe-done-confirm', doneModal));
+  function openStatusModal(ticketId) {
+    ensureStatusModal();
+    statusModal.setAttribute('data-ticket-id', String(ticketId || 0));
+    $$('.glpi-status-btn', statusModal).forEach(resetStatusButton);
+    setStatusAlert('');
+    const pre = checkPreflight(false);
+    $$('.glpi-status-btn', statusModal).forEach(btn => {
+      if (pre.ok) clearPreflight(btn); else markPreflight(btn, pre.code);
+    });
+    statusModal.classList.add('is-open'); document.body.classList.add('glpi-modal-open');
   }
-  function sendDone() {
-    if (!doneModal) return;
-    const pre = checkPreflight(true);
-    if (!pre.ok) return;
-    const id = Number(doneModal.getAttribute('data-ticket-id') || '0');
+  function closeStatusModal() {
+    if (!statusModal) return;
+    statusModal.classList.remove('is-open'); document.body.classList.remove('glpi-modal-open');
+    $$('.glpi-status-btn', statusModal).forEach(resetStatusButton);
+  }
+  function setStatusAlert(code) {
+    const box = $('.gexe-status__alert', statusModal);
+    if (!box) return;
+    if (!code) { box.style.display = 'none'; box.textContent = ''; box.classList.remove('error'); return; }
+    box.style.display = 'block';
+    box.textContent = 'Ошибка: ' + code;
+    box.classList.add('error');
+  }
+  function handleStatusClick(btn) {
+    const st = parseInt(btn.getAttribute('data-status') || '0', 10);
+    if (!st) return;
+    if (btn.classList.contains('is-confirm')) {
+      resetStatusButton(btn);
+      sendStatus(st, btn);
+    } else {
+      btn.classList.add('is-confirm');
+      btn.textContent = st === 6 ? 'Точно решить?' : 'Вы уверены?';
+      const key = String(st);
+      statusConfirmTimers[key] = setTimeout(() => {
+        resetStatusButton(btn);
+      }, 10000);
+    }
+  }
+  function sendStatus(status, btn) {
+    const id = Number(statusModal.getAttribute('data-ticket-id') || '0');
     if (!id) return;
-    const btn = $('#gexe-done-confirm', doneModal);
-    if (btn && isActionLocked(id, 'done')) return;
+    if (btn && isActionLocked(id, 'status')) return;
     if (btn) setActionLoading(btn, true);
-    lockAction(id, 'done', true);
-    ajaxPost({ action: 'glpi_resolve', ticket_id: String(id) }).then(res => {
+    lockAction(id, 'status', true);
+    ajaxPost({ action: 'glpi_change_status', ticket_id: String(id), status: String(status) }).then(res => {
       if (btn) setActionLoading(btn, false);
-      lockAction(id, 'done', false);
+      lockAction(id, 'status', false);
       if (window.__GLPI_DEBUG) {
-        console.log({ action: 'resolve', ticket_id: id, code: res.code || 'ok' });
+        console.log({ ticket_id: id, to_status: status, code: res.code || 'ok' });
       }
       if (!res.ok) {
         if (res.code === 'already_done') {
-          closeDoneModal();
+          closeStatusModal();
           const card = document.querySelector('.glpi-card[data-ticket-id="'+id+'"]');
           if (card) {
-            const st = (res.data && res.data.extra && res.data.extra.status) || 6;
+            const st = (res.data && res.data.extra && res.data.extra.status) || status;
             card.setAttribute('data-status', String(st));
-            let badge = card.querySelector('.glpi-solved-badge');
-            if (!badge) {
-              badge = document.createElement('div');
-              badge.className = 'glpi-solved-badge';
-              badge.textContent = 'Решено';
-              card.appendChild(badge);
-            }
-            card.classList.add('gexe-hide');
-            recalcStatusCounts(); filterCards();
           }
+          recalcStatusCounts(); filterCards();
           refreshTicketMeta(id);
-          showNotice('success','Уже решено');
+          showNotice('success','Статус уже установлен');
           return;
         }
         if (res.code === 'no_rights' && btn) {
           btn.disabled = true;
           btn.setAttribute('aria-disabled', 'true');
         }
-        resetDoneButton(btn);
+        resetStatusButton(btn);
+        setStatusAlert(res.code);
         showError(res.code);
         return;
       }
-      closeDoneModal();
+      closeStatusModal();
       const card = document.querySelector('.glpi-card[data-ticket-id="'+id+'"]');
       if (card) {
-        const st = (res.data && res.data.extra && res.data.extra.status) || 6;
-        card.setAttribute('data-status', String(st));
-        let badge = card.querySelector('.glpi-solved-badge');
-        if (!badge) {
-          badge = document.createElement('div');
-          badge.className = 'glpi-solved-badge';
-          badge.textContent = 'Решено';
-          card.appendChild(badge);
+        card.setAttribute('data-status', String(status));
+        if (status === 6) {
+          let badge = card.querySelector('.glpi-solved-badge');
+          if (!badge) {
+            badge = document.createElement('div');
+            badge.className = 'glpi-solved-badge';
+            badge.textContent = 'Решено';
+            card.appendChild(badge);
+          }
+          card.classList.add('gexe-hide');
+        } else {
+          const badge = card.querySelector('.glpi-solved-badge');
+          if (badge) badge.remove();
+          card.classList.remove('gexe-hide');
         }
-        card.classList.add('gexe-hide');
         recalcStatusCounts(); filterCards();
       }
       insertFollowup(id, res.data && res.data.extra && res.data.extra.followup);
       refreshTicketMeta(id);
-      showNotice('success','Статус: решено');
+      showNotice('success', 'Статус: ' + (STATUS_NAMES[status] || status));
     }).catch(() => {
       if (btn) setActionLoading(btn, false);
-      lockAction(id, 'done', false);
+      lockAction(id, 'status', false);
       showError('network_error');
-      resetDoneButton(btn);
+      resetStatusButton(btn);
     });
   }
 

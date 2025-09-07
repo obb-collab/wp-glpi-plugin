@@ -252,7 +252,7 @@ body {
 .gexe-modal--open .glpi-topic,
 .glpi-modal .glpi-topic,
 .gexe-cmnt__title,
-.gexe-done__title {
+.gexe-status__title {
   display: block;
   -webkit-line-clamp: unset;
   -webkit-box-orient: initial;
@@ -311,25 +311,30 @@ body {
 .glpi-card--in-modal .glpi-executor-footer,
 .glpi-card--in-modal .glpi-date-footer{ position:static; display:inline-block; margin:6px 12px 0 0; }
 
-/* ======= Модалка комментария ======= */
-/* ======= Модалки комментария и подтверждения ======= */
-.gexe-cmnt, .gexe-done{ position:fixed; inset:0; display:none; z-index:11000; }
-.gexe-cmnt.is-open, .gexe-done.is-open{ display:block; }
-.gexe-cmnt__backdrop, .gexe-done__backdrop{ position:absolute; inset:0; background:rgba(0,0,0,.55); }
-.gexe-cmnt__dialog, .gexe-done__dialog{ position:absolute; top:36%; left:50%; transform:translate(-50%,-50%); width:min(720px,92vw); background:#0f172a; border:1px solid #334155; border-radius:12px; box-shadow:0 20px 60px rgba(0,0,0,.5); overflow:hidden; }
-.gexe-cmnt__head, .gexe-done__head{ display:flex; align-items:center; gap:8px; padding:10px 12px; background:linear-gradient(#0f172a, rgba(15,23,42,.92)); border-bottom:1px solid #334155; }
-.gexe-cmnt__title, .gexe-done__title{ font-weight:700; color:#e5e7eb; }
-.gexe-cmnt__close, .gexe-done__close{ margin-left:auto; border:0; background:transparent; color:#94a3b8; font-size:22px; cursor:pointer; }
-.gexe-cmnt__close:hover, .gexe-done__close:hover{ color:#f1f5f9; }
-.gexe-cmnt__body, .gexe-done__body{ padding:12px; }
+/* ======= Модалки комментария и статусов ======= */
+.gexe-cmnt, .gexe-status{ position:fixed; inset:0; display:none; z-index:11000; }
+.gexe-cmnt.is-open, .gexe-status.is-open{ display:block; }
+.gexe-cmnt__backdrop, .gexe-status__backdrop{ position:absolute; inset:0; background:rgba(0,0,0,.55); }
+.gexe-cmnt__dialog, .gexe-status__dialog{ position:absolute; top:36%; left:50%; transform:translate(-50%,-50%); width:min(720px,92vw); background:#0f172a; border:1px solid #334155; border-radius:12px; box-shadow:0 20px 60px rgba(0,0,0,.5); overflow:hidden; }
+.gexe-cmnt__head, .gexe-status__head{ display:flex; align-items:center; gap:8px; padding:10px 12px; background:linear-gradient(#0f172a, rgba(15,23,42,.92)); border-bottom:1px solid #334155; }
+.gexe-cmnt__title, .gexe-status__title{ font-weight:700; color:#e5e7eb; }
+.gexe-cmnt__close, .gexe-status__close{ margin-left:auto; border:0; background:transparent; color:#94a3b8; font-size:22px; cursor:pointer; }
+.gexe-cmnt__close:hover, .gexe-status__close:hover{ color:#f1f5f9; }
+.gexe-cmnt__body, .gexe-status__body{ padding:12px; }
 #gexe-cmnt-text{ width:100%; min-height:80px; resize:vertical; border-radius:8px; border:1px solid #475569; background:#0b1220; color:#e5e7eb; padding:10px; }
 .gexe-cmnt__err{ color:#f87171; font-size:13px; margin-top:4px; }
 .gexe-cmnt__counter{ color:#94a3b8; font-size:12px; margin-bottom:8px; text-align:right; }
 .gexe-cmnt__foot{ padding:12px; border-top:1px solid #334155; }
 #gexe-cmnt-send.glpi-act{background:#475569;border:1px solid #334155;color:#fff;border-radius:10px;font-weight:700;width:100%;display:block}
 #gexe-cmnt-send.glpi-act:hover{background:#334155}
-#gexe-done-confirm.glpi-act{background:#475569;border:1px solid #334155;color:#fff;border-radius:10px;font-weight:700;width:100%;display:block}
-#gexe-done-confirm.glpi-act:hover{background:#334155}
+.glpi-status-btn.glpi-act{background:#475569;border:1px solid #334155;color:#fff;border-radius:10px;font-weight:700;padding:10px 16px;min-width:120px}
+.glpi-status-btn.glpi-act:hover{background:#334155}
+.gexe-status__top{display:flex;gap:12px;margin-bottom:12px}
+.gexe-status__bottom{margin-top:12px;padding-top:12px;border-top:1px solid #334155;display:flex;flex-direction:column;gap:8px}
+.gexe-status__hint{font-size:12px;color:#94a3b8;text-align:center}
+.gexe-status__alert{margin-top:8px;padding:8px;border-radius:8px;font-size:14px;}
+.gexe-status__alert.error{background:#7f1d1d;color:#fef2f2}
+.gexe-status__alert.success{background:#14532d;color:#ecfdf5}
 
 button.is-loading{position:relative;}
 button.is-loading::after{content:"";position:absolute;top:50%;left:50%;width:12px;height:12px;margin:-6px 0 0 -6px;border:2px solid currentColor;border-top-color:transparent;border-radius:50%;animation:gexe-spin .8s linear infinite;}

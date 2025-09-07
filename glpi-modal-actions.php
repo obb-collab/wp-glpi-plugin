@@ -554,34 +554,52 @@ function gexe_glpi_accept() {
     gexe_glpi_comment_add('accept', 'Принято в работу');
 }
 
-add_action('wp_ajax_glpi_resolve', 'gexe_glpi_resolve');
-function gexe_glpi_resolve() {
+add_action('wp_ajax_glpi_change_status', 'gexe_glpi_change_status');
+function gexe_glpi_change_status($legacy = false) {
     $ticket_id = isset($_POST['ticket_id']) ? intval($_POST['ticket_id']) : 0;
+    $status_id = isset($_POST['status']) ? intval($_POST['status']) : 0;
+    $action    = $legacy ? 'resolve' : 'status';
     if (!check_ajax_referer('gexe_actions', 'nonce', false)) {
-        gexe_action_response(false, 'csrf', $ticket_id, 'resolve');
+        gexe_action_response(false, 'csrf', $ticket_id, $action);
     }
     if (!is_user_logged_in()) {
-        gexe_action_response(false, 'not_logged_in', $ticket_id, 'resolve');
+        gexe_action_response(false, 'not_logged_in', $ticket_id, $action);
     }
     $glpi_uid = gexe_get_current_glpi_user_id(get_current_user_id());
     if ($glpi_uid <= 0) {
-        gexe_action_response(false, 'not_mapped', $ticket_id, 'resolve');
+        gexe_action_response(false, 'not_mapped', $ticket_id, $action);
     }
-    if ($ticket_id <= 0) {
-        gexe_action_response(false, 'validation', $ticket_id, 'resolve');
+    if ($ticket_id <= 0 || $status_id <= 0) {
+        gexe_action_response(false, 'validation', $ticket_id, $action);
+    }
+    $map = gexe_glpi_status_map();
+    if (!in_array($status_id, array_values($map), true)) {
+        gexe_action_response(false, 'validation', $ticket_id, $action);
     }
     global $glpi_db;
     $exists = $glpi_db->get_var($glpi_db->prepare('SELECT status FROM glpi_tickets WHERE id=%d', $ticket_id));
     if ($exists === null) {
-        gexe_action_response(false, 'not_found', $ticket_id, 'resolve');
+        gexe_action_response(false, 'not_found', $ticket_id, $action);
     }
-
-    $res = sql_ticket_resolve($ticket_id, $glpi_uid);
+    $texts = [
+        $map['work']     => 'Статус: в работе',
+        $map['planned']  => 'Статус: в плане',
+        $map['onhold']   => 'Статус: в стопе',
+        $map['resolved'] => 'Заявка решена',
+    ];
+    $followup = $texts[$status_id] ?? '';
+    $res = sql_ticket_set_status($ticket_id, $glpi_uid, $status_id, $followup);
     if (!$res['ok']) {
-        gexe_action_response(false, $res['code'] ?? 'sql_error', $ticket_id, 'resolve', '', ['extra' => $res['extra'] ?? []]);
+        gexe_action_response(false, $res['code'] ?? 'sql_error', $ticket_id, $action, '', ['extra' => $res['extra'] ?? []]);
     }
     gexe_clear_comments_cache($ticket_id);
-    gexe_action_response(true, 'ok', $ticket_id, 'resolve', '', ['extra' => $res['extra'] ?? []]);
+    gexe_action_response(true, 'ok', $ticket_id, $action, '', ['extra' => $res['extra'] ?? []]);
+}
+
+add_action('wp_ajax_glpi_resolve', 'gexe_glpi_resolve');
+function gexe_glpi_resolve() {
+    $_POST['status'] = gexe_glpi_status_map()['resolved'];
+    gexe_glpi_change_status(true);
 }
 
 add_action('wp_ajax_gexe_refresh_actions_nonce', 'gexe_refresh_actions_nonce');
