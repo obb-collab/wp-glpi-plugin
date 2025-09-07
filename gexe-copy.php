@@ -13,6 +13,17 @@ if (!defined('ABSPATH')) exit;
 
 require_once __DIR__ . '/glpi-utils.php';
 
+// [manager-switcher] local helper to detect manager account
+function gexe_is_manager_local() {
+    $u = wp_get_current_user();
+    if (!$u || !$u->ID) {
+        return false;
+    }
+    $login   = isset($u->user_login) ? (string) $u->user_login : '';
+    $glpi_id = (int) get_user_meta($u->ID, 'glpi_user_id', true);
+    return ($login === 'vks_m5_local') || ($glpi_id === 2);
+}
+
 // ----- Capabilities -----
 register_activation_hook(__FILE__, function () {
     $role = get_role('administrator');
@@ -62,6 +73,9 @@ add_action('wp_enqueue_scripts', function () {
         'webBase'           => gexe_glpi_web_base(),
         'assignees'         => gexe_get_assignee_options(),
         'planned_status_id' => (int) gexe_glpi_status_map()['planned'],
+        // [manager-switcher]
+        'is_manager'        => gexe_is_manager_local() ? 1 : 0,
+        'executors'         => gexe_get_assignee_options(),
     ]);
 });
 
@@ -129,6 +143,38 @@ function gexe_glpi_cards_shortcode($atts) {
         $glpi_show_all = (get_user_meta($current_user->ID, 'glpi_show_all_cards', true) === '1');
     }
 
+    $view_as_raw = isset($_GET['view_as']) ? (string) $_GET['view_as'] : '';
+    $join_filter = '';
+    $branch = 'self';
+
+    if (gexe_is_manager_local()) {
+        if ($view_as_raw === 'all') {
+            $branch = 'all';
+        } elseif (ctype_digit($view_as_raw)) {
+            $branch = 'user';
+            $join_filter = $glpi_db->prepare(
+                ' JOIN glpi_tickets_users tu_view ON tu_view.tickets_id = t.id AND tu_view.type = 2 AND tu_view.users_id = %d ',
+                (int) $view_as_raw
+            );
+        } elseif (!$glpi_show_all && $glpi_user_id !== '' && ctype_digit($glpi_user_id)) {
+            $join_filter = $glpi_db->prepare(
+                ' JOIN glpi_tickets_users tu_view ON tu_view.tickets_id = t.id AND tu_view.type = 2 AND tu_view.users_id = %d ',
+                (int) $glpi_user_id
+            );
+        }
+    } else {
+        if (!$glpi_show_all && $glpi_user_id !== '' && ctype_digit($glpi_user_id)) {
+            $join_filter = $glpi_db->prepare(
+                ' JOIN glpi_tickets_users tu_view ON tu_view.tickets_id = t.id AND tu_view.type = 2 AND tu_view.users_id = %d ',
+                (int) $glpi_user_id
+            );
+        }
+    }
+
+    if (defined('WP_DEBUG') && WP_DEBUG) {
+        error_log('[manager-switcher] branch=' . $branch . '; view_as=' . json_encode($view_as_raw));
+    }
+
     // ---- Базовый запрос по активным тикетам ----
     $where_status  = ' t.status IN (1,2,3,4) AND t.is_deleted = 0 ';
     $join_assignee = ' LEFT JOIN glpi_tickets_users tu_ass ON t.id = tu_ass.tickets_id AND tu_ass.type = 2 ';
@@ -136,13 +182,6 @@ function gexe_glpi_cards_shortcode($atts) {
     $join_user     = ' LEFT JOIN glpi_users u ON tu_ass.users_id = u.id ';
     $join_cat      = ' LEFT JOIN glpi_itilcategories c ON t.itilcategories_id = c.id ';
     $join_loc      = ' LEFT JOIN glpi_locations l ON t.locations_id = l.id ';
-
-    $where_assignee = '';
-
-    if (!$glpi_show_all && $glpi_user_id !== '' && ctype_digit($glpi_user_id)) {
-        // Жёсткая фильтрация по users_id (GLPI)
-        $where_assignee = $glpi_db->prepare(' AND tu_ass.users_id = %d ', (int) $glpi_user_id);
-    }
 
     $sql = "
         SELECT  t.id, t.status, t.time_to_resolve,
@@ -153,13 +192,13 @@ function gexe_glpi_cards_shortcode($atts) {
                 c.completename AS category_name,
                 l.completename AS location_name
         FROM glpi_tickets t
+        $join_filter
         $join_assignee
         $join_req
         $join_user
         $join_cat
         $join_loc
         WHERE $where_status
-        $where_assignee
         ORDER BY t.date DESC
         LIMIT 500
     ";
