@@ -27,9 +27,12 @@ function gexe_glpi_ticket_resolve() {
     $solution_text = isset($_POST['solution_text']) ? sanitize_textarea_field((string) $_POST['solution_text']) : 'Завершено';
 
     global $glpi_db;
-    $exists = $glpi_db->get_var($glpi_db->prepare('SELECT 1 FROM glpi_tickets WHERE id=%d', $ticket_id));
-    if (!$exists) {
+    $current_status = $glpi_db->get_var($glpi_db->prepare('SELECT status FROM glpi_tickets WHERE id=%d', $ticket_id));
+    if ($current_status === null) {
         gexe_ajax_error('INVALID_INPUT', 'Тикет не найден', 404);
+    }
+    if ((int) $current_status === $status) {
+        gexe_ajax_error('SQL_OP_FAILED', 'Заявка уже завершена', 409);
     }
 
     $glpi_db->query('START TRANSACTION');
