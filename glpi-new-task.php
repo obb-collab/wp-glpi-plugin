@@ -59,57 +59,39 @@ function glpi_db_get_executors() { old implementation }
 add_action('wp_ajax_glpi_load_dicts', 'glpi_ajax_load_dicts');
 
 function glpi_get_wp_executors(): array {
-    global $wpdb;
+    global $wpdb, $glpi_db;
     $rows = $wpdb->get_results(
-        $wpdb->prepare(
-            "SELECT user_id, CAST(meta_value AS UNSIGNED) AS glpi_user_id FROM {$wpdb->usermeta} WHERE meta_key = %s AND meta_value <> ''",
-            'glpi_user_id'
-        ),
+        "SELECT user_id, meta_value FROM {$wpdb->usermeta} WHERE meta_key='glpi_user_id' AND meta_value <> ''",
         ARRAY_A
     );
+    if (!$rows) {
+        return [];
+    }
     $map = [];
-    $glpiIds = [];
-    if ($rows) {
-        foreach ($rows as $r) {
-            $gid = (int) ($r['glpi_user_id'] ?? 0);
-            if ($gid > 0) {
-                $map[$gid] = (int) ($r['user_id'] ?? 0);
-                $glpiIds[] = $gid;
-            }
+    $ids = [];
+    foreach ($rows as $r) {
+        $gid = (int) ($r['meta_value'] ?? 0);
+        if ($gid > 0) {
+            $map[$gid] = (int) ($r['user_id'] ?? 0);
+            $ids[] = $gid;
         }
     }
-    $glpiIds = array_values(array_unique($glpiIds));
-    if (empty($glpiIds)) {
-        error_log('[wp-glpi:executors] wp_map=' . count($rows) . ' glpi_ids=0 out=0');
-        return ['list' => [], 'note' => 'no_mappings'];
+    if (empty($ids)) {
+        return [];
     }
-    try {
-        $pdo = glpi_get_pdo();
-        $holders = [];
-        $params  = [];
-        foreach ($glpiIds as $i => $id) {
-            $ph = ':e' . $i;
-            $holders[] = $ph;
-            $params[$ph] = $id;
-        }
-        $sql = "SELECT u.id, u.name AS login, COALESCE(NULLIF(TRIM(CONCAT(u.realname,' ',u.firstname)),'') , u.name) AS label FROM glpi_users u WHERE u.id IN (" . implode(',', $holders) . ") ORDER BY u.realname COLLATE utf8mb4_unicode_ci ASC, u.firstname COLLATE utf8mb4_unicode_ci ASC";
-        $stmt = $pdo->prepare($sql);
-        foreach ($params as $ph => $val) {
-            $stmt->bindValue($ph, $val, PDO::PARAM_INT);
-        }
-        $stmt->execute();
-        $grows = $stmt->fetchAll();
-    } catch (PDOException $e) {
-        error_log('[wp-glpi:executors] SQL ERROR: ' . $e->getMessage());
-        throw $e;
-    }
+    $place = implode(',', array_fill(0, count($ids), '%d'));
+    $sql = $glpi_db->prepare(
+        "SELECT u.id, u.name, u.realname, u.firstname FROM glpi_users u WHERE u.id IN ($place) ORDER BY u.realname COLLATE utf8mb4_unicode_ci ASC, u.firstname COLLATE utf8mb4_unicode_ci ASC",
+        ...$ids
+    );
+    $grows = $glpi_db->get_results($sql, ARRAY_A);
     $out = [];
     foreach ($grows as $g) {
         $gid = (int) ($g['id'] ?? 0);
         if (!$gid || !isset($map[$gid])) continue;
-        $label = trim($g['label'] ?? '');
-        $login = $g['login'] ?? '';
-        if ($login === 'vks_m5_local' || $label === '') {
+        $label = trim(($g['realname'] ?? '') . ' ' . ($g['firstname'] ?? ''));
+        $uname = $g['name'] ?? '';
+        if ($uname === 'vks_m5_local' || $label === '') {
             $label = 'Куткин Павел';
         }
         $out[] = [
@@ -118,21 +100,10 @@ function glpi_get_wp_executors(): array {
             'glpi_user_id' => $gid,
         ];
     }
-
-    $prevLocale = setlocale(LC_COLLATE, 0);
-    $hasLocale = setlocale(LC_COLLATE, 'ru_RU.UTF-8');
     usort($out, function ($a, $b) {
-        $la = mb_strtolower($a['display_name'], 'UTF-8');
-        $lb = mb_strtolower($b['display_name'], 'UTF-8');
-        return strcoll($la, $lb);
+        return strcmp(mb_strtolower($a['display_name'], 'UTF-8'), mb_strtolower($b['display_name'], 'UTF-8'));
     });
-    if ($hasLocale && $prevLocale) {
-        setlocale(LC_COLLATE, $prevLocale);
-    }
-
-    error_log('[wp-glpi:executors] wp_map=' . count($rows) . ' glpi_ids=' . count($glpiIds) . ' out=' . count($out));
-
-    return ['list' => $out];
+    return $out;
 }
 
 function glpi_ajax_load_dicts() {
@@ -170,12 +141,8 @@ function glpi_ajax_load_dicts() {
 
         $pdo->commit();
 
-        $exec = glpi_get_wp_executors();
-        $executors = $exec['list'];
+        $executors = glpi_get_wp_executors();
         $meta = ['empty' => ['categories' => empty($categories), 'locations' => empty($locations)]];
-        if (!empty($exec['note'])) {
-            $meta['note'] = $exec['note'];
-        }
 
         error_log('[wp-glpi:new-task] catalogs loaded: cats=' . count($categories) . ', locs=' . count($locations));
 
@@ -196,29 +163,20 @@ function glpi_ajax_load_dicts() {
             'message' => 'Ошибка SQL при загрузке локаций',
             'details' => $e->getMessage(),
         ]);
-    } catch (Exception $e) {
-        error_log('[wp-glpi:new-task] SQL executors: ' . $e->getMessage());
-        wp_send_json_error([
-            'type'    => 'SQL',
-            'scope'   => 'executors',
-            'message' => 'Ошибка SQL при загрузке исполнителей',
-            'details' => $e->getMessage(),
-        ]);
     }
 }
 
 // -------- Create ticket --------
 add_action('wp_ajax_glpi_create_ticket', 'glpi_ajax_create_ticket');
-add_action('wp_ajax_wpglpi_create_ticket_api', 'glpi_ajax_create_ticket');
 function glpi_ajax_create_ticket() {
     glpi_nt_verify_nonce();
     if (!is_user_logged_in()) {
-        wp_send_json_error(['type' => 'SECURITY', 'message' => 'Пользователь не авторизован']);
+        wp_send_json(['success' => false, 'error' => ['type' => 'SECURITY', 'message' => 'Пользователь не авторизован']]);
     }
     $wp_uid = get_current_user_id();
     $map = gexe_require_glpi_user($wp_uid);
     if (!$map['ok']) {
-        wp_send_json_error(['type' => 'MAPPING', 'message' => 'Профиль WordPress не привязан к GLPI пользователю']);
+        wp_send_json(['success' => false, 'error' => ['type' => 'MAPPING', 'message' => 'Профиль WordPress не привязан к GLPI пользователю']]);
     }
     $glpi_uid = (int) $map['id'];
 
@@ -231,29 +189,29 @@ function glpi_ajax_create_ticket() {
 
     $errors = [];
     if (mb_strlen($subject, 'UTF-8') < 3 || mb_strlen($subject, 'UTF-8') > 255) {
-        $errors['subject'] = 'Тема 3-255 символов';
+        $errors['name'] = 'Тема 3-255 символов';
     }
-    if (mb_strlen($desc, 'UTF-8') > 5000) {
-        $errors['description'] = 'Описание до 5000 символов';
+    if (mb_strlen($desc, 'UTF-8') === 0 || mb_strlen($desc, 'UTF-8') > 5000) {
+        $errors['content'] = 'Описание 1-5000 символов';
     }
     $executors = glpi_get_wp_executors();
     $allowed = [];
-    foreach ($executors['list'] as $e) {
+    foreach ($executors as $e) {
         $allowed[$e['user_id']] = $e['glpi_user_id'];
     }
     $executor_glpi = 0;
     if ($executor_wp > 0) {
         if (!isset($allowed[$executor_wp])) {
-            $errors['executor_id'] = 'Недопустимый исполнитель';
+            $errors['assignee'] = 'Недопустимый исполнитель';
         } else {
             $executor_glpi = (int) $allowed[$executor_wp];
         }
     }
     if (!$assign_me && $executor_glpi === 0) {
-        $errors['executor_id'] = 'Обязательное поле';
+        $errors['assignee'] = 'Обязательное поле';
     }
     if (!empty($errors)) {
-        wp_send_json_error(['type' => 'VALIDATION', 'message' => 'Validation failed', 'details' => $errors]);
+        wp_send_json(['success' => false, 'error' => ['type' => 'VALIDATION', 'message' => 'Validation failed', 'details' => $errors]]);
     }
     if ($assign_me) {
         $executor_glpi = $glpi_uid;
@@ -263,14 +221,15 @@ function glpi_ajax_create_ticket() {
     $app_token = defined('GEXE_GLPI_APP_TOKEN') ? GEXE_GLPI_APP_TOKEN : (defined('GLPI_APP_TOKEN') ? GLPI_APP_TOKEN : '');
     $user_token = defined('GEXE_GLPI_USER_TOKEN') ? GEXE_GLPI_USER_TOKEN : (defined('GLPI_USER_TOKEN') ? GLPI_USER_TOKEN : '');
     if (!$api_url || !$app_token || !$user_token) {
-        wp_send_json_error(['type' => 'CONFIG', 'message' => 'GLPI API не настроен (URL/токены)']);
+        wp_send_json(['success' => false, 'error' => ['type' => 'CONFIG', 'message' => 'GLPI API not configured']]);
     }
 
-    $lock_key = 'wpglpi_create_' . $wp_uid;
-    if (get_transient($lock_key)) {
-        wp_send_json_error(['type' => 'BUSY', 'message' => 'Запрос уже выполняется']);
+    $lock_key = 'gexe_ticket_' . sha1($wp_uid . '|' . $subject . '|' . $cat . '|' . $loc);
+    $cached = get_transient($lock_key);
+    if ($cached !== false) {
+        wp_send_json($cached);
     }
-    set_transient($lock_key, 1, 10);
+    set_transient($lock_key, ['error' => ['type' => 'LOCK']], 10);
 
     $headers = [
         'Content-Type' => 'application/json',
@@ -292,17 +251,24 @@ function glpi_ajax_create_ticket() {
         'timeout' => 15,
     ]);
     if (is_wp_error($resp)) {
-        error_log('[wp-glpi:create] user=' . $wp_uid . ' glpi=' . $glpi_uid . ' result=fail:api');
-        wp_send_json_error(['type' => 'API', 'message' => $resp->get_error_message()]);
+        $data = ['success' => false, 'error' => ['type' => 'API', 'message' => $resp->get_error_message()]];
+        set_transient($lock_key, $data, 10);
+        error_log('[wp-glpi:create-ticket] user=' . $wp_uid . ' glpi=' . $glpi_uid . ' result=fail:api');
+        wp_send_json($data);
     }
     $code = wp_remote_retrieve_response_code($resp);
-    $body = wp_remote_retrieve_body($resp);
-    $decoded = json_decode($body, true);
-    if ($code >= 400 || !isset($decoded['id'])) {
-        error_log('[wp-glpi:create] user=' . $wp_uid . ' glpi=' . $glpi_uid . ' result=fail:' . $code);
-        wp_send_json_error(['type' => 'API', 'message' => "Ошибка API ({$code})", 'details' => $body]);
+    $body = json_decode(wp_remote_retrieve_body($resp), true);
+    if ($code >= 400 || !isset($body['id'])) {
+        $msg = 'Ошибка API: ' . $code;
+        if (isset($body['message'])) {
+            $msg .= ' ' . $body['message'];
+        }
+        $data = ['success' => false, 'error' => ['type' => 'API', 'code' => $code, 'message' => $msg]];
+        set_transient($lock_key, $data, 10);
+        error_log('[wp-glpi:create-ticket] user=' . $wp_uid . ' glpi=' . $glpi_uid . ' result=fail:' . $code);
+        wp_send_json($data);
     }
-    $ticket_id = (int) $decoded['id'];
+    $ticket_id = (int) $body['id'];
 
     $warning = false;
     if ($executor_glpi > 0) {
@@ -312,14 +278,15 @@ function glpi_ajax_create_ticket() {
             'timeout' => 15,
         ]);
         if (is_wp_error($resp2) || wp_remote_retrieve_response_code($resp2) >= 400) {
-            $warning = wp_remote_retrieve_body($resp2);
+            $warning = true;
         }
     }
-    $out = ['id' => $ticket_id];
-    error_log('[wp-glpi:create] user=' . $wp_uid . ' glpi=' . $glpi_uid . ' result=ok#' . $ticket_id);
+    $out = ['success' => true, 'id' => $ticket_id];
     if ($warning) {
         $out['warning'] = 'assign_failed';
-        $out['message'] = $warning ? $warning : 'Назначение исполнителя не выполнено';
+        $out['message'] = 'Назначение исполнителя не выполнено';
     }
-    wp_send_json_success($out);
+    set_transient($lock_key, $out, 10);
+    error_log('[wp-glpi:create-ticket] user=' . $wp_uid . ' glpi=' . $glpi_uid . ' result=ok#' . $ticket_id);
+    wp_send_json($out);
 }
