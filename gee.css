@@ -58,7 +58,7 @@ body {
   font-weight: 600;
   font-size: 1rem;
   line-height: 1.4;
-  color: inherit;
+  color: #fff;
   text-transform: none;
   letter-spacing: normal;
 }
@@ -72,6 +72,11 @@ body {
   white-space: normal;
   word-break: break-word;
   display: block;
+}
+.glpi-topic:hover,
+.glpi-topic:active,
+.glpi-topic:visited {
+  color: inherit;
 }
 /* font-size and weight remain consistent across breakpoints */
 /* Обёртка заголовка карточки */
