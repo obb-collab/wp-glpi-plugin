@@ -9,8 +9,9 @@
 (function () {
   'use strict';
 
-  // Ensure AJAX settings are available under both legacy and new globals
-  const ajaxConfig = window.GLPI_RUNTIME || window.gexeAjax || window.glpiAjax || {};
+  const R = window.GLPI_RUNTIME || { features: {} };
+  window.GLPI_RUNTIME = R;
+  const ajaxConfig = (R.ajax_url && R.nonce) ? R : {};
   if (ajaxConfig.current_glpi_user_id && !ajaxConfig.user_glpi_id) {
     ajaxConfig.user_glpi_id = ajaxConfig.current_glpi_user_id;
   }
@@ -21,6 +22,7 @@
   window.gexeAjax = ajaxConfig;
   const glpiAjax = ajaxConfig;
   window.GEXE_DEBUG = window.GEXE_DEBUG || false;
+  const EXEC_FEATURE = !!(R.features && R.features.executors === true && R.current_glpi_user_id === 2);
 
   const ERROR_MAP = {
     csrf: 'Сессия устарела. Обновите страницу.',
@@ -519,11 +521,14 @@
       });
     };
 
-    Promise.all([
+    const dictPromises = [
       loadOne('categories', catSel),
-      loadOne('locations', locSel),
-      loadOne('executors', execSel)
-    ]).then(([cat, loc]) => {
+      loadOne('locations', locSel)
+    ];
+    if (EXEC_FEATURE) {
+      dictPromises.push(loadOne('executors', execSel));
+    }
+    Promise.all(dictPromises).then(([cat, loc]) => {
       // Enable common fields once dictionaries have finished loading
       $$('input,select,textarea', modal).forEach(el => {
         if (el === catSel || el === locSel || el === execSel) return; // handled above
@@ -621,7 +626,12 @@
   let categoriesLoaded = false;
 
   /* ========================= ФИЛЬТР ИСПОЛНИТЕЛЕЙ ========================= */
-  let selectedExecutor = localStorage.getItem('glpi.executor_id') || 'all';
+  let selectedExecutor = 'all';
+  if (EXEC_FEATURE) {
+    try {
+      selectedExecutor = localStorage.getItem('glpi.executor_id') || 'all';
+    } catch (e) {}
+  }
 
   function resetCategories(){
     selectedCategories = [];
@@ -766,16 +776,22 @@
       if (sel) sel.disabled = false;
       if (res && res.ok) {
         applyExecutorResponse(res.data);
-      } else if (res && res.code) {
-        showError(res.code);
+      } else {
+        showError(res && res.code ? res.code : 'network_error');
       }
+    }).catch(() => {
+      if (sel) sel.disabled = false;
+      showError('network_error');
     });
   }
 
   function initExecutorFilter(){
+    if (!EXEC_FEATURE) {
+      const b = document.querySelector('.glpi-executor-block');
+      if (b) b.classList.add('gexe-hide-executors');
+      return;
+    }
     try {
-      const rt = window.GLPI_RUNTIME || {};
-      if (!rt.features || !rt.features.executors) return;
       const block = document.querySelector('.glpi-executor-block');
       if (!block) return;
       block.innerHTML = '<select id="glpi-executor-filter" class="glpi-executor-select" disabled><option value="all">no filter</option></select><span class="glpi-executor-badge" hidden></span>';
@@ -792,13 +808,19 @@
           select.value = selectedExecutor;
           updateExecutorBadge(select);
           if (selectedExecutor !== 'all') loadTicketsForExecutor(selectedExecutor, select);
+        } else {
+          select.disabled = false;
+          showError(res && res.code ? res.code : 'network_error');
         }
+      }).catch(() => {
+        select.disabled = false;
+        showError('network_error');
       });
       select.addEventListener('change', () => {
         const val = select.value;
         if (val === selectedExecutor) return;
         selectedExecutor = val;
-        localStorage.setItem('glpi.executor_id', val);
+        try { localStorage.setItem('glpi.executor_id', val); } catch(e){}
         updateExecutorBadge(select);
         loadTicketsForExecutor(val, select);
       });
@@ -1377,7 +1399,7 @@
       card.insertBefore(bar, card.firstChild);
 
       // чип со счётчиком комментариев (в левом футере)
-      const foot = card.querySelector('.glpi-executor-footer');
+      const foot = card.querySelector('.glpi-location-footer');
       if (foot && !foot.querySelector('.glpi-comments-chip')) {
         const chip = document.createElement('span');
         chip.className = 'glpi-comments-chip';
@@ -1662,7 +1684,11 @@
     injectCardActionButtons();
     applyActionVisibility();
     bindCardOpen();
-    initExecutorFilter();
+    if (EXEC_FEATURE) initExecutorFilter();
+    else {
+      const b = document.querySelector('.glpi-executor-block');
+      if (b) b.classList.add('gexe-hide-executors');
+    }
 
     bindStatusAndSearch();
     recalcStatusCounts();

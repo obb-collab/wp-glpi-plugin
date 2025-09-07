@@ -27,7 +27,7 @@ function gexe_get_glpi_user_id($wp_user_id) {
     }
 
     // Read raw meta, cast to integer and ensure positivity.
-    $raw = get_user_meta($wp_user_id, 'glpi_user_id', true);
+    $raw = function_exists('get_user_meta') ? get_user_meta($wp_user_id, 'glpi_user_id', true) : 0;
     $id  = (int) $raw;
     $id  = $id > 0 ? $id : 0;
 
@@ -55,27 +55,30 @@ function gexe_require_glpi_user($wp_user_id) {
 /**
  * Return GLPI user id associated with the current WordPress user.
  *
- * Falls back to `0` when the mapping is missing or invalid. The function is
- * intentionally defensive: it performs capability checks and avoids throwing
- * exceptions so template code can safely call it without additional guards.
+ * Read-only helper. Falls back to `0` when the mapping is missing or invalid.
+ * The function is intentionally defensive: it performs capability checks and
+ * avoids throwing exceptions so template code can safely call it without
+ * additional guards.
  *
  * @return int GLPI users.id or 0 when not mapped or user not logged in.
  */
-function glpi_current_user_id() {
-    if (!function_exists('is_user_logged_in') || !is_user_logged_in()) {
-        return 0;
-    }
-    if (!function_exists('get_current_user_id')) {
-        return 0;
-    }
-    try {
-        $gid = gexe_get_glpi_user_id(get_current_user_id());
-        return ($gid > 0) ? $gid : 0;
-    } catch (Throwable $e) {
-        if (defined('WP_DEBUG') && WP_DEBUG) {
-            error_log('glpi_current_user_id: ' . $e->getMessage());
+if (!function_exists('glpi_current_user_id')) {
+    function glpi_current_user_id() {
+        if (!function_exists('is_user_logged_in') || !is_user_logged_in()) {
+            return 0;
         }
-        return 0;
+        if (!function_exists('get_current_user_id')) {
+            return 0;
+        }
+        try {
+            $gid = gexe_get_glpi_user_id(get_current_user_id());
+            return ($gid > 0) ? $gid : 0;
+        } catch (Throwable $e) {
+            if (defined('WP_DEBUG') && WP_DEBUG) {
+                error_log('glpi_current_user_id: ' . $e->getMessage());
+            }
+            return 0;
+        }
     }
 }
 
