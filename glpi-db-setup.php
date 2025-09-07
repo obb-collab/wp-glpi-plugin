@@ -161,6 +161,167 @@ function gexe_glpi_triggers_status() {
     return $glpi_db->get_results("SELECT TRIGGER_NAME, ACTION_TIMING, EVENT_MANIPULATION, ACTION_STATEMENT FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA='glpi' AND TRIGGER_NAME IN ('glpi_followups_ai','glpi_followups_ad')");
 }
 
+/**
+ * Accept ticket on behalf of GLPI user.
+ *
+ * Inserts a fixed followup "Принято в работу" and updates ticket status to 2
+ * when needed. The operation is executed inside a transaction and is
+ * idempotent – a second call by the same user will return `duplicate` without
+ * modifying data. Requires the user to be assigned as type=2 in
+ * `glpi_tickets_users`.
+ *
+ * @param int $ticket_id
+ * @param int $glpi_user_id
+ * @return array{ok:bool,code?:string,msg?:string,extra?:array}
+ */
+function sql_ticket_accept($ticket_id, $glpi_user_id) {
+    global $glpi_db;
+
+    $ticket_id    = (int) $ticket_id;
+    $glpi_user_id = (int) $glpi_user_id;
+    if ($ticket_id <= 0 || $glpi_user_id <= 0) {
+        return ['ok' => false, 'code' => 'validation'];
+    }
+
+    $glpi_db->query('START TRANSACTION');
+
+    // Ensure user is assigned to the ticket
+    $has = $glpi_db->get_var($glpi_db->prepare(
+        'SELECT 1 FROM glpi_tickets_users WHERE tickets_id=%d AND users_id=%d AND type IN (2) FOR UPDATE',
+        $ticket_id,
+        $glpi_user_id
+    ));
+    if (!$has) {
+        $glpi_db->query('ROLLBACK');
+        return ['ok' => false, 'code' => 'no_rights'];
+    }
+
+    // Current status for extra payload and duplicate detection
+    $status = (int) $glpi_db->get_var($glpi_db->prepare(
+        'SELECT status FROM glpi_tickets WHERE id=%d FOR UPDATE',
+        $ticket_id
+    ));
+
+    $dup = $glpi_db->get_var($glpi_db->prepare(
+        "SELECT id FROM glpi_itilfollowups WHERE items_id=%d AND itemtype='Ticket' AND users_id=%d AND content='Принято в работу' LIMIT 1",
+        $ticket_id,
+        $glpi_user_id
+    ));
+    if ($dup) {
+        $glpi_db->query('ROLLBACK');
+        return ['ok' => false, 'code' => 'duplicate', 'extra' => ['status' => $status]];
+    }
+
+    $sql = $glpi_db->prepare(
+        "INSERT INTO glpi_itilfollowups (items_id,itemtype,users_id,date,content,is_private) VALUES (%d,'Ticket',%d,NOW(),'Принято в работу',0)",
+        $ticket_id,
+        $glpi_user_id
+    );
+    if (!$glpi_db->query($sql)) {
+        $err = $glpi_db->last_error;
+        $glpi_db->query('ROLLBACK');
+        return ['ok' => false, 'code' => 'sql_error', 'msg' => $err];
+    }
+    $fid  = (int) $glpi_db->insert_id;
+    $date = $glpi_db->get_var($glpi_db->prepare('SELECT date FROM glpi_itilfollowups WHERE id=%d', $fid));
+
+    $sql = $glpi_db->prepare('UPDATE glpi_tickets SET status=2 WHERE id=%d AND status<>2', $ticket_id);
+    if (!$glpi_db->query($sql)) {
+        $err = $glpi_db->last_error;
+        $glpi_db->query('ROLLBACK');
+        return ['ok' => false, 'code' => 'sql_error', 'msg' => $err];
+    }
+
+    $glpi_db->query('COMMIT');
+    return [
+        'ok'    => true,
+        'extra' => [
+            'status'   => 2,
+            'followup' => [
+                'id'      => $fid,
+                'content' => 'Принято в работу',
+                'date'    => $date,
+            ],
+        ],
+    ];
+}
+
+/**
+ * Resolve ticket by setting status to 6 and adding a followup.
+ *
+ * Similar to {@see sql_ticket_accept()} but checks current status and returns
+ * `already_done` when the ticket is already resolved. The followup text is
+ * fixed to "Заявка решена".
+ *
+ * @param int $ticket_id
+ * @param int $glpi_user_id
+ * @return array{ok:bool,code?:string,msg?:string,extra?:array}
+ */
+function sql_ticket_resolve($ticket_id, $glpi_user_id) {
+    global $glpi_db;
+
+    $ticket_id    = (int) $ticket_id;
+    $glpi_user_id = (int) $glpi_user_id;
+    if ($ticket_id <= 0 || $glpi_user_id <= 0) {
+        return ['ok' => false, 'code' => 'validation'];
+    }
+
+    $glpi_db->query('START TRANSACTION');
+
+    $has = $glpi_db->get_var($glpi_db->prepare(
+        'SELECT 1 FROM glpi_tickets_users WHERE tickets_id=%d AND users_id=%d AND type IN (2) FOR UPDATE',
+        $ticket_id,
+        $glpi_user_id
+    ));
+    if (!$has) {
+        $glpi_db->query('ROLLBACK');
+        return ['ok' => false, 'code' => 'no_rights'];
+    }
+
+    $status = $glpi_db->get_var($glpi_db->prepare('SELECT status FROM glpi_tickets WHERE id=%d FOR UPDATE', $ticket_id));
+    if ($status === null) {
+        $glpi_db->query('ROLLBACK');
+        return ['ok' => false, 'code' => 'not_found'];
+    }
+    if ((int) $status === 6) {
+        $glpi_db->query('ROLLBACK');
+        return ['ok' => false, 'code' => 'already_done', 'extra' => ['status' => 6]];
+    }
+
+    $sql = $glpi_db->prepare('UPDATE glpi_tickets SET status=6 WHERE id=%d', $ticket_id);
+    if (!$glpi_db->query($sql)) {
+        $err = $glpi_db->last_error;
+        $glpi_db->query('ROLLBACK');
+        return ['ok' => false, 'code' => 'sql_error', 'msg' => $err];
+    }
+
+    $sql = $glpi_db->prepare(
+        "INSERT INTO glpi_itilfollowups (items_id,itemtype,users_id,date,content,is_private) VALUES (%d,'Ticket',%d,NOW(),'Заявка решена',0)",
+        $ticket_id,
+        $glpi_user_id
+    );
+    if (!$glpi_db->query($sql)) {
+        $err = $glpi_db->last_error;
+        $glpi_db->query('ROLLBACK');
+        return ['ok' => false, 'code' => 'sql_error', 'msg' => $err];
+    }
+    $fid  = (int) $glpi_db->insert_id;
+    $date = $glpi_db->get_var($glpi_db->prepare('SELECT date FROM glpi_itilfollowups WHERE id=%d', $fid));
+
+    $glpi_db->query('COMMIT');
+    return [
+        'ok'    => true,
+        'extra' => [
+            'status'   => 6,
+            'followup' => [
+                'id'      => $fid,
+                'content' => 'Заявка решена',
+                'date'    => $date,
+            ],
+        ],
+    ];
+}
+
 if (defined('WP_CLI') && WP_CLI) {
     class Gexe_Triggers_CLI {
         public function install() {

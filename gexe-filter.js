@@ -26,7 +26,7 @@
     not_found: 'Заявка недоступна или не существует.',
     sql_error: 'Ошибка базы данных. Повторите позже.',
     rate_limit_client: 'Слишком часто. Повторите через пару секунд.',
-    bad_response: 'Не удалось обработать ответ сервера.',
+    bad_response: 'Ошибка соединения. Повторите позже.',
     network_error: 'Ошибка соединения. Повторите позже.',
   };
 
@@ -110,7 +110,9 @@
     const m = ERROR_MAP[code];
     if (typeof m === 'function') msg = m(details);
     else if (typeof m === 'string') msg = m;
-    if (!msg) msg = 'Неизвестная ошибка' + (status ? ' (' + status + ')' : '');
+    if (!msg) {
+      msg = status === 200 ? 'Ошибка соединения. Повторите позже' : 'Неизвестная ошибка' + (status ? ' (' + status + ')' : '');
+    }
     showNotice('error', msg);
   }
 
@@ -305,90 +307,39 @@
       btn.setAttribute('title', 'Принять в работу');
     }
 
-    const ajax = window.gexeAjax || window.glpiAjax;
-    if (!ajax || !ajax.url) return;
     lockAction(ticketId, 'accept', true);
     setActionLoading(btn, true);
 
-    const fd = new FormData();
-    fd.append('action', 'glpi_ticket_accept_sql');
-    fd.append('ticket_id', String(ticketId));
-    fd.append('assignee_glpi_id', String(ajax.user_glpi_id || 0));
-    fd.append('add_comment', '1');
-    const nonceKey = glpiAjax.nonce_key || 'nonce';
-    fd.append(nonceKey, glpiAjax.nonce || '');
-    fd.append('nonce', glpiAjax.nonce || '');
-    fd.append('_ajax_nonce', glpiAjax.nonce || '');
-
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15000);
-
-    const send = async retry => {
-      debugRequest(ajax.url, Object.fromEntries(fd.entries()));
-      const res = await fetch(ajax.url, { method: 'POST', body: fd, signal: controller.signal });
-      await debugResponse(res);
-      let data = null;
-      try { data = await res.clone().json(); }
-      catch (e) { try { await res.clone().text(); } catch (e2) {} }
-      if ((data && (data.error === 'csrf' || data.code === 'csrf')) && !retry) {
-        await refreshActionsNonce();
-        fd.set(nonceKey, ajax.nonce || '');
-        fd.set('nonce', ajax.nonce || '');
-        fd.set('_ajax_nonce', ajax.nonce || '');
-        showNotice('info', 'Повторяем...');
-        return send(true);
-      }
-      return { res, data };
-    };
-
-    send(false).then(({ res, data }) => {
+    ajaxPost({ action: 'glpi_accept', ticket_id: String(ticketId) }).then(res => {
       setActionLoading(btn, false);
+      lockAction(ticketId, 'accept', false);
+      if (window.__GLPI_DEBUG) {
+        console.log({ action: 'accept', ticket_id: ticketId, code: res.code || 'ok' });
+      }
       if (!res.ok) {
-        const errCode = data && data.error && data.error.code ? data.error.code : (data && data.error) ? data.error : 'bad_response';
-        showError(errCode, data && data.details, res.status);
-        return;
-      }
-      if (!data) {
-        showError('bad_response', null, res.status);
-        return;
-      }
-      const ok = data.ok || data.success;
-      if (!ok) {
-        const err = data.error || {};
-        const code = err.code || err;
-        if (code === 'ALREADY_ACCEPTED') {
+        if (res.code === 'duplicate') {
           markAccepted(ticketId, btn);
           refreshTicketMeta(ticketId);
           recalcStatusCounts(); filterCards();
-          showNotice('success', 'Уже в работе');
+          showNotice('success', 'Уже отмечено');
           return;
         }
-        if (code === 'NO_PERMISSION') {
-          showNotice('error', 'Нет прав на заявку');
-          return;
+        if (res.code === 'no_rights') {
+          btn.disabled = true;
+          btn.setAttribute('aria-disabled', 'true');
         }
-        if (code === 'SQL_OP_FAILED') {
-          showNotice('error', 'Операция не выполнена');
-          btn.classList.add('is-error');
-          btn.innerHTML = 'Повторить';
-          return;
-        }
-        showError(code, err.details, res.status);
+        showError(res.code);
         return;
       }
-      markAccepted(ticketId, btn, data.payload);
-      insertFollowup(ticketId, data.payload && data.payload.followup);
+      markAccepted(ticketId, btn, res.data.extra);
+      insertFollowup(ticketId, res.data.extra && res.data.extra.followup);
       refreshTicketMeta(ticketId);
       recalcStatusCounts(); filterCards();
-      const msg = (data.payload && data.payload.already) ? 'Уже в работе' : 'Заявка принята в работу';
-      showNotice('success', msg);
-    }).catch(err => {
+      showNotice('success', 'Принято в работу');
+    }).catch(() => {
       setActionLoading(btn, false);
-      if (err && err.name === 'AbortError') showNotice('error','Таймаут запроса');
-      else showError('network_error');
-    }).finally(() => {
-      clearTimeout(timeoutId);
       lockAction(ticketId, 'accept', false);
+      showError('network_error');
     });
   }
 
@@ -972,6 +923,7 @@
   }
 
   /* ========================= МОДАЛКА ПОДТВЕРЖДЕНИЯ ЗАВЕРШЕНИЯ ========================= */
+  let resolveConfirmTimer = null;
   function ensureDoneModal() {
     if (doneModal) return doneModal;
     doneModal = document.createElement('div');
@@ -992,18 +944,24 @@
     $('.gexe-done__close', doneModal).addEventListener('click', closeDoneModal);
     const confirmBtn = $('#gexe-done-confirm', doneModal);
     confirmBtn.addEventListener('click', () => {
-      if (confirmBtn.getAttribute('data-confirm') === '1') {
+      if (confirmBtn.classList.contains('is-confirm')) {
+        resetDoneButton(confirmBtn);
         sendDone();
       } else {
-        confirmBtn.setAttribute('data-confirm', '1');
+        confirmBtn.classList.add('is-confirm');
         confirmBtn.textContent = 'Точно завершить?';
+        resolveConfirmTimer = setTimeout(() => {
+          resetDoneButton(confirmBtn);
+        }, 10000);
       }
     });
     return doneModal;
   }
   function resetDoneButton(btn) {
     if (!btn) return;
+    if (resolveConfirmTimer) { clearTimeout(resolveConfirmTimer); resolveConfirmTimer = null; }
     btn.textContent = 'Завершить';
+    btn.classList.remove('is-confirm');
     btn.removeAttribute('data-confirm');
   }
   function openDoneModal(ticketId) {
@@ -1023,7 +981,7 @@
     doneModal.classList.remove('is-open'); document.body.classList.remove('glpi-modal-open');
     resetDoneButton($('#gexe-done-confirm', doneModal));
   }
-  async function sendDone(retried) {
+  function sendDone() {
     if (!doneModal) return;
     const pre = checkPreflight(true);
     if (!pre.ok) return;
@@ -1033,54 +991,46 @@
     if (btn && isActionLocked(id, 'done')) return;
     if (btn) setActionLoading(btn, true);
     lockAction(id, 'done', true);
-    const fd = new FormData();
-    fd.append('action', 'glpi_ticket_resolve');
-    const nonce = glpiAjax.nonce;
-    const nonceKey = glpiAjax.nonce_key || 'nonce';
-    fd.append(nonceKey, nonce);
-    fd.append('nonce', nonce);
-    fd.append('_ajax_nonce', nonce);
-    fd.append('ticket_id', String(id));
-    fd.append('solution_text', 'Завершено');
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15000);
-    debugRequest(glpiAjax.url, Object.fromEntries(fd.entries()));
-    try {
-      const res = await fetch(glpiAjax.url, { method: 'POST', body: fd, signal: controller.signal });
-      await debugResponse(res);
-      let data = null;
-      try { data = await res.clone().json(); }
-      catch (e) { try { await res.clone().text(); } catch (e2) {} }
-      if (!res.ok || !data) {
-        showError('bad_response', null, res.status);
-        resetDoneButton(btn);
-        return;
+    ajaxPost({ action: 'glpi_resolve', ticket_id: String(id) }).then(res => {
+      if (btn) setActionLoading(btn, false);
+      lockAction(id, 'done', false);
+      if (window.__GLPI_DEBUG) {
+        console.log({ action: 'resolve', ticket_id: id, code: res.code || 'ok' });
       }
-      if (!data.success) {
-        const code = (data.data && data.data.code) || 'bad_response';
-        if (code === 'csrf' && !retried) {
-          try {
-            await refreshActionsNonce();
-            showNotice('info', 'Доступ обновлён, повторяем операцию…');
-            return sendDone(true);
-          } catch (e) {
-            showError('network_error');
-            resetDoneButton(btn);
-            return;
+      if (!res.ok) {
+        if (res.code === 'already_done') {
+          closeDoneModal();
+          const card = document.querySelector('.glpi-card[data-ticket-id="'+id+'"]');
+          if (card) {
+            const st = (res.data && res.data.extra && res.data.extra.status) || 6;
+            card.setAttribute('data-status', String(st));
+            let badge = card.querySelector('.glpi-solved-badge');
+            if (!badge) {
+              badge = document.createElement('div');
+              badge.className = 'glpi-solved-badge';
+              badge.textContent = 'Решено';
+              card.appendChild(badge);
+            }
+            card.classList.add('gexe-hide');
+            recalcStatusCounts(); filterCards();
           }
+          refreshTicketMeta(id);
+          showNotice('success','Уже решено');
+          return;
         }
-        showError(code, null, res.status);
-        if (btn) {
-          btn.textContent = 'Повторить';
-          btn.removeAttribute('data-confirm');
+        if (res.code === 'no_rights' && btn) {
+          btn.disabled = true;
+          btn.setAttribute('aria-disabled', 'true');
         }
+        resetDoneButton(btn);
+        showError(res.code);
         return;
       }
       closeDoneModal();
       const card = document.querySelector('.glpi-card[data-ticket-id="'+id+'"]');
       if (card) {
-        const newStatus = (data.data && data.data.status) || (glpiAjax.solvedStatus || 6);
-        card.setAttribute('data-status', String(newStatus));
+        const st = (res.data && res.data.extra && res.data.extra.status) || 6;
+        card.setAttribute('data-status', String(st));
         let badge = card.querySelector('.glpi-solved-badge');
         if (!badge) {
           badge = document.createElement('div');
@@ -1091,21 +1041,15 @@
         card.classList.add('gexe-hide');
         recalcStatusCounts(); filterCards();
       }
-      insertFollowup(id, data.data && data.data.followup);
+      insertFollowup(id, res.data && res.data.extra && res.data.extra.followup);
       refreshTicketMeta(id);
-      showNotice('success','Заявка завершена');
-    } catch (err) {
-      if (err && err.name === 'AbortError') showNotice('error','Таймаут запроса');
-      else showError('network_error');
-      if (btn) {
-        btn.textContent = 'Повторить';
-        btn.removeAttribute('data-confirm');
-      }
-    } finally {
-      clearTimeout(timeoutId);
+      showNotice('success','Статус: решено');
+    }).catch(() => {
       if (btn) setActionLoading(btn, false);
       lockAction(id, 'done', false);
-    }
+      showError('network_error');
+      resetDoneButton(btn);
+    });
   }
 
   /* ========================= ДЕЙСТВИЯ ПО КАРТОЧКЕ (AJAX) ========================= */
