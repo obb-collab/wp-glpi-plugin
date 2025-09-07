@@ -13,7 +13,7 @@
 .glpi-create-modal .gnt-textarea,
 .glpi-create-modal .gnt-select { width: 100%; background: #0b1220; border: 1px solid #1f2937; border-radius: 10px; color: #e5e7eb; padding: 10px 12px; }
 .glpi-create-modal .gnt-textarea { resize: none; }
-.glpi-create-modal #gnt-name { height:60px; min-height:56px; max-height:96px; line-height:1.4; padding:8px 12px; resize:vertical; }
+.glpi-create-modal #gnt-name,
 .glpi-create-modal #gnt-content { height:130px; }
 .glpi-create-modal .gnt-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 8px; }
 .glpi-create-modal .gnt-row.gnt-assign-row { grid-template-columns: auto 1fr; align-items: center; }
