@@ -250,9 +250,6 @@ button.disabled{opacity:.5;cursor:not-allowed;}
 .gnt-submit.is-loading::after{content:"";width:16px;height:16px;border:2px solid #f1f5f9;border-top-color:transparent;border-radius:50%;position:absolute;top:50%;left:50%;margin:-8px 0 0 -8px;animation:gnt-spin 1s linear infinite;}
 @keyframes gnt-spin{to{transform:rotate(360deg);}}
 
-/* Inline form alert */
-.form-alert{margin-top:8px;padding:8px 12px;border-radius:6px;background:#7f1d1d;color:#fca5a5;font-size:14px;}
-
 /* Инлайн-категории */
  .glpi-categories-inline{
   display:flex;
