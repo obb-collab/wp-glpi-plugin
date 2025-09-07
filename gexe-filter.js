@@ -22,6 +22,9 @@
     assignee_not_mapped_to_glpi: 'Выбранный исполнитель не привязан к GLPI.',
     ticket_not_found: 'Заявка не найдена.',
     sql_error: details => 'Ошибка записи в GLPI. Код: ' + (details || '') + '.',
+    SQL_OP_FAILED: details => details || 'Ошибка записи в GLPI.',
+    NO_PERMISSION: 'Недостаточно прав для завершения.',
+    NONCE_EXPIRED: 'Обновите страницу (просрочен ключ безопасности).',
     empty_comment: 'Введите комментарий',
     bad_response: 'Не удалось обработать ответ сервера.',
     network_error: 'Ошибка сети',
@@ -832,25 +835,45 @@
           '<button class="gexe-done__close" aria-label="Закрыть"><i class="fa-solid fa-xmark"></i></button>' +
         '</div>' +
         '<div class="gexe-done__body">' +
-          '<button id="gexe-done-confirm" class="glpi-act">Задача решена</button>' +
+          '<button id="gexe-done-confirm" class="glpi-act">Завершить</button>' +
         '</div>' +
       '</div>';
     document.body.appendChild(doneModal);
     $('.gexe-done__backdrop', doneModal).addEventListener('click', closeDoneModal);
     $('.gexe-done__close', doneModal).addEventListener('click', closeDoneModal);
-    $('#gexe-done-confirm', doneModal).addEventListener('click', sendDone);
+    $('#gexe-done-confirm', doneModal).addEventListener('click', onDoneConfirmClick);
     return doneModal;
+  }
+  function resetDoneButton() {
+    const btn = doneModal && $('#gexe-done-confirm', doneModal);
+    if (btn) {
+      btn.textContent = 'Завершить';
+      btn.setAttribute('data-step', 'init');
+      setActionLoading(btn, false);
+    }
   }
   function openDoneModal(ticketId) {
     ensureDoneModal();
+    resetDoneButton();
     doneModal.setAttribute('data-ticket-id', String(ticketId || 0));
     doneModal.classList.add('is-open'); document.body.classList.add('glpi-modal-open');
   }
   function closeDoneModal() {
     if (!doneModal) return;
     doneModal.classList.remove('is-open'); document.body.classList.remove('glpi-modal-open');
+    resetDoneButton();
   }
-  async function sendDone() {
+  function onDoneConfirmClick() {
+    const btn = this;
+    const step = btn.getAttribute('data-step') || 'init';
+    if (step === 'init') {
+      btn.setAttribute('data-step', 'confirm');
+      btn.textContent = 'Точно завершить?';
+      return;
+    }
+    sendDone(false);
+  }
+  async function sendDone(retry) {
     if (!doneModal) return;
     const id = Number(doneModal.getAttribute('data-ticket-id') || '0');
     if (!id) return;
@@ -876,22 +899,26 @@
       let data = null;
       try { data = await res.clone().json(); }
       catch (e) { try { await res.clone().text(); } catch (e2) {} }
-      if (!res.ok) {
-        showError(data && data.error ? data.error : 'bad_response', data && data.details, res.status);
-        return;
+      if ((res.status === 403) && data && data.code === 'NONCE_EXPIRED' && !retry) {
+        await refreshActionsNonce();
+        fd.set(nonceKey, glpiAjax.nonce || '');
+        fd.set('nonce', glpiAjax.nonce || '');
+        fd.set('_ajax_nonce', glpiAjax.nonce || '');
+        return await sendDone(true);
       }
-      if (!data) {
-        showError('bad_response', null, res.status);
-        return;
-      }
-      if (!data.ok) {
-        showError(data.error, data.details, res.status);
+      if (!res.ok || !data || !data.success) {
+        showError(data && data.code ? data.code : 'bad_response', data && (data.message || data.details), res.status);
+        if (btn) {
+          btn.textContent = 'Повторить';
+          btn.setAttribute('data-step', 'retry');
+        }
         return;
       }
       closeDoneModal();
       const card = document.querySelector('.glpi-card[data-ticket-id="'+id+'"]');
       if (card) {
-        card.setAttribute('data-status', String(glpiAjax.solvedStatus || 6));
+        const newStatus = data.data && data.data.status ? data.data.status : (glpiAjax.solvedStatus || 6);
+        card.setAttribute('data-status', String(newStatus));
         let badge = card.querySelector('.glpi-solved-badge');
         if (!badge) {
           badge = document.createElement('div');
@@ -902,12 +929,16 @@
         card.classList.add('gexe-hide');
         recalcStatusCounts(); filterCards();
       }
-      insertFollowup(id, data.payload && data.payload.followup);
+      insertFollowup(id, data.data && data.data.followup);
       refreshTicketMeta(id);
-      showNotice('success','Задача закрыта');
+      showNotice('success','Заявка завершена');
     } catch (err) {
       if (err && err.name === 'AbortError') showNotice('error','Таймаут запроса');
       else showError('network_error');
+      if (btn) {
+        btn.textContent = 'Повторить';
+        btn.setAttribute('data-step', 'retry');
+      }
     } finally {
       clearTimeout(timeoutId);
       if (btn) setActionLoading(btn, false);
