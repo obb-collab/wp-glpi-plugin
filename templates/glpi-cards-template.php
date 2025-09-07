@@ -201,7 +201,7 @@ function gexe_cat_slug($leaf) {
       $is_unassigned = empty($t['executors']);
 
       $name_raw      = trim((string)$t['name']);
-      $name          = esc_html(mb_strimwidth($name_raw, 0, 120, '…'));
+      $name          = esc_html($name_raw);
 
       $clean_desc    = gexe_clean_html_text($t['content']);
       $desc_short    = esc_html(gexe_trim_words($clean_desc, 40, '…'));
@@ -248,7 +248,7 @@ function gexe_cat_slug($leaf) {
            data-author="<?php echo intval($t['author_id'] ?? 0); ?>">
         <div class="glpi-badge <?php echo esc_attr($cat_slug); ?>"><?php echo $icon; ?> <?php echo esc_html($leaf_cat); ?></div>
         <div class="glpi-card-header<?php echo $is_late ? ' late':''; ?>">
-          <h3 class="ticket-card__title" title="<?php echo esc_attr($name); ?>">
+          <h3 class="ticket-card__title" title="<?php echo esc_attr($name_raw); ?>">
             <a href="<?php echo esc_url($link); ?>" class="glpi-topic" target="_blank" rel="noopener noreferrer"><?php echo $name; ?></a>
           </h3>
           <div class="glpi-ticket-id">#<?php echo intval($t['id']); ?></div>
