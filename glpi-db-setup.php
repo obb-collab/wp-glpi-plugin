@@ -246,7 +246,7 @@ function glpi_db_get_categories($entity_id = 0) {
 
     $sql = "SELECT c.id, c.name, c.completename, c.level, c.ancestors_cache\n"
          . "FROM glpi_itilcategories c\n"
-         . "WHERE c.is_deleted = 0 AND c.is_helpdeskvisible = 1";
+         . "WHERE c.is_helpdeskvisible = 1";
 
     if ($entity_id > 0) {
         $sql .= $glpi_db->prepare(" AND (c.entities_id = %d OR c.is_recursive = 1)", $entity_id);
@@ -343,7 +343,7 @@ function glpi_db_create_ticket(array $payload) {
     $glpi_db->query('START TRANSACTION');
 
     $is_leaf = (int)$glpi_db->get_var($glpi_db->prepare(
-        "SELECT COUNT(*) FROM glpi_itilcategories c WHERE c.id=%d AND c.is_deleted=0 AND c.is_helpdeskvisible=1 AND NOT EXISTS (SELECT 1 FROM glpi_itilcategories ch WHERE ch.is_deleted=0 AND ch.completename LIKE CONCAT(c.completename, ' > %%'))",
+        "SELECT COUNT(*) FROM glpi_itilcategories c WHERE c.id=%d AND c.is_helpdeskvisible=1 AND NOT EXISTS (SELECT 1 FROM glpi_itilcategories ch WHERE ch.completename LIKE CONCAT(c.completename, ' > %%'))",
         $cat
     ));
     if (!$is_leaf) {

@@ -4,7 +4,7 @@ Endpoint `gexe_get_form_data` returns lists of categories, locations and executo
 
 * Primary source: GLPI MySQL database (`glpi_itilcategories` and `glpi_locations`).
   * SQL:
-    * `SELECT id, name FROM \`glpi\`.\`glpi_itilcategories\` WHERE is_deleted = 0 ORDER BY name ASC LIMIT 1000`
+    * `SELECT id, name FROM \`glpi\`.\`glpi_itilcategories\` WHERE is_helpdeskvisible = 1 ORDER BY name ASC LIMIT 1000`
     * `SELECT id, completename AS name FROM \`glpi\`.\`glpi_locations\` WHERE is_deleted = 0 ORDER BY completename ASC LIMIT 2000`
 * Fallback: GLPI REST API
   * `GET /ITILCategory/?range=0-1000&order=ASC&sort=name`

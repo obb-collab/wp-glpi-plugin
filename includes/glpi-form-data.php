@@ -58,9 +58,6 @@ function gexe_get_form_data() {
             }
 
             $cat_where = [];
-            if (gexe_glpi_has_column('glpi_itilcategories', 'is_deleted')) {
-                $cat_where[] = 'is_deleted = 0';
-            }
             if (gexe_glpi_has_column('glpi_itilcategories', 'is_active')) {
                 $cat_where[] = 'is_active = 1';
             }
