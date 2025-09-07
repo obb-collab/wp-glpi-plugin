@@ -26,9 +26,17 @@ add_action('wp_enqueue_scripts', function () {
 
     // Скрипт модального окна создания заявки
     wp_register_script(
+        'gexe-actions-helper',
+        plugin_dir_url(__FILE__) . 'gexe-actions-helper.js',
+        [],
+        '1.0.0',
+        true
+    );
+    wp_enqueue_script('gexe-actions-helper');
+    wp_register_script(
         'glpi-new-task-js',
         plugin_dir_url(__FILE__) . 'glpi-new-task.js',
-        [],
+        ['gexe-actions-helper'],
         '1.0.0',
         true
     );

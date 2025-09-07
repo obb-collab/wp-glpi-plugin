@@ -131,13 +131,6 @@
     });
   }
 
-  function showSubmitError(message){
-    const box = modal.querySelector('.glpi-form-loader');
-    if (!box) return;
-    box.innerHTML = '<span class="error">' + (message || 'Ошибка создания заявки') + '</span>';
-    box.hidden = false;
-  }
-
   function logClientError(msg){
     if (!window.gexeAjax) return;
     const params = new URLSearchParams();
@@ -445,35 +438,20 @@
       assign_me: assignMe ? 1 : 0,
       assignee_id: assigneeId
     };
-    const makeBody = () => 'action=gexe_create_ticket&nonce='+encodeURIComponent(gexeAjax.nonce)+'&payload='+encodeURIComponent(JSON.stringify(payload));
     const btn = modal.querySelector('.gnt-submit');
-    btn.disabled = true;
-    const send = (retry) => {
-      return fetch(gexeAjax.url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: makeBody()
-      }).then(r=>r.json().then(data=>({status:r.status,data:data}))).then(resp=>{
-        if (resp.status === 403 && resp.data && resp.data.error === 'AJAX_FORBIDDEN' && !retry) {
-          return refreshNonce().then(()=>send(true));
-        }
-        return resp;
-      });
-    };
-    send(false).then(resp=>{
-      const data = resp.data || resp;
-      if (data && data.ok) {
-        close();
-        if (data.ticket_id) {
-          showSuccessModal(data.ticket_id);
-        }
-      } else {
-        showSubmitError(data && data.error ? data.error : 'Ошибка создания заявки');
+    window.performAction('create', {
+      payload: JSON.stringify(payload),
+      button: btn
+    }).then(resp => {
+      if (!resp || !resp.ok) return;
+      const data = resp.data || {};
+      close();
+      if (data.ticket_id) {
+        showSuccessModal(data.ticket_id);
       }
-    }).catch(err=>{
-      logClientError((err && err.code ? err.code + ': ' : '') + (err && err.message ? err.message : String(err)));
-      showSubmitError(err && err.message ? err.message : 'Ошибка отправки');
-    }).finally(()=>{btn.disabled = false;});
+    }).catch(err => {
+      logClientError((err && err.message) ? err.message : String(err));
+    });
   }
 
   function updatePaths(){
