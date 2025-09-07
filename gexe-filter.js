@@ -461,6 +461,12 @@
     const locSel = modal.querySelector('#gnt-location');
     const execSel = modal.querySelector('#gnt-assignee');
     const submit = modal.querySelector('.gnt-submit');
+    const loader = modal.querySelector('.glpi-form-loader');
+
+    if (loader) {
+      loader.innerHTML = '<span class="spinner"></span><span>Загрузка…</span>';
+      loader.hidden = false;
+    }
 
     // Disable all form controls until dictionaries are loaded.
     $$('input,select,textarea,button.gnt-submit', modal).forEach(el => {
@@ -520,6 +526,9 @@
         submit.disabled = false;
         submit.classList.remove('disabled');
       }
+    }).finally(() => {
+      if (loader) { loader.hidden = true; loader.innerHTML = ''; }
+      bindNewTaskForm(modal);
     });
 
     const updatePath = (input, pathId) => {
@@ -545,6 +554,59 @@
 
   window.addEventListener('gexe:newtask:open', loadNewTaskDicts);
   window.addEventListener('gexe:newtask:retry', loadNewTaskDicts);
+
+  function bindNewTaskForm(modal) {
+    if (!modal || modal.__gntBound) return;
+    modal.__gntBound = true;
+    const btn = modal.querySelector('.gnt-submit');
+    if (!btn) return;
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      submitNewTask(modal, btn);
+    });
+  }
+
+  function submitNewTask(modal, btn) {
+    const name = $('#gnt-name', modal)?.value.trim() || '';
+    const desc = $('#gnt-content', modal)?.value.trim() || '';
+    const catId = parseInt($('#gnt-category', modal)?.value, 10) || 0;
+    const locId = parseInt($('#gnt-location', modal)?.value, 10) || 0;
+    const assignMe = $('#gnt-assign-me', modal)?.checked;
+    const execSel = $('#gnt-assignee', modal);
+    const execId = execSel && !execSel.disabled ? (parseInt(execSel.value, 10) || 0) : 0;
+
+    if (!name || !desc || !catId) {
+      showNotice('error', 'Заполните обязательные поля');
+      return;
+    }
+
+    setActionLoading(btn, true);
+    ajaxPost({
+      action: 'glpi_create_ticket',
+      name: name,
+      description: desc,
+      category_id: catId,
+      location_id: locId,
+      assign_me: assignMe ? 1 : 0,
+      executor_id: execId
+    }).then(res => {
+      if (res && res.ok) {
+        showNotice('success', 'Заявка создана #' + (res.data.ticket_id || ''));
+        if (window.GNT && typeof window.GNT.close === 'function') window.GNT.close();
+        if (res.data && res.data.ticket_id) {
+          loadTicketsForExecutor(selectedExecutor);
+        }
+      } else if (res && res.code === 'already_exists') {
+        showNotice('info', 'Заявка уже существует #' + (res.data.ticket_id || ''));
+      } else if (res) {
+        showError(res.code || 'network_error');
+      }
+    }).catch(() => {
+      showError('network_error');
+    }).finally(() => {
+      setActionLoading(btn, false);
+    });
+  }
 
   /* ========================= ИНЛАЙН КАТЕГОРИИ ========================= */
   let selectedCategories = [];

@@ -361,99 +361,120 @@ function glpi_db_get_locations() {
 function glpi_db_create_ticket(array $payload) {
     global $glpi_db;
 
-    $name   = (string) ($payload['name'] ?? '');
-    $desc   = (string) ($payload['content'] ?? '');
-    $cat    = (int) ($payload['category_id'] ?? 0);
-    $loc    = (int) ($payload['location_id'] ?? 0);
-    $req_id = (int) ($payload['requester_id'] ?? 0);
-    $exec   = (int) ($payload['executor_glpi_id'] ?? 0);
+    $name   = trim((string)($payload['name'] ?? ''));
+    $desc   = trim((string)($payload['content'] ?? ''));
+    $cat    = (int)($payload['category_id'] ?? 0);
+    $loc    = (int)($payload['location_id'] ?? 0);
+    $author = (int)($payload['requester_id'] ?? 0);
+    $exec   = (int)($payload['executor_glpi_id'] ?? 0);
     $assign_me = !empty($payload['assign_me']);
-    $entity = (int) ($payload['entities_id'] ?? 0);
 
-    if ($name === '' || strlen($name) > 200 || $cat <= 0 || $loc <= 0 || $req_id <= 0 || $exec < 0) {
-        return ['ok' => false, 'code' => 'validation'];
+    if ($name === '' || mb_strlen($name) > 255) {
+        return ['ok' => false, 'code' => 'validation', 'field' => 'name'];
     }
-    if (strlen($desc) > 4000) {
+    if ($desc === '' || mb_strlen($desc) > 20000) {
+        return ['ok' => false, 'code' => 'validation', 'field' => 'content'];
+    }
+    if ($cat <= 0 || $author <= 0) {
         return ['ok' => false, 'code' => 'validation'];
     }
 
     $glpi_db->query('START TRANSACTION');
 
-    // Duplicate guard
-    $dup = $glpi_db->get_var($glpi_db->prepare(
-        "SELECT id FROM glpi_tickets WHERE name=%s AND itilcategories_id=%d AND locations_id=%d AND SHA1(content)=SHA1(%s) AND date_creation > (NOW() - INTERVAL 8 SECOND) LIMIT 1",
-        $name,
-        $cat,
-        $loc,
-        $desc
+    $is_leaf = (int)$glpi_db->get_var($glpi_db->prepare(
+        "SELECT COUNT(*) FROM glpi_itilcategories c WHERE c.id=%d AND c.is_active=1 AND NOT EXISTS (SELECT 1 FROM glpi_itilcategories ch WHERE ch.is_active=1 AND ch.completename LIKE CONCAT(c.completename, ' > %%'))",
+        $cat
     ));
-    if ($dup) {
+    if (!$is_leaf) {
         $glpi_db->query('ROLLBACK');
-        return ['ok' => false, 'code' => 'duplicate_submit'];
+        return ['ok' => false, 'code' => 'invalid_category'];
     }
 
+    if ($loc > 0) {
+        $loc_leaf = (int)$glpi_db->get_var($glpi_db->prepare(
+            "SELECT COUNT(*) FROM glpi_locations l WHERE l.id=%d AND l.is_active=1 AND NOT EXISTS (SELECT 1 FROM glpi_locations ch WHERE ch.is_active=1 AND ch.completename LIKE CONCAT(l.completename, ' > %%'))",
+            $loc
+        ));
+        if (!$loc_leaf) {
+            $glpi_db->query('ROLLBACK');
+            return ['ok' => false, 'code' => 'invalid_location'];
+        }
+    } else {
+        $loc = null;
+    }
+
+    $assigned = $assign_me ? $author : $exec;
+    $user_row = $glpi_db->get_row($glpi_db->prepare(
+        'SELECT id, entities_id FROM glpi_users WHERE id=%d AND is_active=1',
+        $assigned
+    ), ARRAY_A);
+    if (!$user_row) {
+        $glpi_db->query('ROLLBACK');
+        return ['ok' => false, 'code' => 'invalid_executor'];
+    }
+    $entities_id = (int)$user_row['entities_id'];
+
+    $dup_id = $glpi_db->get_var($glpi_db->prepare(
+        'SELECT id FROM glpi_tickets WHERE users_id_recipient=%d AND name=%s AND content=%s AND TIMESTAMPDIFF(SECOND,date,NOW())<=300 LIMIT 1',
+        $author,
+        $name,
+        $desc
+    ));
+    if ($dup_id) {
+        $glpi_db->query('COMMIT');
+        return ['ok' => true, 'ticket_id' => (int)$dup_id, 'message' => 'already_exists'];
+    }
+
+    $tz = wp_timezone();
+    $now = new DateTime('now', $tz);
+    $due = clone $now;
+    if ((int)$now->format('H') > 18 || ((int)$now->format('H') === 18 && (int)$now->format('i') > 0)) {
+        $due->modify('+1 day');
+    }
+    $due->setTime(18, 0, 0);
+    $due_str = $due->format('Y-m-d H:i:s');
+
     $sql = $glpi_db->prepare(
-        "INSERT INTO glpi_tickets (name, content, itilcategories_id, locations_id, status, date_creation, date_mod, due_date, entities_id) VALUES (%s,%s,%d,%d,1,NOW(),NOW(),CONCAT(CURDATE(),' 17:30:00'),%d)",
+        'INSERT INTO glpi_tickets (name, content, status, itilcategories_id, locations_id, entities_id, users_id_lastupdater, users_id_recipient, date, date_mod, due_date) VALUES (%s,%s,1,%d,%s,%d,%d,%d,NOW(),NOW(),%s)',
         $name,
         $desc,
         $cat,
         $loc,
-        $entity
+        $entities_id,
+        $author,
+        $author,
+        $due_str
     );
     if (!$glpi_db->query($sql)) {
         $err = $glpi_db->last_error;
         $glpi_db->query('ROLLBACK');
         return ['ok' => false, 'code' => 'sql_error', 'msg' => $err];
     }
-    $ticket_id = (int) $glpi_db->insert_id;
+    $ticket_id = (int)$glpi_db->insert_id;
 
-    $assigned = null;
-    if ($exec > 0) {
-        $sql = $glpi_db->prepare(
-            'INSERT INTO glpi_tickets_users (tickets_id, users_id, type) VALUES (%d,%d,2)',
-            $ticket_id,
-            $exec
-        );
-        if (!$glpi_db->query($sql)) {
-            $err = $glpi_db->last_error;
-            $glpi_db->query('ROLLBACK');
-            return ['ok' => false, 'code' => 'sql_error', 'msg' => $err];
-        }
-        $assigned = $exec;
+    $sql = $glpi_db->prepare('INSERT INTO glpi_tickets_users (tickets_id, users_id, type) VALUES (%d,%d,1)', $ticket_id, $author);
+    if (!$glpi_db->query($sql)) {
+        $err = $glpi_db->last_error;
+        $glpi_db->query('ROLLBACK');
+        return ['ok' => false, 'code' => 'sql_error', 'msg' => $err];
+    }
+    $sql = $glpi_db->prepare('INSERT INTO glpi_tickets_users (tickets_id, users_id, type) VALUES (%d,%d,2)', $ticket_id, $assigned);
+    if (!$glpi_db->query($sql)) {
+        $err = $glpi_db->last_error;
+        $glpi_db->query('ROLLBACK');
+        return ['ok' => false, 'code' => 'sql_error', 'msg' => $err];
     }
 
-    if ($assign_me) {
-        $sql = $glpi_db->prepare(
-            'INSERT IGNORE INTO glpi_tickets_users (tickets_id, users_id, type) VALUES (%d,%d,2)',
-            $ticket_id,
-            $req_id
-        );
-        if (!$glpi_db->query($sql)) {
-            $err = $glpi_db->last_error;
-            $glpi_db->query('ROLLBACK');
-            return ['ok' => false, 'code' => 'sql_error', 'msg' => $err];
-        }
-        if ($assigned === null) {
-            $assigned = $req_id;
-        }
-    }
-
-    if ($desc !== '') {
-        $sql = $glpi_db->prepare(
-            "INSERT INTO glpi_itilfollowups (items_id, itemtype, users_id, date, content, is_private) VALUES (%d,'Ticket',%d,NOW(),%s,0)",
-            $ticket_id,
-            $req_id,
-            $desc
-        );
-        if (!$glpi_db->query($sql)) {
-            $err = $glpi_db->last_error;
-            $glpi_db->query('ROLLBACK');
-            return ['ok' => false, 'code' => 'sql_error', 'msg' => $err];
-        }
-    }
+    $sql = $glpi_db->prepare(
+        "INSERT INTO glpi_itilfollowups (items_id, itemtype, users_id, is_private, content, date) VALUES (%d,'Ticket',%d,1,%s,NOW())",
+        $ticket_id,
+        $author,
+        'Создано через WordPress'
+    );
+    $glpi_db->query($sql);
 
     $glpi_db->query('COMMIT');
-    return ['ok' => true, 'code' => 'ok', 'ticket_id' => $ticket_id, 'assigned' => $assigned];
+    return ['ok' => true, 'ticket_id' => $ticket_id, 'message' => 'created'];
 }
 
 /**
