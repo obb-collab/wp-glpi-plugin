@@ -160,6 +160,13 @@ body {
 .glpi-cat-toggle{display:flex;align-items:center;gap:8px;padding:10px 16px;border-radius:6px;background:#1f2937;color:#e5e7eb;border:1px solid #334155;cursor:pointer;transition:background-color .15s ease;}
 .glpi-cat-toggle:hover{background:#273447;}
 
+/* Исполнители */
+.glpi-executor-block{position:relative;}
+.glpi-executor-select{padding:10px 16px;border-radius:6px;background:#1f2937;color:#e5e7eb;border:1px solid #334155;cursor:pointer;transition:background-color .15s ease;}
+.glpi-executor-select:hover{background:#273447;}
+.glpi-executor-select:disabled{opacity:.5;cursor:not-allowed;}
+.glpi-executor-badge{margin-left:8px;background:#1f2937;color:#facc15;border:1px solid #334155;border-radius:6px;padding:6px 10px;font-size:12px;display:inline-block;}
+
 /* Inline statuses for "New ticket" modal */
 .gnt-inline-status{font-size:12px;margin-top:4px;color:#94a3b8;}
 .gnt-inline-status.loading{color:#94a3b8;}

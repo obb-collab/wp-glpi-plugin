@@ -550,6 +550,9 @@
   let selectedCategories = [];
   let categoriesLoaded = false;
 
+  /* ========================= ФИЛЬТР ИСПОЛНИТЕЛЕЙ ========================= */
+  let selectedExecutor = localStorage.getItem('glpi.executor_id') || 'all';
+
   function resetCategories(){
     selectedCategories = [];
     const box = document.getElementById('glpi-categories-inline');
@@ -648,6 +651,85 @@
       box.removeAttribute('hidden');
       toggle.setAttribute('aria-expanded','true');
     }
+  }
+
+  /* ========================= ИСПОЛНИТЕЛИ ========================= */
+  function updateExecutorBadge(select){
+    const badge = document.querySelector('.glpi-executor-block .glpi-executor-badge');
+    if (!badge || !select) return;
+    if (selectedExecutor === 'all') { badge.textContent = ''; badge.hidden = true; return; }
+    const opt = select.options[select.selectedIndex];
+    badge.textContent = 'Исполнитель: ' + (opt ? opt.textContent : selectedExecutor);
+    badge.hidden = false;
+  }
+
+  function updateStatusCountsFromData(counts){
+    if (!counts) return;
+    const total = Object.values(counts).reduce((a,b)=>a+Number(b||0),0);
+    const allEl = document.querySelector('.status-filter-btn[data-status="all"] .status-count');
+    if (allEl) allEl.textContent = String(total);
+    Object.keys(counts).forEach(st=>{
+      const el = document.querySelector('.status-filter-btn[data-status="'+st+'"] .status-count');
+      if (el) el.textContent = String(counts[st]);
+    });
+  }
+
+  function applyExecutorResponse(data){
+    if (!data) return;
+    const wrap = document.querySelector('.glpi-wrapper');
+    if (wrap) wrap.innerHTML = data.html || '';
+    if (Array.isArray(data.categories)) { window.gexeCategories = data.categories; renderInlineCategories(); }
+    if (data.status_counts) updateStatusCountsFromData(data.status_counts);
+    injectCardActionButtons();
+    applyActionVisibility();
+    bindCardOpen();
+    recalcCategoryVisibility();
+    recalcStatusCounts();
+    filterCards();
+    updateAgeFooters();
+  }
+
+  function loadTicketsForExecutor(execId, select){
+    const sel = select || document.getElementById('glpi-executor-filter');
+    if (sel) sel.disabled = true;
+    ajaxPost({ action: 'glpi_filter_tickets', executor_id: execId }).then(res => {
+      if (sel) sel.disabled = false;
+      if (res && res.ok) {
+        applyExecutorResponse(res.data);
+      } else if (res && res.code) {
+        showError(res.code);
+      }
+    });
+  }
+
+  function initExecutorFilter(){
+    if (!glpiAjax || Number(glpiAjax.user_glpi_id) !== 2) return;
+    const block = document.querySelector('.glpi-executor-block');
+    if (!block) return;
+    block.innerHTML = '<select id="glpi-executor-filter" class="glpi-executor-select" disabled><option value="all">no filter</option></select><span class="glpi-executor-badge" hidden></span>';
+    const select = block.querySelector('#glpi-executor-filter');
+    ajaxPost({ action: 'glpi_executors' }).then(res => {
+      if (res && res.ok && Array.isArray(res.data.list)) {
+        res.data.list.forEach(it => {
+          const opt = document.createElement('option');
+          opt.value = String(it.id);
+          opt.textContent = it.name;
+          select.appendChild(opt);
+        });
+        select.disabled = false;
+        select.value = selectedExecutor;
+        updateExecutorBadge(select);
+        if (selectedExecutor !== 'all') loadTicketsForExecutor(selectedExecutor, select);
+      }
+    });
+    select.addEventListener('change', () => {
+      const val = select.value;
+      if (val === selectedExecutor) return;
+      selectedExecutor = val;
+      localStorage.setItem('glpi.executor_id', val);
+      updateExecutorBadge(select);
+      loadTicketsForExecutor(val, select);
+    });
   }
 
   /* ========================= МОДАЛКА ПРОСМОТРА КАРТОЧКИ ========================= */
@@ -1379,7 +1461,9 @@
     return selectedCategories.includes(cat);
   }
   function cardMatchesExecutor(card) {
-    return true;
+    if (selectedExecutor === 'all') return true;
+    const assignees = (card.getAttribute('data-assignees') || '').split(',').map(s => s.trim()).filter(Boolean);
+    return assignees.includes(String(selectedExecutor));
   }
   function cardMatchesStatus(card) {
     const st = activeStatus();
@@ -1503,7 +1587,7 @@
     injectCardActionButtons();
     applyActionVisibility();
     bindCardOpen();
-
+    initExecutorFilter();
 
     bindStatusAndSearch();
     recalcStatusCounts();
