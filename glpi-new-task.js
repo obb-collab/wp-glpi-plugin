@@ -12,7 +12,7 @@
   let loadSeq = 0;
   window.__gexeFormDataLoading = null;
   let dictCache = null;
-  let dictLoading = false;
+  let isLoading = false;
 
   let successModal = null;
   let successTimer = null;
@@ -150,19 +150,20 @@
   function showError(message, retry, details){
     const box = modal.querySelector('.gexe-dict-status');
     if (!box) return;
-    let html = '<span class="error">' + esc(message) + '</span>';
-    if (details) {
-      html += '<details><summary>Подробнее</summary><code>' + esc(details) + '</code></details>';
-    }
-    if (retry) html += '<button type="button" class="gnt-retry">Повторить</button>';
+    let html = '<span class="error">' + esc(message);
+    if (details) html += ': ' + esc(details);
+    html += '</span>';
+    if (retry) html += ' <button type="button" class="gnt-retry">Повторить</button>';
     box.innerHTML = html;
     box.hidden = false;
     if (retry) {
       const btn = box.querySelector('.gnt-retry');
       if (btn) btn.addEventListener('click', function(){
+        if (isLoading) return;
+        btn.disabled = true;
         box.innerHTML = '';
         box.hidden = true;
-        setTimeout(retry, 400);
+        setTimeout(retry, 0);
       });
     }
   }
@@ -232,14 +233,14 @@
           dictCache = { ts: now, data: resp.data };
           return { ok: true, categories: resp.data.categories, locations: resp.data.locations, executors: resp.data.executors, meta: resp.data.meta };
         }
-        const err = resp && (resp.error || resp.data && resp.data.error);
+        const err = (resp && resp.data) || (resp && resp.error);
         return { ok: false, error: err || { type: 'UNKNOWN', message: 'Не удалось загрузить справочники' } };
       })
       .catch(() => ({ ok: false, error: { type: 'NETWORK', message: 'Ошибка соединения с сервером' } }));
   }
 
   function startDictLoad(force){
-    if (dictLoading) return;
+    if (isLoading) return;
     const now = Date.now();
     if (!force && dictCache && (now - dictCache.ts < 5 * 60 * 1000)) {
       const d = dictCache.data;
@@ -257,11 +258,11 @@
       else hideStatus();
       return;
     }
-    dictLoading = true;
+    isLoading = true;
     lockForm(true);
     showLoading();
     fetchDicts(force).then(res => {
-      dictLoading = false;
+      isLoading = false;
       if (res.ok) {
         (res.categories || []).forEach(c => { c.path = c.completename || c.path || ''; });
         (res.locations || []).forEach(l => { l.path = l.completename || l.path || ''; });
@@ -300,7 +301,7 @@
             if (err.message) msg = err.message;
         }
         let details = null;
-        if (gexeAjax && gexeAjax.debug && err.details) {
+        if (err && err.details) {
           try { details = typeof err.details === 'string' ? err.details : JSON.stringify(err.details); } catch(e) { details = String(err.details); }
         }
         showError(msg, () => startDictLoad(true), details);
