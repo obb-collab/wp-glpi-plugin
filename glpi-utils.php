@@ -4,64 +4,36 @@
  */
 
 require_once __DIR__ . '/includes/logger.php';
+require_once __DIR__ . '/inc/user-map.php';
 
 /**
  * Resolve mapping between a WordPress user and GLPI.
  *
  * @param int $wp_user_id WordPress user identifier.
- * @return array{wp_user_id:int,glpi_user_key:string,glpi_user_id:int,source:string}
+ * @return array{wp_user_id:int,glpi_user_id:int,source:string}
  *         Mapping data including source type.
  */
 function gexe_resolve_glpi_mapping($wp_user_id) {
     $wp_user_id = (int) $wp_user_id;
-    $key = get_user_meta($wp_user_id, 'glpi_user_key', true);
-    $key = is_string($key) ? trim($key) : '';
-
-    $glpi   = 0;
-    $source = 'none';
-
-    if ($key !== '' && ctype_digit($key)) {
-        $glpi   = (int) $key;
-        $source = 'numeric';
-    }
-
+    $glpi_id    = gexe_get_glpi_user_id($wp_user_id);
     return [
-        'wp_user_id'    => $wp_user_id,
-        'glpi_user_key' => $key,
-        'glpi_user_id'  => $glpi,
-        'source'        => $source,
+        'wp_user_id'   => $wp_user_id,
+        'glpi_user_id' => $glpi_id,
+        'source'       => $glpi_id > 0 ? 'meta' : 'none',
     ];
 }
 
 /**
  * Determine GLPI user ID for a WordPress user based on stored meta.
  *
- * Reads the `glpi_user_key` meta value. When it contains a numeric value it is
- * returned as the GLPI ID and also cached in `glpi_user_id`. Any non-numeric
- * value results in cache cleanup and a zero return value.
+ * Reads the `glpi_user_id` meta value and returns it when it is a positive
+ * integer. Any other value results in a zero return value.
  *
  * @param int $wp_user_id WordPress user identifier.
  * @return int GLPI `users.id` or 0 when not found.
  */
 function gexe_get_current_glpi_user_id($wp_user_id) {
-    $wp_user_id = (int) $wp_user_id;
-    if ($wp_user_id <= 0) {
-        return 0;
-    }
-
-    $key = trim((string) get_user_meta($wp_user_id, 'glpi_user_key', true));
-    if ($key === '') {
-        delete_user_meta($wp_user_id, 'glpi_user_id');
-        return 0;
-    }
-    if (!ctype_digit($key)) {
-        delete_user_meta($wp_user_id, 'glpi_user_id');
-        return 0;
-    }
-
-    $id = (int) $key;
-    update_user_meta($wp_user_id, 'glpi_user_id', $id);
-    return $id;
+    return gexe_get_glpi_user_id($wp_user_id);
 }
 
 /**

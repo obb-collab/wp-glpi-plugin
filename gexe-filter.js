@@ -16,29 +16,31 @@
   window.GEXE_DEBUG = window.GEXE_DEBUG || false;
 
   const ERROR_MAP = {
-    NONCE_EXPIRED: 'Сессия истекла. Обновите страницу.',
-    NO_GLPI_USER: 'Не найден профиль GLPI. Укажите числовой users.id в своём профиле WordPress (поле “Ключ пользователя GLPI”).',
-    NO_PERMISSION: 'У вас нет прав для этой заявки.',
-    EMPTY_CONTENT: 'Введите текст комментария.',
-    ALREADY_ACCEPTED: 'Уже принято в работу.',
-    SQL_OP_FAILED: details => details || 'Не удалось выполнить операцию. Попробуйте ещё раз.',
-    INVALID_INPUT: 'Проверьте заполнение полей.',
+    csrf: 'Сессия устарела. Обновите страницу.',
+    not_logged_in: 'Сессия неактивна. Войдите в систему.',
+    not_mapped: 'Профиль не настроен: нет GLPI-ID.',
+    no_rights: 'Нет прав: вы не исполнитель по заявке.',
+    validation: 'Пустой или слишком длинный комментарий.',
+    duplicate: 'Уже отмечено "Принято в работу".',
+    already_done: 'Заявка уже решена.',
+    not_found: 'Заявка недоступна или не существует.',
+    sql_error: 'Ошибка базы данных. Повторите позже.',
+    rate_limit_client: 'Слишком часто. Повторите через пару секунд.',
     bad_response: 'Не удалось обработать ответ сервера.',
-    network_error: 'Ошибка сети',
-    SESSION_EXPIRED: 'Сессия истекла. Обновите страницу.',
+    network_error: 'Ошибка соединения. Повторите позже.',
   };
 
   function normalizeResponse(res) {
     if (!res || typeof res !== 'object') {
       return { ok: false, code: 'bad_response', message: 'bad_response' };
     }
-    if (res.success === true || res.ok === true) {
-      const data = res.data !== undefined ? res.data : (res.payload !== undefined ? res.payload : res);
+    const data = res.data !== undefined ? res.data : res;
+    if (res.success === true || data.ok === true) {
       return { ok: true, data: data };
     }
-    const code = (res.error && res.error.code) || res.error_code || res.code || '';
-    const message = (res.error && res.error.message) || res.error_message || res.message || '';
-    return { ok: false, code: code, message: message, data: res.data || res.payload || null };
+    const code = data.code || res.code || '';
+    const message = data.msg || res.message || '';
+    return { ok: false, code: code, message: message, data: data };
   }
 
   function ajaxPost(params, retry) {
@@ -53,7 +55,7 @@
       .then(r => r.json())
       .then(normalizeResponse)
       .then(res => {
-        if (!res.ok && res.code === 'NONCE_EXPIRED' && !retry) {
+        if (!res.ok && res.code === 'csrf' && !retry) {
           return refreshActionsNonce().then(() => ajaxPost(params, true));
         }
         return res;
@@ -328,7 +330,7 @@
       let data = null;
       try { data = await res.clone().json(); }
       catch (e) { try { await res.clone().text(); } catch (e2) {} }
-      if (res.status === 403 && data && data.error === 'NONCE_EXPIRED' && !retry) {
+      if ((data && (data.error === 'csrf' || data.code === 'csrf')) && !retry) {
         await refreshActionsNonce();
         fd.set(nonceKey, ajax.nonce || '');
         fd.set('nonce', ajax.nonce || '');
@@ -936,9 +938,10 @@
       let data = null;
       try { data = await res.clone().json(); }
       catch (e) { try { await res.clone().text(); } catch (e2) {} }
-      if (!res.ok || !data || !data.ok) {
-        const code = data && data.error ? data.error : 'bad_response';
-        if (code === 'NONCE_EXPIRED' && !retried) {
+      const success = data && (data.success === true || data.ok === true);
+      if (!res.ok || !data || !success) {
+        const code = data && (data.data && data.data.code ? data.data.code : data.code) || 'bad_response';
+        if (code === 'csrf' && !retried) {
           try {
             await refreshActionsNonce();
             showNotice('info', 'Повторяем...');
@@ -948,12 +951,12 @@
             return;
           }
         }
-        showCommentError(code, data && data.details, res.status);
+        showCommentError(code, null, res.status);
         return;
       }
       txtEl.value = '';
       updateCommentValidation();
-      insertFollowup(id, data.payload && data.payload.followup);
+      insertFollowup(id, data.data && data.data.extra && data.data.extra.followup);
       refreshTicketMeta(id);
       setActionLoading(btn, false);
       btn.classList.add('is-done');
@@ -1049,13 +1052,13 @@
       try { data = await res.clone().json(); }
       catch (e) { try { await res.clone().text(); } catch (e2) {} }
       if (!res.ok || !data) {
-        showError(data && data.error && data.error.code ? data.error.code : 'bad_response', data && data.error && data.error.message, res.status);
+        showError('bad_response', null, res.status);
         resetDoneButton(btn);
         return;
       }
       if (!data.success) {
-        const code = data.error && data.error.code ? data.error.code : data.error;
-        if (code === 'NONCE_EXPIRED' && !retried) {
+        const code = (data.data && data.data.code) || 'bad_response';
+        if (code === 'csrf' && !retried) {
           try {
             await refreshActionsNonce();
             showNotice('info', 'Доступ обновлён, повторяем операцию…');
@@ -1066,7 +1069,7 @@
             return;
           }
         }
-        showError(code, data.error && data.error.message, res.status);
+        showError(code, null, res.status);
         if (btn) {
           btn.textContent = 'Повторить';
           btn.removeAttribute('data-confirm');

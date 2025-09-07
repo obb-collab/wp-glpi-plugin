@@ -119,15 +119,12 @@ function gexe_glpi_cards_shortcode($atts) {
 
     // ---- Получаем привязку WP → GLPI ----
     $current_user   = wp_get_current_user();
-    $glpi_user_key  = '';
+    $glpi_user_id   = '';
     $glpi_show_all  = false;
 
     if ($current_user && $current_user->ID) {
-        $glpi_user_key = trim((string)get_user_meta($current_user->ID, 'glpi_user_key', true));
+        $glpi_user_id  = trim((string) get_user_meta($current_user->ID, 'glpi_user_id', true));
         $glpi_show_all = (get_user_meta($current_user->ID, 'glpi_show_all_cards', true) === '1');
-        // Фоллбеки совместимости
-        if ($glpi_user_key === '') { $glpi_user_key = trim((string)get_user_meta($current_user->ID, 'glpi_token', true)); }
-        if ($glpi_user_key === '') { $glpi_user_key = trim((string)get_user_meta($current_user->ID, 'glpi_executor_id', true)); }
     }
 
     // ---- Базовый запрос по активным тикетам ----
@@ -140,9 +137,9 @@ function gexe_glpi_cards_shortcode($atts) {
 
     $where_assignee = '';
 
-    if (!$glpi_show_all && $glpi_user_key !== '' && ctype_digit($glpi_user_key)) {
+    if (!$glpi_show_all && $glpi_user_id !== '' && ctype_digit($glpi_user_id)) {
         // Жёсткая фильтрация по users_id (GLPI)
-        $where_assignee = $glpi_db->prepare(' AND tu_ass.users_id = %d ', (int) $glpi_user_key);
+        $where_assignee = $glpi_db->prepare(' AND tu_ass.users_id = %d ', (int) $glpi_user_id);
     }
 
     $sql = "
@@ -280,14 +277,14 @@ add_action('edit_user_profile_update', 'gexe_save_glpi_profile_fields');
 
 function gexe_show_glpi_profile_fields($user) {
     if (!($user instanceof WP_User)) return;
-    $glpi_user_key = get_user_meta($user->ID, 'glpi_user_key', true);
+    $glpi_user_id  = get_user_meta($user->ID, 'glpi_user_id', true);
     $glpi_show_all = (get_user_meta($user->ID, 'glpi_show_all_cards', true) === '1'); ?>
     <h2>GLPI ↔ WordPress</h2>
     <table class="form-table" role="presentation">
         <tr>
-            <th><label for="glpi_user_key">Ключ пользователя GLPI</label></th>
+            <th><label for="glpi_user_id">GLPI user ID</label></th>
             <td>
-                <input type="text" name="glpi_user_key" id="glpi_user_key" class="regular-text" value="<?php echo esc_attr($glpi_user_key); ?>" />
+                <input type="text" name="glpi_user_id" id="glpi_user_id" class="regular-text" value="<?php echo esc_attr($glpi_user_id); ?>" />
                 <p class="description">Укажите <strong>числовой users.id</strong> из GLPI.</p>
             </td>
         </tr>
@@ -303,13 +300,11 @@ function gexe_show_glpi_profile_fields($user) {
 function gexe_save_glpi_profile_fields($user_id) {
     if (!current_user_can('edit_user', $user_id)) return;
 
-    if (isset($_POST['glpi_user_key'])) {
-        $raw = trim((string) wp_unslash($_POST['glpi_user_key']));
+    if (isset($_POST['glpi_user_id'])) {
+        $raw = trim((string) wp_unslash($_POST['glpi_user_id']));
         if ($raw === '' || !ctype_digit($raw)) {
-            delete_user_meta($user_id, 'glpi_user_key');
             delete_user_meta($user_id, 'glpi_user_id');
         } else {
-            update_user_meta($user_id, 'glpi_user_key', $raw);
             update_user_meta($user_id, 'glpi_user_id', (int) $raw);
         }
     }
