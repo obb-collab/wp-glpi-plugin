@@ -14,6 +14,7 @@
   window.gexeAjax = ajaxConfig;
   const glpiAjax = ajaxConfig;
   window.GEXE_DEBUG = window.GEXE_DEBUG || false;
+  const plannedStatus = Number(glpiAjax && glpiAjax.planned_status_id) || 3;
 
   const ERROR_MAP = {
     csrf: 'Сессия устарела. Обновите страницу.',
@@ -31,6 +32,7 @@
     already_assigned: 'Исполнитель уже назначен.',
     forbidden: 'Нет прав сменить исполнителя.',
     invalid_target: 'Некорректный исполнитель.',
+    already_planned: 'Уже в плане',
   };
 
   function normalizeResponse(res) {
@@ -1104,7 +1106,7 @@
   }
 
   /* ========================= МОДАЛКА СМЕНЫ СТАТУСА ========================= */
-  const STATUS_NAMES = { 2: 'взять в работу', 4: 'в ожидание', 6: 'задача выполнена' };
+  const STATUS_NAMES = { 2: 'взять в работу', [plannedStatus]: 'в план', 4: 'в ожидание', 6: 'задача выполнена' };
   const statusConfirmTimers = {};
   let assigneeConfirmTimer = null;
   function ensureStatusModal() {
@@ -1121,6 +1123,7 @@
         '<div class="gexe-status__body">' +
           '<div class="gexe-status__actions">' +
             '<button id="btn-status-work" class="glpi-act glpi-status-btn status-action" data-status="2">Взять в работу</button>' +
+            '<button id="btn-status-planned" class="glpi-act glpi-status-btn status-action" data-status="' + plannedStatus + '">В план</button>' +
             '<button id="btn-status-stop" class="glpi-act glpi-status-btn status-action" data-status="4">В ожидание</button>' +
             '<div class="gexe-assignee-block"><select class="gexe-assignee-select"><option value="">Сменить исполнителя</option></select><button class="glpi-act gexe-assignee-btn">Да</button></div>' +
             '<button id="btn-status-resolved" class="glpi-act glpi-status-btn glpi-status-resolve status-action" data-status="6">Задача выполнена</button>' +
@@ -1175,6 +1178,12 @@
         const b = $('#btn-status-' + key, statusModal);
         if (b) b.style.display = 'none';
       }
+    }
+    const planBtn = $('#btn-status-planned', statusModal);
+    if (planBtn) {
+      planBtn.textContent = current === 2 ? 'Запланировать' : 'В план';
+      planBtn.disabled = current === plannedStatus;
+      if (plannedStatus <= 0) { planBtn.style.display = 'none'; }
     }
     const assBlock = $('.gexe-assignee-block', statusModal);
     if (assBlock) {
@@ -1335,7 +1344,7 @@
         console.log({ ticket_id: id, currentStatus: cur, clickedStatus: status, code: res.code || 'ok' });
       }
       if (!res.ok) {
-        if (res.code === 'already_done') {
+        if (res.code === 'already_done' || res.code === 'already_planned') {
           closeStatusModal();
           const card = document.querySelector('.glpi-card[data-ticket-id="'+id+'"]');
           if (card) {
@@ -1344,7 +1353,8 @@
           }
           recalcStatusCounts(); filterCards();
           refreshTicketMeta(id);
-          showNotice('success','Статус уже установлен');
+          const msg = res.code === 'already_planned' ? 'Уже в плане' : 'Статус уже установлен';
+          showNotice('success', msg);
           return;
         }
         if (res.code === 'no_rights' && btn) {
