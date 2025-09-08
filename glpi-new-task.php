@@ -365,23 +365,17 @@ function glpi_ajax_create_ticket_sql() {
     error_log('[new-ticket] user=' . $wp_uid . '/' . $glpi_uid . ' sql=ticket+links ok code=created ticket_id=' . $tid . ' elapsed=' . $elapsed);
     wp_send_json(['ok' => true, 'code' => 'created', 'message' => 'Заявка создана', 'ticket_id' => $tid]);
 }
-// NOTE: Fix nonce key to match frontend ('gexe_form_data') to allow ticket creation.
+// --- API: создание заявки через GLPI REST ---
 add_action('wp_ajax_glpi_create_ticket_api', 'glpi_ajax_create_ticket_api');
 add_action('wp_ajax_nopriv_glpi_create_ticket_api', 'glpi_ajax_create_ticket_api');
 
 function glpi_ajax_create_ticket_api() {
-    // Frontend issues nonce for 'gexe_form_data' via gexe_refresh_nonce(); use the same here.
+    // Используем Тот Же ключ nonce, что и фронт: 'gexe_form_data'
     if (!check_ajax_referer('gexe_form_data', 'nonce', false)) {
         wp_send_json(['ok' => false, 'code' => 'forbidden', 'detail' => 'Invalid or expired nonce']);
     }
 
-    /**
-     * Важно: после разбора «кривожопости токенов» — все REST-запросы должны
-     * идти с персональным user_token текущего WP-пользователя (см. gexe_glpi_api_headers()).
-     * Здесь ловим любые PHP-ошибки и возвращаем JSON, а не 500 HTML.
-     */
-
-    // Catch ANY PHP error and always return JSON instead of 500 HTML
+    // Любые PHP-ошибки -> JSON, не 500 HTML
     set_error_handler(function($errno,$errstr,$errfile,$errline){
         throw new ErrorException($errstr, 0, $errno, $errfile, $errline);
     });
@@ -389,8 +383,10 @@ function glpi_ajax_create_ticket_api() {
         if (!is_user_logged_in() || !current_user_can('read')) {
             wp_send_json(['ok' => false, 'code' => 'not_logged_in']);
         }
-        $wp_uid  = get_current_user_id();
 
+        $wp_uid = get_current_user_id();
+
+        // Простейшая защита от дабл-клика (10с)
         $lock_key = 'gexe_nt_submit_' . $wp_uid;
         if (get_transient($lock_key)) {
             wp_send_json(['ok' => false, 'code' => 'rate_limit_client']);
@@ -399,149 +395,59 @@ function glpi_ajax_create_ticket_api() {
 
         $subject = trim((string)($_POST['subject'] ?? ''));
         $content = trim((string)($_POST['content'] ?? ''));
-        $cat_id  = (int)($_POST['category_id'] ?? 0);
-        $loc_id  = (int)($_POST['location_id'] ?? 0);
-        $assignee_glpi_id = $_POST['assignee_glpi_id'] ?? 0;
-        $is_self = (int)($_POST['is_self_assignee'] ?? 0) === 1;
+        $cat_id  = (int)($_POST['category'] ?? 0);
+        $loc_id  = (int)($_POST['location'] ?? 0);
+        $assignee_glpi_id = (int)($_POST['assignee_id'] ?? 0);
 
-        $errors = [];
-        // requester (GLPI id автора из маппинга)
-        $glpi_uid = function_exists('gexe_get_glpi_user_id') ? (int) gexe_get_glpi_user_id() : 0;
-        if ($glpi_uid <= 0) { $errors['requester'] = true; }
-        if ($subject === '' || mb_strlen($subject) > 255) { $errors['subject'] = true; }
-        if ($content === '' || mb_strlen($content) > 10000) { $errors['content'] = true; }
-        if ($cat_id <= 0) { $errors['category_id'] = true; }
-        if ($loc_id <= 0) { $errors['location_id'] = true; }
-
-        $allowed = wp_list_pluck(function_exists('gexe_get_assignee_options') ? gexe_get_assignee_options() : [], 'id');
-        if ($is_self) {
-            $assignee_glpi_id = $glpi_uid;
-        } elseif ($assignee_glpi_id <= 0 || !in_array((int)$assignee_glpi_id, $allowed, true)) {
-            $errors['assignee_glpi_id'] = true;
-        } else {
-            // нормализуем
-            $assignee_glpi_id = (int)$assignee_glpi_id;
+        // Валидации
+        if (mb_strlen($subject) < 3) {
+            wp_send_json(['ok' => false, 'code' => 'bad_request', 'detail' => 'Тема должна быть не короче 3 символов']);
+        }
+        if ($content === '') {
+            wp_send_json(['ok' => false, 'code' => 'bad_request', 'detail' => 'Описание пустое']);
         }
 
-        if (!empty($errors)) {
-            wp_send_json(['ok' => false, 'code' => 'validation']);
+        // Заголовки GLPI с персональным user_token текущего пользователя
+        if (!function_exists('gexe_glpi_api_headers')) {
+            wp_send_json(['ok' => false, 'code' => 'no_user_token', 'detail' => 'GLPI API headers function missing']);
+        }
+        $headers = gexe_glpi_api_headers($wp_uid);
+        if (empty($headers)) {
+            wp_send_json(['ok' => false, 'code' => 'no_user_token', 'detail' => 'Personal GLPI user_token not configured']);
         }
 
-        require_once __DIR__ . '/includes/glpi-api.php';
-
-        $start      = microtime(true);
-        $log_init   = 'err:unknown';
-        $log_create = 'skip';
-        $log_assign = 'skip';
-        $ticket_id  = 0;
-
-        // initSession
-        $token = gexe_glpi_api_get_session_token();
-        if (is_array($token) && isset($token['error'])) {
-            // normalize possible non-WP_Error shape
-            $token = new WP_Error('api_unreachable', (string)$token['error']);
-        }
-        if (is_wp_error($token)) {
-            $err = $token->get_error_code();
-            $log_init = 'err:' . $err;
-            $elapsed = (int) round((microtime(true) - $start) * 1000);
-            error_log('[new-ticket-api] initSession=' . $log_init . ' create=' . $log_create . ' assign=' . $log_assign . ' tid=0 elapsed=' . $elapsed);
-            wp_send_json(['ok' => false, 'code' => $err, 'detail' => $token->get_error_message()]);
-        }
-        $log_init = 'ok';
-
-        $search = '/search/Ticket?criteria[0][field]=1&criteria[0][searchtype]=contains&criteria[0][value]=' . rawurlencode($subject) .
-            '&criteria[1][link]=AND&criteria[1][field]=12&criteria[1][searchtype]=equals&criteria[1][value]=' . $cat_id .
-            '&criteria[2][link]=AND&criteria[2][field]=82&criteria[2][searchtype]=equals&criteria[2][value]=' . $loc_id .
-            '&forcedisplay[0]=2&range=0-1';
-        $dup = gexe_glpi_api_request('GET', $search);
-        if (!is_wp_error($dup) && $dup['code'] === 200 && !empty($dup['body']['data'][0])) {
-            $first = $dup['body']['data'][0];
-            $dup_date = isset($first['date']) ? strtotime($first['date']) : 0;
-            if ($dup_date && $dup_date >= time() - 60) {
-                $dup_id = isset($first['2']) ? (int) $first['2'] : 0;
-                if ($dup_id) {
-                    $elapsed = (int) round((microtime(true) - $start) * 1000);
-                    error_log('[new-ticket-api] initSession=' . $log_init . ' create=skip assign=skip tid=' . $dup_id . ' elapsed=' . $elapsed);
-                    wp_send_json(['ok' => true, 'code' => 'already_exists', 'ticket_id' => $dup_id]);
-                }
-            }
-        }
-
-        /**
-         * CREATE ticket (через REST) СРАЗУ с актёрами:
-         *  - _users_id_requester  — постановщик (автор формы)
-         *  - _users_id_assign     — исполнитель (по чекбоксу/списку)
-         *
-         * Это устраняет второй POST на /Ticket/{id}/Ticket_User
-         * и избегает ошибок назначения при разных токенах.
-         */
-        $create_input = [
-            'name'              => $subject,
-            'content'           => $content,
-            'itilcategories_id' => $cat_id,
-            'locations_id'      => $loc_id,
-            'status'            => 1,
-            'type'              => 1,
-            '_users_id_requester' => $glpi_uid,
+        // Тело запроса GLPI /Ticket
+        $payload = [
+            'input' => [
+                'name'                => $subject,
+                'content'             => $content,
+                'itilcategories_id'   => $cat_id,
+                'locations_id'        => $loc_id,
+                '_users_id_requester' => $assignee_glpi_id ?: 0,
+                '_users_id_assign'    => $assignee_glpi_id ?: 0,
+                'type'                => 1
+            ]
         ];
-        if ($assignee_glpi_id > 0) {
-            $create_input['_users_id_assign'] = $assignee_glpi_id;
-        }
 
-        // CREATE ticket
-        $r1 = gexe_glpi_api_request('POST', '/Ticket', [
-            'input' => $create_input,
-        ]);
-        if (is_wp_error($r1)) {
-            // network/DNS/timeout
-            $log_create = 'err:api_unreachable';
-            $elapsed = (int) round((microtime(true) - $start) * 1000);
-            error_log('[new-ticket-api] initSession=' . $log_init . ' create=' . $log_create . ' assign=' . $log_assign . ' tid=0 elapsed=' . $elapsed);
-            wp_send_json(['ok' => false, 'code' => 'api_unreachable', 'detail' => $r1->get_error_message()]);
+        $ch = curl_init(GEXE_GLPI_API_URL . '/Ticket');
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_POST, true);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload, JSON_UNESCAPED_UNICODE));
+        curl_setopt($ch, CURLOPT_HTTPHEADER, array_merge($headers, ['Content-Type: application/json']));
+        $resp = curl_exec($ch);
+        if ($resp === false) {
+            wp_send_json(['ok' => false, 'code' => 'api_error', 'detail' => curl_error($ch)]);
         }
-        $code1 = isset($r1['code']) ? (int)$r1['code'] : 0;
-        $body1 = $r1['body'] ?? null;
-        if (is_string($body1)) {
-            $decoded = json_decode($body1, true);
-            if (json_last_error() === JSON_ERROR_NONE) { $body1 = $decoded; }
-        }
-        if ($code1 === 401 || $code1 === 403) {
-            $log_create = 'err:api_auth';
-            $elapsed = (int) round((microtime(true) - $start) * 1000);
-            error_log('[new-ticket-api] initSession=' . $log_init . ' create=' . $log_create . ' assign=' . $log_assign . ' tid=0 elapsed=' . $elapsed);
-            wp_send_json(['ok' => false, 'code' => 'api_auth']);
-        }
-        if ($code1 >= 400) {
-            $log_create = ($code1 === 400) ? 'err:api_validation' : 'err:api_unreachable';
-            $elapsed = (int) round((microtime(true) - $start) * 1000);
-            error_log('[new-ticket-api] initSession=' . $log_init . ' create=' . $log_create . ' assign=' . $log_assign . ' tid=0 elapsed=' . $elapsed);
-            wp_send_json([
-                'ok'    => false,
-                'code'  => ($code1 === 400) ? 'api_validation' : 'api_unreachable',
-                'detail'=> (is_array($body1) && isset($body1['message'])) ? (string)$body1['message'] : ('HTTP ' . $code1),
-            ]);
-        }
-        $ticket_id = (is_array($body1) && isset($body1['id'])) ? (int)$body1['id'] : 0;
-        if ($ticket_id <= 0) {
-            $log_create = 'err:api_unreachable';
-            $elapsed = (int) round((microtime(true) - $start) * 1000);
-            error_log('[new-ticket-api] initSession=' . $log_init . ' create=' . $log_create . ' assign=' . $log_assign . ' tid=0 elapsed=' . $elapsed);
-            wp_send_json(['ok' => false, 'code' => 'api_unreachable', 'detail' => 'Empty ticket id']);
-        }
-        $log_create = 'ok';
+        $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
 
-        // Назначение исполнителя уже сделано в CREATE через _users_id_assign
-        $log_assign = $assignee_glpi_id > 0 ? 'ok@create' : 'skip';
-
-        $elapsed = (int) round((microtime(true) - $start) * 1000);
-        error_log('[new-ticket-api] initSession=' . $log_init . ' create=' . $log_create . ' assign=' . $log_assign . ' tid=' . $ticket_id . ' elapsed=' . $elapsed);
-        wp_send_json(['ok' => true, 'ticket_id' => $ticket_id]);
-
+        $json = json_decode($resp, true);
+        if ($code >= 200 && $code < 300 && isset($json['id'])) {
+            wp_send_json(['ok' => true, 'code' => 'created', 'ticket_id' => (int)$json['id']]);
+        }
+        wp_send_json(['ok' => false, 'code' => 'api_error', 'detail' => $resp]);
     } catch (Throwable $e) {
-        // Always return JSON on PHP fatals/notices, avoid WP 500 HTML
-        error_log('[new-ticket-api] fatal ' . $e->getMessage() . ' at ' . $e->getFile() . ':' . $e->getLine());
-        wp_send_json(['ok'=>false,'code'=>'php_fatal','detail'=>$e->getMessage()]);
+        wp_send_json(['ok' => false, 'code' => 'php_exception', 'detail' => $e->getMessage()]);
     } finally {
         restore_error_handler();
     }
