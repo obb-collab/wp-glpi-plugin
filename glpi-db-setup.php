@@ -45,27 +45,6 @@ if (!function_exists('wp_glpi_get_connection')) {
     }
 }
 
-/**
- * Check if a specific column exists in a GLPI table using PDO.
- */
-function gexe_glpi_table_has_column(PDO $pdo, string $table, string $column): bool {
-    static $cache = [];
-    $table  = preg_replace('/[^a-zA-Z0-9_]/', '', $table);
-    $column = preg_replace('/[^a-zA-Z0-9_]/', '', $column);
-    if ($table === '' || $column === '') {
-        return false;
-    }
-    if (isset($cache[$table][$column])) {
-        return $cache[$table][$column];
-    }
-    $sql  = 'SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = :t AND COLUMN_NAME = :c';
-    $stmt = $pdo->prepare($sql);
-    $stmt->execute([':t' => $table, ':c' => $column]);
-    $exists = (bool) $stmt->fetchColumn();
-    $cache[$table][$column] = $exists;
-    return $exists;
-}
-
 define('GEXE_TRIGGERS_VERSION', '2');
 
 define('GEXE_GLPI_API_URL', 'http://192.168.100.12/glpi/apirest.php');

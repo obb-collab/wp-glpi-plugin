@@ -4,7 +4,6 @@ if (!defined('ABSPATH')) exit;
 require_once __DIR__ . '/logger.php';
 require_once dirname(__DIR__) . '/glpi-utils.php';
 require_once __DIR__ . '/executors-cache.php';
-require_once dirname(__DIR__) . '/glpi-db-setup.php';
 
 /**
  * AJAX: выдаёт списки категорий и местоположений.
@@ -34,29 +33,46 @@ function gexe_get_form_data() {
     $source      = 'cache';
     $error_msg   = '';
     $debug_tests = [];
-    $cat_sql     = '';
-    $loc_sql     = '';
 
     if (!is_array($data) || empty($data['categories']) || empty($data['locations'])) {
+        global $glpi_db;
         $categories = [];
         $locations  = [];
         $source     = 'db';
-        $cat_sql    = '';
-        $loc_sql    = '';
         try {
-            $pdo = glpi_get_pdo();
-            $pdo->beginTransaction();
+            if (!($glpi_db instanceof wpdb)) {
+                throw new Exception('DB_CONNECT_FAILED');
+            }
+            if (isset($_GET['debug'])) {
+                $tests = [
+                    'SELECT 1',
+                    'SELECT id FROM glpi.glpi_itilcategories LIMIT 1',
+                    'SELECT id FROM glpi.glpi_locations LIMIT 1',
+                ];
+                foreach ($tests as $sql) {
+                    $res = $glpi_db->get_var($sql);
+                    $debug_tests[] = ['sql' => $sql, 'result' => $res, 'error' => $glpi_db->last_error];
+                }
+                $gr = $glpi_db->get_col('SHOW GRANTS FOR CURRENT_USER');
+                gexe_log_action('[form-data] grants ' . implode(' || ', $gr));
+            }
 
             $cat_where = [];
-            if (gexe_glpi_table_has_column($pdo, 'glpi_itilcategories', 'is_helpdeskvisible')) {
-                $cat_where[] = 'is_helpdeskvisible = 1';
+            if (gexe_glpi_has_column('glpi_itilcategories', 'is_active')) {
+                $cat_where[] = 'is_active = 1';
             }
-            $cat_sql = 'SELECT id, name, completename FROM glpi_itilcategories';
-            if ($cat_where) {
+            if (gexe_glpi_has_column('glpi_itilcategories', 'is_helpdesk_visible')) {
+                $cat_where[] = 'is_helpdesk_visible = 1';
+            }
+            $cat_sql = 'SELECT id, name, completename FROM `glpi`.`glpi_itilcategories`';
+            if (!empty($cat_where)) {
                 $cat_sql .= ' WHERE ' . implode(' AND ', $cat_where);
             }
-            $cat_sql .= ' ORDER BY completename ASC LIMIT 1000';
-            $cats = $pdo->query($cat_sql)->fetchAll(PDO::FETCH_ASSOC);
+            $cat_sql .= ' ORDER BY name ASC LIMIT 1000';
+            $cats = $glpi_db->get_results($cat_sql, ARRAY_A);
+            if ($glpi_db->last_error) {
+                throw new Exception($glpi_db->last_error);
+            }
             foreach ($cats as $c) {
                 $name = isset($c['name']) ? trim(preg_replace('/\s+/', ' ', wp_strip_all_tags($c['name']))) : '';
                 $path = isset($c['completename']) ? $c['completename'] : $name;
@@ -69,32 +85,33 @@ function gexe_get_form_data() {
             }
 
             $loc_where = [];
-            if (gexe_glpi_table_has_column($pdo, 'glpi_locations', 'is_deleted')) {
+            if (gexe_glpi_has_column('glpi_locations', 'is_deleted')) {
                 $loc_where[] = 'is_deleted = 0';
             }
-            $loc_sql = 'SELECT id, name, completename FROM glpi_locations';
-            if ($loc_where) {
+            if (gexe_glpi_has_column('glpi_locations', 'is_active')) {
+                $loc_where[] = 'is_active = 1';
+            }
+            if (gexe_glpi_has_column('glpi_locations', 'is_helpdesk_visible')) {
+                $loc_where[] = 'is_helpdesk_visible = 1';
+            }
+            $loc_sql = 'SELECT id, completename AS name FROM `glpi`.`glpi_locations`';
+            if (!empty($loc_where)) {
                 $loc_sql .= ' WHERE ' . implode(' AND ', $loc_where);
             }
             $loc_sql .= ' ORDER BY completename ASC LIMIT 2000';
-            $locs = $pdo->query($loc_sql)->fetchAll(PDO::FETCH_ASSOC);
+            $locs = $glpi_db->get_results($loc_sql, ARRAY_A);
+            if ($glpi_db->last_error) {
+                throw new Exception($glpi_db->last_error);
+            }
             foreach ($locs as $l) {
                 $locations[] = [
                     'id'   => (int) $l['id'],
-                    'name' => $l['completename'] ?? ($l['name'] ?? ''),
+                    'name' => $l['name'],
                 ];
             }
-
-            if (empty($categories) || empty($locations)) {
-                throw new Exception('EMPTY_RESULT');
-            }
-
-            $pdo->commit();
-        } catch (Throwable $e) {
-            if (isset($pdo) && $pdo->inTransaction()) {
-                $pdo->rollBack();
-            }
-            $error_msg = mb_substr(wp_strip_all_tags($e->getMessage()), 0, 200);
+        } catch (Exception $e) {
+            $error_msg = $glpi_db instanceof wpdb ? $glpi_db->last_error : $e->getMessage();
+            $error_msg = mb_substr(wp_strip_all_tags($error_msg), 0, 200);
             $source    = 'api';
         }
 
@@ -161,26 +178,18 @@ function gexe_get_form_data() {
         set_transient($cache_key, $data, 30 * MINUTE_IN_SECONDS);
     }
 
-    [$exec_raw, $exec_cache, $exec_more] = gexe_get_wp_executors_cached();
-    $executors = [];
-    foreach ($exec_raw as $e) {
-        $executors[] = [
-            'id'   => (int) ($e['glpi_user_id'] ?? 0),
-            'name' => (string) ($e['label'] ?? ''),
-        ];
-    }
+    [$executors, $exec_cache, $exec_more] = gexe_get_wp_executors_cached();
     $data['executors']       = $executors;
     $data['executors_cache'] = $exec_cache;
     $data['executors_more']  = $exec_more;
 
     $elapsed = (int) round((microtime(true) - $t0) * 1000);
     $err_log = isset($error_msg) ? $error_msg : '';
-    gexe_log_action(sprintf('[form-data] source=%s tables="itilcategories,locations" sql="%s" sql2="%s" elapsed=%dms cats=%d locs=%d err="%s"', $source, $cat_sql, $loc_sql, $elapsed, count($data['categories']), count($data['locations']), $err_log));
+    gexe_log_action(sprintf('[form-data] source=%s http=200 elapsed=%dms cats=%d locs=%d err="%s"', $source, $elapsed, count($data['categories']), count($data['locations']), $err_log));
 
     $out = $data;
     $out['source']  = $source;
     $out['took_ms'] = $elapsed;
-    $out['nonce']   = wp_create_nonce('gexe_form_data');
     if (isset($_GET['debug'])) {
         $out['debug'] = [
             'source'  => $source,
