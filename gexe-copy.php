@@ -13,6 +13,7 @@ if (!defined('ABSPATH')) exit;
 
 require_once __DIR__ . '/glpi-utils.php';
 require_once __DIR__ . '/includes/glpi-profile-fields.php';
+require_once __DIR__ . '/chief/glpi-chief.php';
 
 // [manager-switcher] local helper to detect manager account
 function gexe_is_manager_local() {
