@@ -5,6 +5,7 @@ if (!defined('CHIEF_DEBUG')) {
     define('CHIEF_DEBUG', false);
 }
 
+// keep chief self-contained but align with new paths
 require_once dirname(__DIR__) . '/includes/bootstrap/db-setup.php';
 require_once dirname(__DIR__) . '/includes/helpers/icon-map.php';
 require_once dirname(__DIR__) . '/includes/auth/user-map.php';

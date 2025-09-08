@@ -1,7 +1,8 @@
 <?php
 if (!defined('ABSPATH')) exit;
 
-require_once __DIR__ . '/../includes/helpers/utils.php';
+// file is in /includes; helpers in /includes/helpers
+require_once __DIR__ . '/helpers/utils.php';
 
 /**
  * Map WordPress users to GLPI user identifiers.
