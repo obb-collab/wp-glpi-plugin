@@ -585,7 +585,7 @@
           showToast(msg);
           window.dispatchEvent(new CustomEvent('gexe:tickets:refresh', {detail:{ticketId:data.ticket_id}}));
         } else {
-          setSubmitError(mapError(data.code, data.ticket_id));
+          setSubmitError(mapError(data.code, data.ticket_id) + (data.detail ? (' — ' + String(data.detail)) : ''));
         }
       })
       .catch(()=>{ setSubmitError(mapError('api_unreachable')); })

@@ -157,9 +157,16 @@ function gexe_glpi_api_url(): string {
 }
 
 function gexe_glpi_api_headers(array $extra = []): array {
+    // Use per-user token if available; fallback to legacy constant.
+    $tok = function_exists('gexe_glpi_get_current_user_token')
+        ? gexe_glpi_get_current_user_token()
+        : null;
+    if (!$tok || $tok === '') {
+        $tok = defined('GEXE_GLPI_USER_TOKEN') ? GEXE_GLPI_USER_TOKEN : '';
+    }
     $base = [
-        'Content-Type' => 'application/json',
-        'Authorization' => 'user_token ' . GEXE_GLPI_USER_TOKEN,
+        'Content-Type'  => 'application/json',
+        'Authorization' => 'user_token ' . $tok,
         'App-Token'     => GEXE_GLPI_APP_TOKEN,
     ];
     return array_merge($base, $extra);
