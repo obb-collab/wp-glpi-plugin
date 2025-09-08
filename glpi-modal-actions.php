@@ -5,11 +5,9 @@
  * Поддержка AJAX для: загрузки комментариев, проверки "Принято в работу",
  * добавления комментария, действий "start/done", счетчика комментариев.
  */
-if (!defined('ABSPATH')) exit;
-
-require_once dirname(__DIR__) . '/helpers/utils.php';
-require_once dirname(__DIR__) . '/glpi-sql.php';
-require_once dirname(__DIR__) . '/glpi-auth-map.php';
+require_once __DIR__ . '/glpi-utils.php';
+require_once __DIR__ . '/includes/glpi-sql.php';
+require_once __DIR__ . '/includes/glpi-auth-map.php';
 
 function gexe_action_response($ok, $code, $ticket_id, $action, $msg = '', $extra = []) {
     $payload = array_merge([

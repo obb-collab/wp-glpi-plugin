@@ -2,7 +2,7 @@
 if (!defined('ABSPATH')) exit;
 
 require_once __DIR__ . '/logger.php';
-require_once dirname(__DIR__) . '/includes/helpers/utils.php';
+require_once dirname(__DIR__) . '/glpi-utils.php';
 require_once __DIR__ . '/executors-cache.php';
 
 /**

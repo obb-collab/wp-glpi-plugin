@@ -11,28 +11,9 @@ Update URI: https://github.com/obb-collab/wp-glpi-plugin
 
 if (!defined('ABSPATH')) exit;
 
-// Path constants
-if (!defined('GEXE_INC')) define('GEXE_INC', plugin_dir_path(__FILE__) . 'includes/');
-if (!defined('GEXE_TPL')) define('GEXE_TPL', plugin_dir_path(__FILE__) . 'templates/');
-
-require_once __DIR__ . '/includes/helpers/utils.php';
+require_once __DIR__ . '/glpi-utils.php';
 require_once __DIR__ . '/includes/glpi-profile-fields.php';
 require_once __DIR__ . '/chief/glpi-chief.php';
-require_once __DIR__ . '/includes/bootstrap/db-setup.php';
-require_once __DIR__ . '/includes/bootstrap/executor-lock.php';
-require_once __DIR__ . '/includes/shortcodes/categories.php';
-require_once __DIR__ . '/includes/ajax/modal-actions.php';
-require_once __DIR__ . '/includes/api/glpi-api-legacy.php';
-require_once __DIR__ . '/includes/ajax/solve.php';
-require_once __DIR__ . '/includes/helpers/icon-map.php';
-require_once __DIR__ . '/includes/ajax/new-task.php';
-require_once __DIR__ . '/includes/bootstrap/settings.php';
-
-// ====== ПОДКЛЮЧЕНИЕ Шаблонов ======
-add_action('init', function () {
-    require_once __DIR__ . '/templates/header.php';
-    require_once __DIR__ . '/templates/cards.php';
-});
 
 // [manager-switcher] local helper to detect manager account
 function gexe_is_manager_local() {
@@ -99,6 +80,9 @@ add_action('wp_enqueue_scripts', function () {
         'executors'         => gexe_get_assignee_options(),
     ]);
 });
+
+// ====== ПОДКЛЮЧЕНИЕ К БД GLPI ======
+require_once __DIR__ . '/glpi-db-setup.php';
 
 function gexe_glpi_uninstall() {
     gexe_glpi_remove_triggers();
@@ -309,9 +293,9 @@ function gexe_glpi_cards_shortcode($atts) {
     }
 
     // ---- Рендер шаблона ----
-    $tpl = plugin_dir_path(__FILE__) . 'templates/cards.php';
+    $tpl = plugin_dir_path(__FILE__) . 'templates/glpi-cards-template.php';
     if (!file_exists($tpl)) {
-        return '<div style="padding:10px;background:#fee;border:1px solid #f99;">Отсутствует шаблон: templates/cards.php</div>';
+        return '<div style="padding:10px;background:#fee;border:1px solid #f99;">Отсутствует шаблон: templates/glpi-cards-template.php</div>';
     }
 
     // Передаём переменные в область видимости инклюда
@@ -327,4 +311,14 @@ function gexe_glpi_cards_shortcode($atts) {
     include $tpl;
     return ob_get_clean();
 }
+
+// ====== ПРОЧИЕ ФАЙЛЫ ПЛАГИНА ======
+require_once __DIR__ . '/gexe-executor-lock.php';
+require_once __DIR__ . '/glpi-categories-shortcode.php';
+require_once __DIR__ . '/glpi-modal-actions.php';
+require_once __DIR__ . '/glpi-api.php';
+require_once __DIR__ . '/glpi-solve.php';
+require_once __DIR__ . '/glpi-icon-map.php';
+require_once __DIR__ . '/glpi-new-task.php';
+require_once __DIR__ . '/glpi-settings.php';
 

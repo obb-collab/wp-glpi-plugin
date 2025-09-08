@@ -1,9 +1,10 @@
 <?php
-if (!defined('ABSPATH')) exit;
-// (moved to includes/helpers/)
+/**
+ * Shared GLPI utility functions.
+ */
 
-require_once dirname(__DIR__) . '/logger.php';
-require_once dirname(__DIR__) . '/auth/user-map.php';
+require_once __DIR__ . '/includes/logger.php';
+require_once __DIR__ . '/inc/user-map.php';
 
 /**
  * Resolve mapping between a WordPress user and GLPI.

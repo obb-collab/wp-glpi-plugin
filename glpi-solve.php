@@ -1,7 +1,7 @@
 <?php
 if (!defined('ABSPATH')) exit;
 
-require_once dirname(__DIR__) . '/helpers/utils.php';
+require_once __DIR__ . '/glpi-modal-actions.php';
 
 add_action('wp_ajax_glpi_ticket_resolve', 'gexe_glpi_ticket_resolve');
 function gexe_glpi_ticket_resolve() {
