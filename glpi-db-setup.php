@@ -1,5 +1,6 @@
 <?php
 if (!defined('ABSPATH')) exit;
+// NOTE: This patch only adds per-user token infrastructure. No call sites are changed.
 
 global $glpi_db;
 if (!isset($glpi_db) || !($glpi_db instanceof wpdb)) {
@@ -49,7 +50,108 @@ define('GEXE_TRIGGERS_VERSION', '2');
 
 define('GEXE_GLPI_API_URL', 'http://192.168.100.12/glpi/apirest.php');
 define('GEXE_GLPI_APP_TOKEN', 'nqubXrD6j55bgLRuD1mrrtz5D69cXz94HHPvgmac');
+// Legacy single user token (kept for backward compatibility with existing callers).
 define('GEXE_GLPI_USER_TOKEN', '8ffMQJvkcgi8V5OMWrh89Xvr97jEzK4ddrkdL6pw');
+
+/**
+ * Registry of personal GLPI user tokens.
+ * Mapping is strictly by numeric IDs; display names are only in comments.
+ *
+ * Columns (from user's table):
+ *  - wp_user_id (WordPress)
+ *  - glpi_user_id (GLPI)
+ *  - token (GLPI personal token)
+ */
+function gexe_glpi_token_registry(): array {
+    static $REG = null;
+    if ($REG !== null) return $REG;
+    $REG = [
+        // Куткин П.;  WP=1;  GLPI=2
+        ['wp_user_id' => 1,  'glpi_user_id' => 2,   'token' => '8ffMQJvkcgi8V5OMWrh89Xvr97jEzK4ddrkdL6pw'],
+        // Скомороха А.; WP=4;  GLPI=621
+        ['wp_user_id' => 4,  'glpi_user_id' => 621, 'token' => 'VMgcyxmkHWAGXASOF0yj1eFZTrHmMGU4ynDBcGjU'],
+        // Смирнов М.;  WP=5;  GLPI=269
+        ['wp_user_id' => 5,  'glpi_user_id' => 269, 'token' => 'CkhkElVbncwXEEaIpMeh8iiiDu8mlcMY0QkWeeYK'],
+        // Сушко В.;    WP=6;  GLPI=622
+        ['wp_user_id' => 6,  'glpi_user_id' => 622, 'token' => 'LjmZ3pLcuXo4KgUbbarGgif0CNQkGr7GXHvkZMHw'],
+        // Кузнецов Е.; WP=7;  GLPI=180
+        ['wp_user_id' => 7,  'glpi_user_id' => 180, 'token' => 'IjZXRUKUXKSXaKzgJoavf1tfWNYTnMsACLm96Mkz'],
+        // Нечепорук А.; WP=8;  GLPI=620
+        ['wp_user_id' => 8,  'glpi_user_id' => 620, 'token' => '25GEMIsIf8etMerlsPlmpsRc2P4NTz19qwf6Pvgb'],
+        // Стельмашенко И.; WP=10; GLPI=632
+        ['wp_user_id' => 10, 'glpi_user_id' => 632, 'token' => 'bBh4kSmjkNeHrw1mNEeLNOt2Nkmekceen0bn1O1i'],
+    ];
+    return $REG;
+}
+
+/**
+ * Token lookup by WordPress user id.
+ */
+function gexe_glpi_get_token_by_wp_user_id(int $wp_user_id): ?string {
+    foreach (gexe_glpi_token_registry() as $row) {
+        if ((int)$row['wp_user_id'] === $wp_user_id) {
+            return (string)$row['token'];
+        }
+    }
+    return null;
+}
+
+/**
+ * Token lookup by GLPI user id.
+ */
+function gexe_glpi_get_token_by_glpi_user_id(int $glpi_user_id): ?string {
+    foreach (gexe_glpi_token_registry() as $row) {
+        if ((int)$row['glpi_user_id'] === $glpi_user_id) {
+            return (string)$row['token'];
+        }
+    }
+    return null;
+}
+
+/**
+ * Resolve current user's token:
+ *  1) Try direct WP user id mapping.
+ *  2) Try GLPI user id from existing user meta ('glpi_user_id' or 'gexe_glpi_user_id').
+ *  3) Fallback to legacy GEXE_GLPI_USER_TOKEN.
+ */
+function gexe_glpi_get_current_user_token(): ?string {
+    $uid = function_exists('get_current_user_id') ? (int)get_current_user_id() : 0;
+    if ($uid > 0) {
+        $tok = gexe_glpi_get_token_by_wp_user_id($uid);
+        if (is_string($tok) && $tok !== '') return $tok;
+    }
+    if ($uid > 0 && function_exists('get_user_meta')) {
+        foreach (['glpi_user_id', 'gexe_glpi_user_id'] as $meta_key) {
+            $val = get_user_meta($uid, $meta_key, true);
+            if (is_numeric($val)) {
+                $tok = gexe_glpi_get_token_by_glpi_user_id((int)$val);
+                if (is_string($tok) && $tok !== '') return $tok;
+            }
+        }
+    }
+    return defined('GEXE_GLPI_USER_TOKEN') ? GEXE_GLPI_USER_TOKEN : null;
+}
+
+/**
+ * Build API headers for a specific token (helper).
+ */
+function gexe_glpi_api_headers_for_token(string $user_token, array $extra = []): array {
+    $base = [
+        'Content-Type'  => 'application/json',
+        'Authorization' => 'user_token ' . $user_token,
+        'App-Token'     => GEXE_GLPI_APP_TOKEN,
+    ];
+    return array_merge($base, $extra);
+}
+
+/**
+ * Build API headers for current WP user using per-user tokens.
+ * This is non-breaking – existing gexe_glpi_api_headers() stays intact.
+ */
+function gexe_glpi_api_headers_current(array $extra = []): array {
+    $tok = gexe_glpi_get_current_user_token();
+    return gexe_glpi_api_headers_for_token($tok ?: GEXE_GLPI_USER_TOKEN, $extra);
+}
 
 function gexe_glpi_api_url(): string {
     return rtrim(GEXE_GLPI_API_URL, '/');
