@@ -577,7 +577,23 @@
     params.append('assignee_glpi_id', v.data.assignee_glpi_id);
     params.append('is_self_assignee', v.data.is_self_assignee ? 1 : 0);
     fetch(gexeAjax.url, { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body: params.toString() })
-      .then(r=>r.json().catch(()=>({ok:false,code:'api_unreachable'})))
+      .then(async (r) => {
+        // Читаем как текст, пытаемся распарсить JSON; иначе вернём detail=сырой ответ или HTTP-код
+        const status = r.status;
+        let text = '';
+        try { text = await r.text(); } catch(e) {}
+        try {
+          const json = JSON.parse(text);
+          // Нормализуем ответ: всегда пробрасываем code/detail, даже если бэкенд их не положил
+          if (typeof json === 'object' && json !== null) {
+            if (json.ok === false && !json.detail) json.detail = text || ('HTTP ' + status);
+            if (!json.code && json.ok === false) json.code = (status >= 500 ? 'api_unreachable' : (status === 401 || status === 403 ? 'api_auth' : 'api_failed'));
+          }
+          return json;
+        } catch(e) {
+          return { ok:false, code:(status>=500?'api_unreachable':'api_failed'), detail: (text ? String(text) : ('HTTP ' + status)) };
+        }
+      })
       .then(data=>{
         if (data.ok) {
           close();
@@ -585,10 +601,15 @@
           showToast(msg);
           window.dispatchEvent(new CustomEvent('gexe:tickets:refresh', {detail:{ticketId:data.ticket_id}}));
         } else {
-          setSubmitError(mapError(data.code, data.ticket_id) + (data.detail ? ('\n' + String(data.detail)) : ''));
+          const extra = [];
+          if (data.code) extra.push('[' + String(data.code) + ']');
+          if (data.detail) extra.push(String(data.detail));
+          setSubmitError(mapError(data.code, data.ticket_id) + (extra.length ? ('\n' + extra.join(' ')) : ''));
         }
       })
-      .catch(()=>{ setSubmitError(mapError('api_unreachable')); })
+      .catch((e)=>{
+        setSubmitError(mapError('api_unreachable') + (e && e.message ? ('\n' + e.message) : ''));
+      })
       .finally(()=>{
         btn.style.cursor = oldCursor;
         btn.classList.remove('is-loading');
