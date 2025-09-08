@@ -365,11 +365,15 @@ function glpi_ajax_create_ticket_sql() {
     error_log('[new-ticket] user=' . $wp_uid . '/' . $glpi_uid . ' sql=ticket+links ok code=created ticket_id=' . $tid . ' elapsed=' . $elapsed);
     wp_send_json(['ok' => true, 'code' => 'created', 'message' => 'Заявка создана', 'ticket_id' => $tid]);
 }
+// NOTE: Fix nonce key to match frontend ('gexe_form_data') to allow ticket creation.
 add_action('wp_ajax_glpi_create_ticket_api', 'glpi_ajax_create_ticket_api');
 add_action('wp_ajax_nopriv_glpi_create_ticket_api', 'glpi_ajax_create_ticket_api');
 
 function glpi_ajax_create_ticket_api() {
-    if (!check_ajax_referer('gexe_nonce', 'nonce', false)) { wp_send_json(['ok'=>false,'code'=>'forbidden']); }
+    // Frontend issues nonce for 'gexe_form_data' via gexe_refresh_nonce(); use the same here.
+    if (!check_ajax_referer('gexe_form_data', 'nonce', false)) {
+        wp_send_json(['ok' => false, 'code' => 'forbidden', 'detail' => 'Invalid or expired nonce']);
+    }
 
     /**
      * Важно: после разбора «кривожопости токенов» — все REST-запросы должны
