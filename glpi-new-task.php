@@ -371,6 +371,12 @@ add_action('wp_ajax_nopriv_glpi_create_ticket_api', 'glpi_ajax_create_ticket_api
 function glpi_ajax_create_ticket_api() {
     if (!check_ajax_referer('gexe_nonce', 'nonce', false)) { wp_send_json(['ok'=>false,'code'=>'forbidden']); }
 
+    /**
+     * Важно: после разбора «кривожопости токенов» — все REST-запросы должны
+     * идти с персональным user_token текущего WP-пользователя (см. gexe_glpi_api_headers()).
+     * Здесь ловим любые PHP-ошибки и возвращаем JSON, а не 500 HTML.
+     */
+
     // Catch ANY PHP error and always return JSON instead of 500 HTML
     set_error_handler(function($errno,$errstr,$errfile,$errline){
         throw new ErrorException($errstr, 0, $errno, $errfile, $errline);
@@ -380,10 +386,6 @@ function glpi_ajax_create_ticket_api() {
             wp_send_json(['ok' => false, 'code' => 'not_logged_in']);
         }
         $wp_uid  = get_current_user_id();
-        $glpi_uid = gexe_get_glpi_user_id($wp_uid);
-        if ($glpi_uid <= 0) {
-            wp_send_json(['ok' => false, 'code' => 'not_mapped']);
-        }
 
         $lock_key = 'gexe_nt_submit_' . $wp_uid;
         if (get_transient($lock_key)) {
@@ -395,20 +397,26 @@ function glpi_ajax_create_ticket_api() {
         $content = trim((string)($_POST['content'] ?? ''));
         $cat_id  = (int)($_POST['category_id'] ?? 0);
         $loc_id  = (int)($_POST['location_id'] ?? 0);
-        $assignee_glpi_id = (int)($_POST['assignee_glpi_id'] ?? 0);
-        $is_self = !empty($_POST['is_self_assignee']);
+        $assignee_glpi_id = $_POST['assignee_glpi_id'] ?? 0;
+        $is_self = (int)($_POST['is_self_assignee'] ?? 0) === 1;
 
         $errors = [];
-        if (mb_strlen($subject) < 3) $errors['subject'] = true;
-        if (mb_strlen($content) < 3) $errors['content'] = true;
-        if ($cat_id <= 0) $errors['category_id'] = true;
-        if ($loc_id <= 0) $errors['location_id'] = true;
+        // requester (GLPI id автора из маппинга)
+        $glpi_uid = function_exists('gexe_get_glpi_user_id') ? (int) gexe_get_glpi_user_id() : 0;
+        if ($glpi_uid <= 0) { $errors['requester'] = true; }
+        if ($subject === '' || mb_strlen($subject) > 255) { $errors['subject'] = true; }
+        if ($content === '' || mb_strlen($content) > 10000) { $errors['content'] = true; }
+        if ($cat_id <= 0) { $errors['category_id'] = true; }
+        if ($loc_id <= 0) { $errors['location_id'] = true; }
 
         $allowed = wp_list_pluck(function_exists('gexe_get_assignee_options') ? gexe_get_assignee_options() : [], 'id');
         if ($is_self) {
             $assignee_glpi_id = $glpi_uid;
         } elseif ($assignee_glpi_id <= 0 || !in_array((int)$assignee_glpi_id, $allowed, true)) {
             $errors['assignee_glpi_id'] = true;
+        } else {
+            // нормализуем
+            $assignee_glpi_id = (int)$assignee_glpi_id;
         }
 
         if (!empty($errors)) {
@@ -456,18 +464,33 @@ function glpi_ajax_create_ticket_api() {
             }
         }
 
+        /**
+         * CREATE ticket (через REST) СРАЗУ с актёрами:
+         *  - _users_id_requester  — постановщик (автор формы)
+         *  - _users_id_assign     — исполнитель (по чекбоксу/списку)
+         *
+         * Это устраняет второй POST на /Ticket/{id}/Ticket_User
+         * и избегает ошибок назначения при разных токенах.
+         */
+        $create_input = [
+            'name'              => $subject,
+            'content'           => $content,
+            'itilcategories_id' => $cat_id,
+            'locations_id'      => $loc_id,
+            'status'            => 1,
+            'type'              => 1,
+            '_users_id_requester' => $glpi_uid,
+        ];
+        if ($assignee_glpi_id > 0) {
+            $create_input['_users_id_assign'] = $assignee_glpi_id;
+        }
+
         // CREATE ticket
         $r1 = gexe_glpi_api_request('POST', '/Ticket', [
-            'input' => [
-                'name' => $subject,
-                'content' => $content,
-                'itilcategories_id' => $cat_id,
-                'locations_id' => $loc_id,
-                'status' => 1,
-                'type' => 1,
-            ],
+            'input' => $create_input,
         ]);
         if (is_wp_error($r1)) {
+            // network/DNS/timeout
             $log_create = 'err:api_unreachable';
             $elapsed = (int) round((microtime(true) - $start) * 1000);
             error_log('[new-ticket-api] initSession=' . $log_init . ' create=' . $log_create . ' assign=' . $log_assign . ' tid=0 elapsed=' . $elapsed);
@@ -504,29 +527,8 @@ function glpi_ajax_create_ticket_api() {
         }
         $log_create = 'ok';
 
-        // ASSIGN executor
-        $r2 = gexe_glpi_api_request('POST', '/Ticket/' . $ticket_id . '/Ticket_User', [
-            'input' => [
-                'tickets_id' => $ticket_id,
-                'users_id'   => $assignee_glpi_id,
-                'type'       => 2,
-            ],
-        ]);
-        if (is_wp_error($r2) || (int) ($r2['code'] ?? 0) >= 400) {
-            $log_assign = 'err:assign_failed';
-            $elapsed = (int) round((microtime(true) - $start) * 1000);
-            error_log('[new-ticket-api] initSession=' . $log_init . ' create=' . $log_create . ' assign=' . $log_assign . ' tid=' . $ticket_id . ' elapsed=' . $elapsed);
-            $detail = is_wp_error($r2) ? $r2->get_error_message() : (
-                (isset($r2['body']) && is_array($r2['body']) && isset($r2['body']['message'])) ? (string)$r2['body']['message'] : ('HTTP ' . ((int)($r2['code'] ?? 0)))
-            );
-            wp_send_json([
-                'ok'        => false,
-                'code'      => 'assign_failed',
-                'ticket_id' => $ticket_id,
-                'detail'    => $detail,
-            ]);
-        }
-        $log_assign = 'ok';
+        // Назначение исполнителя уже сделано в CREATE через _users_id_assign
+        $log_assign = $assignee_glpi_id > 0 ? 'ok@create' : 'skip';
 
         $elapsed = (int) round((microtime(true) - $start) * 1000);
         error_log('[new-ticket-api] initSession=' . $log_init . ' create=' . $log_create . ' assign=' . $log_assign . ' tid=' . $ticket_id . ' elapsed=' . $elapsed);
