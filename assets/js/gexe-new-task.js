@@ -501,16 +501,17 @@
     box.hidden = !message;
   }
 
-  function mapError(code){
+  function mapError(code, id){
     const map = {
       'SECURITY/NO_CSRF': 'Сессия устарела. Обновите страницу.',
       not_logged_in: 'Сессия неактивна. Войдите в систему.',
       not_mapped: 'Профиль не настроен: нет GLPI-ID.',
       validation: 'Заполните обязательные поля корректно.',
-      rate_limit_client: 'Слишком часто. Повторите через несколько секунд.',
-      sql_error: 'Ошибка сервера. Повторите позже.',
-      bad_response: 'Ошибка сервера. Повторите позже.',
-      network_error: 'Ошибка сервера. Повторите позже.'
+      rate_limit_client: 'Слишком часто. Попробуйте ещё раз через несколько секунд.',
+      api_unreachable: 'Сервер GLPI недоступен. Повторите позже.',
+      api_auth: 'Нет доступа к API. Проверьте токен.',
+      api_validation: 'GLPI отклонил данные. Проверьте поля.',
+      assign_failed: id ? 'Заявка создана, но исполнитель не назначен (ID: #' + id + '). Назначьте вручную.' : 'Заявка создана, но исполнитель не назначен. Назначьте вручную.'
     };
     return map[code] || 'Ошибка сервера. Повторите позже.';
   }
@@ -564,8 +565,10 @@
     const btn = modal.querySelector('.gnt-submit');
     btn.disabled = true;
     btn.classList.add('is-loading');
+    const oldCursor = btn.style.cursor;
+    btn.style.cursor = 'progress';
     const params = new URLSearchParams();
-    params.append('action','glpi_create_ticket_sql');
+    params.append('action','glpi_create_ticket_api');
     params.append('nonce', gexeAjax.nonce);
     params.append('subject', v.data.subject);
     params.append('content', v.data.content);
@@ -574,18 +577,20 @@
     params.append('assignee_glpi_id', v.data.assignee_glpi_id);
     params.append('is_self_assignee', v.data.is_self_assignee ? 1 : 0);
     fetch(gexeAjax.url, { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body: params.toString() })
-      .then(r=>r.json().catch(()=>({ok:false,code:'bad_response'})))
+      .then(r=>r.json().catch(()=>({ok:false,code:'api_unreachable'})))
       .then(data=>{
         if (data.ok) {
           close();
-          showToast('Заявка #' + data.ticket_id + ' создана');
+          const msg = data.code === 'already_exists' ? 'Заявка #' + data.ticket_id + ' уже создана' : 'Заявка #' + data.ticket_id + ' создана, исполнитель назначен';
+          showToast(msg);
           window.dispatchEvent(new CustomEvent('gexe:tickets:refresh', {detail:{ticketId:data.ticket_id}}));
         } else {
-          setSubmitError(mapError(data.code));
+          setSubmitError(mapError(data.code, data.ticket_id));
         }
       })
-      .catch(()=>{ setSubmitError(mapError('network_error')); })
+      .catch(()=>{ setSubmitError(mapError('api_unreachable')); })
       .finally(()=>{
+        btn.style.cursor = oldCursor;
         btn.classList.remove('is-loading');
         validateAll(false);
       });
