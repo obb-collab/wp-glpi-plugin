@@ -2,7 +2,8 @@
 if (!defined('ABSPATH')) exit;
 
 require_once __DIR__ . '/logger.php';
-require_once dirname(__DIR__) . '/includes/helpers/utils.php';
+// file is in /includes; helpers in /includes/helpers
+require_once __DIR__ . '/helpers/utils.php';
 require_once __DIR__ . '/executors-cache.php';
 
 /**

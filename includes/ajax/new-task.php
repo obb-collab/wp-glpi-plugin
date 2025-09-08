@@ -13,10 +13,12 @@ require_once dirname(__DIR__) . '/helpers/utils.php';
 require_once dirname(__DIR__) . '/glpi-sql.php';
 
 add_action('wp_enqueue_scripts', function () {
-    wp_register_style('glpi-new-task', plugin_dir_url(__FILE__) . 'glpi-new-task.css', [], '1.0.0');
+    // __FILE__ is nested (/includes/ajax/). Use plugins_url() anchored at plugin root file.
+    $root = dirname(__DIR__, 2) . '/gexe-copy.php';
+    wp_register_style('glpi-new-task', plugins_url('glpi-new-task.css', $root), [], '1.0.0');
     wp_enqueue_style('glpi-new-task');
 
-    wp_register_script('gexe-new-task-js', plugin_dir_url(__FILE__) . 'assets/js/gexe-new-task.js', [], '1.0.0', true);
+    wp_register_script('gexe-new-task-js', plugins_url('assets/js/gexe-new-task.js', $root), [], '1.0.0', true);
     wp_enqueue_script('gexe-new-task-js');
 
     $data = [
