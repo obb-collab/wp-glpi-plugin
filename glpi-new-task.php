@@ -423,7 +423,7 @@ function glpi_ajax_create_ticket_api() {
         $log_init = 'err:' . $err;
         $elapsed = (int) round((microtime(true) - $start) * 1000);
         error_log('[new-ticket-api] initSession=' . $log_init . ' create=' . $log_create . ' assign=' . $log_assign . ' tid=0 elapsed=' . $elapsed);
-        wp_send_json(['ok' => false, 'code' => $err]);
+        wp_send_json(['ok' => false, 'code' => $err, 'detail' => $token->get_error_message()]);
     }
     $log_init = 'ok';
 
@@ -459,7 +459,7 @@ function glpi_ajax_create_ticket_api() {
         $log_create = 'err:api_unreachable';
         $elapsed = (int) round((microtime(true) - $start) * 1000);
         error_log('[new-ticket-api] initSession=' . $log_init . ' create=' . $log_create . ' assign=' . $log_assign . ' tid=0 elapsed=' . $elapsed);
-        wp_send_json(['ok' => false, 'code' => 'api_unreachable']);
+        wp_send_json(['ok' => false, 'code' => 'api_unreachable', 'detail' => $r1->get_error_message()]);
     }
     $code1 = (int) $r1['code'];
     $body1 = $r1['body'];
@@ -473,14 +473,18 @@ function glpi_ajax_create_ticket_api() {
         $log_create = ($code1 === 400) ? 'err:api_validation' : 'err:api_unreachable';
         $elapsed = (int) round((microtime(true) - $start) * 1000);
         error_log('[new-ticket-api] initSession=' . $log_init . ' create=' . $log_create . ' assign=' . $log_assign . ' tid=0 elapsed=' . $elapsed);
-        wp_send_json(['ok' => false, 'code' => ($code1 === 400) ? 'api_validation' : 'api_unreachable']);
+        wp_send_json([
+            'ok'    => false,
+            'code'  => ($code1 === 400) ? 'api_validation' : 'api_unreachable',
+            'detail'=> isset($body1['message']) ? $body1['message'] : ('HTTP ' . $code1),
+        ]);
     }
     $ticket_id = isset($body1['id']) ? (int) $body1['id'] : 0;
     if ($ticket_id <= 0) {
         $log_create = 'err:api_unreachable';
         $elapsed = (int) round((microtime(true) - $start) * 1000);
         error_log('[new-ticket-api] initSession=' . $log_init . ' create=' . $log_create . ' assign=' . $log_assign . ' tid=0 elapsed=' . $elapsed);
-        wp_send_json(['ok' => false, 'code' => 'api_unreachable']);
+        wp_send_json(['ok' => false, 'code' => 'api_unreachable', 'detail' => 'Empty ticket id']);
     }
     $log_create = 'ok';
 
@@ -495,7 +499,12 @@ function glpi_ajax_create_ticket_api() {
         $log_assign = 'err:assign_failed';
         $elapsed = (int) round((microtime(true) - $start) * 1000);
         error_log('[new-ticket-api] initSession=' . $log_init . ' create=' . $log_create . ' assign=' . $log_assign . ' tid=' . $ticket_id . ' elapsed=' . $elapsed);
-        wp_send_json(['ok' => false, 'code' => 'assign_failed', 'ticket_id' => $ticket_id]);
+        wp_send_json([
+            'ok'        => false,
+            'code'      => 'assign_failed',
+            'ticket_id' => $ticket_id,
+            'detail'    => (is_wp_error($r2) ? $r2->get_error_message() : (isset($r2['body']['message']) ? $r2['body']['message'] : ('HTTP ' . ((int)$r2['code'])))),
+        ]);
     }
     $log_assign = 'ok';
 
