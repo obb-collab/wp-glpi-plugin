@@ -57,6 +57,20 @@ function glpi_db_get_executors() { old implementation }
 */
 
 add_action('wp_ajax_glpi_load_dicts', 'glpi_ajax_load_dicts');
+add_action('wp_ajax_glpi_get_executors', 'glpi_ajax_get_executors');
+
+function glpi_ajax_get_executors() {
+    glpi_nt_verify_nonce();
+    $res = gexe_get_executors_wp();
+    if ($res['ok']) {
+        $list = array_map(function ($e) {
+            $label = $e['display_name'];
+            return ['id' => (int) $e['glpi_user_id'], 'label' => $label, 'name' => $label];
+        }, $res['list']);
+        wp_send_json(['ok' => true, 'list' => $list]);
+    }
+    wp_send_json(['ok' => false, 'code' => $res['code'] ?? 'dict_failed', 'which' => 'executors']);
+}
 
 function glpi_get_wp_executors(): array {
     global $wpdb, $glpi_db;
@@ -171,12 +185,12 @@ add_action('wp_ajax_glpi_create_ticket', 'glpi_ajax_create_ticket');
 function glpi_ajax_create_ticket() {
     glpi_nt_verify_nonce();
     if (!is_user_logged_in()) {
-        wp_send_json(['success' => false, 'error' => ['type' => 'SECURITY', 'message' => 'Пользователь не авторизован']]);
+        wp_send_json(['success' => false, 'code' => 'NO_AUTH', 'message' => 'Пользователь не авторизован']);
     }
     $wp_uid = get_current_user_id();
     $map = gexe_require_glpi_user($wp_uid);
     if (!$map['ok']) {
-        wp_send_json(['success' => false, 'error' => ['type' => 'MAPPING', 'message' => 'Профиль WordPress не привязан к GLPI пользователю']]);
+        wp_send_json(['success' => false, 'code' => 'USER_MAP_MISSING', 'message' => 'Профиль WordPress не привязан к GLPI пользователю']);
     }
     $glpi_uid = (int) $map['id'];
 
@@ -211,7 +225,7 @@ function glpi_ajax_create_ticket() {
         $errors['assignee'] = 'Обязательное поле';
     }
     if (!empty($errors)) {
-        wp_send_json(['success' => false, 'error' => ['type' => 'VALIDATION', 'message' => 'Validation failed', 'details' => $errors]]);
+        wp_send_json(['success' => false, 'code' => 'VALIDATION_FAIL', 'message' => 'Validation failed', 'details' => $errors]);
     }
     if ($assign_me) {
         $executor_glpi = $glpi_uid;
@@ -221,7 +235,7 @@ function glpi_ajax_create_ticket() {
     $app_token = defined('GEXE_GLPI_APP_TOKEN') ? GEXE_GLPI_APP_TOKEN : (defined('GLPI_APP_TOKEN') ? GLPI_APP_TOKEN : '');
     $user_token = defined('GEXE_GLPI_USER_TOKEN') ? GEXE_GLPI_USER_TOKEN : (defined('GLPI_USER_TOKEN') ? GLPI_USER_TOKEN : '');
     if (!$api_url || !$app_token || !$user_token) {
-        wp_send_json(['success' => false, 'error' => ['type' => 'CONFIG', 'message' => 'GLPI API not configured']]);
+        wp_send_json(['success' => false, 'code' => 'CONFIG_MISSING', 'message' => 'GLPI API not configured']]);
     }
 
     $lock_key = 'gexe_ticket_' . sha1($wp_uid . '|' . $subject . '|' . $cat . '|' . $loc);
@@ -251,7 +265,7 @@ function glpi_ajax_create_ticket() {
         'timeout' => 15,
     ]);
     if (is_wp_error($resp)) {
-        $data = ['success' => false, 'error' => ['type' => 'API', 'message' => $resp->get_error_message()]];
+        $data = ['success' => false, 'code' => 'API_CREATE_FAIL', 'message' => $resp->get_error_message()];
         set_transient($lock_key, $data, 10);
         error_log('[wp-glpi:create-ticket] user=' . $wp_uid . ' glpi=' . $glpi_uid . ' result=fail:api');
         wp_send_json($data);
@@ -259,11 +273,8 @@ function glpi_ajax_create_ticket() {
     $code = wp_remote_retrieve_response_code($resp);
     $body = json_decode(wp_remote_retrieve_body($resp), true);
     if ($code >= 400 || !isset($body['id'])) {
-        $msg = 'Ошибка API: ' . $code;
-        if (isset($body['message'])) {
-            $msg .= ' ' . $body['message'];
-        }
-        $data = ['success' => false, 'error' => ['type' => 'API', 'code' => $code, 'message' => $msg]];
+        $msg = isset($body['message']) ? $body['message'] : 'GLPI API error';
+        $data = ['success' => false, 'code' => 'API_CREATE_FAIL', 'http_status' => $code, 'message' => $msg];
         set_transient($lock_key, $data, 10);
         error_log('[wp-glpi:create-ticket] user=' . $wp_uid . ' glpi=' . $glpi_uid . ' result=fail:' . $code);
         wp_send_json($data);
@@ -283,7 +294,7 @@ function glpi_ajax_create_ticket() {
     }
     $out = ['success' => true, 'id' => $ticket_id];
     if ($warning) {
-        $out['warning'] = 'assign_failed';
+        $out['warning'] = 'API_ASSIGN_FAIL';
         $out['message'] = 'Назначение исполнителя не выполнено';
     }
     set_transient($lock_key, $out, 10);
