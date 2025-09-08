@@ -1,0 +1,23 @@
+/* Basic styles for the Chief page. Real theme should mirror the main plugin. */
+
+.glpi-chief-page {
+    padding: 20px;
+    background: #1e1e1e;
+    color: #eee;
+    min-height: 400px;
+}
+
+.glpi-chief-assignee {
+    margin-top: 20px;
+}
+
+.glpi-chief-assignee-select {
+    padding: 4px 8px;
+    background: #333;
+    color: #fff;
+    border: 1px solid #555;
+}
+
+.glpi-chief-assignee-select:disabled {
+    opacity: 0.5;
+}
