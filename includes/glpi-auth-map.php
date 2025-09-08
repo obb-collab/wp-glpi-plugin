@@ -1,5 +1,7 @@
 <?php
-require_once __DIR__ . '/../glpi-utils.php';
+if (!defined('ABSPATH')) exit;
+
+require_once __DIR__ . '/../includes/helpers/utils.php';
 
 /**
  * Map WordPress users to GLPI user identifiers.

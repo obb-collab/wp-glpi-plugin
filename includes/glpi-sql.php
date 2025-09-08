@@ -1,11 +1,13 @@
 <?php
+if (!defined('ABSPATH')) exit;
+
 /**
  * Lightweight SQL helpers for interacting with GLPI tables.
  * All queries are executed using the global $glpi_db (wpdb instance)
  * with prepared statements.
  */
 
-require_once __DIR__ . '/../glpi-utils.php';
+require_once __DIR__ . '/../includes/helpers/utils.php';
 
 /**
  * Insert a followup into glpi_itilfollowups.
