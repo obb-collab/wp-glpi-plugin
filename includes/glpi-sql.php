@@ -87,15 +87,23 @@ function create_ticket_sql(array $data) {
         'entities_id'      => 0,
         'due_date'         => null,
         'status'           => 1,
+        'type'             => 1,
+        'urgency'          => 3,
+        'impact'           => 3,
+        'priority'         => 3,
     ];
     $p = array_merge($defaults, $data);
 
     $glpi_db->query('START TRANSACTION');
     $sql = $glpi_db->prepare(
-        'INSERT INTO glpi_tickets (name, content, status, date, date_mod, due_date, users_id_recipient, users_id_lastupdater, entities_id, itilcategories_id, locations_id) VALUES (%s,%s,%d,NOW(),NOW(),%s,%d,%d,%d,%d,%d)',
+        'INSERT INTO glpi_tickets (name, content, status, type, urgency, impact, priority, date, date_mod, due_date, users_id_recipient, users_id_lastupdater, entities_id, itilcategories_id, locations_id) VALUES (%s,%s,%d,%d,%d,%d,%d,NOW(),NOW(),%s,%d,%d,%d,%d,%d)',
         $p['name'],
         $p['content'],
         $p['status'],
+        $p['type'],
+        $p['urgency'],
+        $p['impact'],
+        $p['priority'],
         $p['due_date'],
         $p['requester_id'],
         $p['requester_id'],

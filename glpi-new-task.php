@@ -10,6 +10,7 @@ if (!defined('ABSPATH')) exit;
 
 require_once __DIR__ . '/glpi-db-setup.php';
 require_once __DIR__ . '/inc/user-map.php';
+require_once __DIR__ . '/includes/glpi-sql.php';
 
 add_action('wp_enqueue_scripts', function () {
     wp_register_style('glpi-new-task', plugin_dir_url(__FILE__) . 'glpi-new-task.css', [], '1.0.0');
@@ -141,7 +142,6 @@ function glpi_ajax_load_dicts() {
 
         $pdo->commit();
 
-        $executors = glpi_get_wp_executors();
         $meta = ['empty' => ['categories' => empty($categories), 'locations' => empty($locations)]];
 
         error_log('[wp-glpi:new-task] catalogs loaded: cats=' . count($categories) . ', locs=' . count($locations));
@@ -149,7 +149,6 @@ function glpi_ajax_load_dicts() {
         wp_send_json_success([
             'categories' => $categories,
             'locations'  => $locations,
-            'executors'  => $executors,
             'meta'       => $meta,
         ]);
     } catch (PDOException $e) {
@@ -289,4 +288,80 @@ function glpi_ajax_create_ticket() {
     set_transient($lock_key, $out, 10);
     error_log('[wp-glpi:create-ticket] user=' . $wp_uid . ' glpi=' . $glpi_uid . ' result=ok#' . $ticket_id);
     wp_send_json($out);
+}
+
+add_action('wp_ajax_glpi_create_ticket_sql', 'glpi_ajax_create_ticket_sql');
+function glpi_ajax_create_ticket_sql() {
+    if (!check_ajax_referer('gexe_actions', 'nonce', false)) {
+        wp_send_json(['ok' => false, 'code' => 'SECURITY/NO_CSRF', 'message' => 'Сессия устарела. Обновите страницу.']);
+    }
+    if (!is_user_logged_in() || !current_user_can('read')) {
+        wp_send_json(['ok' => false, 'code' => 'not_logged_in', 'message' => 'Сессия неактивна. Войдите в систему.']);
+    }
+    $wp_uid = get_current_user_id();
+    $glpi_uid = gexe_get_glpi_user_id($wp_uid);
+    if ($glpi_uid <= 0) {
+        wp_send_json(['ok' => false, 'code' => 'not_mapped', 'message' => 'Профиль не настроен: нет GLPI-ID.']);
+    }
+
+    $lock_key = 'gexe_nt_submit_' . $wp_uid;
+    if (get_transient($lock_key)) {
+        wp_send_json(['ok' => false, 'code' => 'rate_limit_client', 'message' => 'Слишком часто. Повторите через несколько секунд.']);
+    }
+    set_transient($lock_key, 1, 10);
+
+    $subject = mb_substr(trim((string) ($_POST['subject'] ?? '')), 0, 255);
+    $content = mb_substr(trim((string) ($_POST['content'] ?? '')), 0, 4096);
+    $cat_id = absint($_POST['category_id'] ?? 0);
+    $loc_id = absint($_POST['location_id'] ?? 0);
+    $assignee_glpi_id = absint($_POST['assignee_glpi_id'] ?? 0);
+    $is_self = !empty($_POST['is_self_assignee']);
+
+    $errors = [];
+    if (mb_strlen($subject) < 3) $errors['subject'] = true;
+    if (mb_strlen($content) < 3) $errors['content'] = true;
+    if ($cat_id <= 0) $errors['category_id'] = true;
+    if ($loc_id <= 0) $errors['location_id'] = true;
+
+    $allowed = wp_list_pluck(function_exists('gexe_get_assignee_options') ? gexe_get_assignee_options() : [], 'id');
+    if ($is_self) {
+        $assignee_glpi_id = $glpi_uid;
+    } elseif ($assignee_glpi_id <= 0 || !in_array($assignee_glpi_id, $allowed, true)) {
+        $errors['assignee_glpi_id'] = true;
+    }
+
+    if (!empty($errors)) {
+        wp_send_json(['ok' => false, 'code' => 'validation', 'message' => 'Заполните обязательные поля корректно.']);
+    }
+
+    global $glpi_db;
+    $sql = $glpi_db->prepare(
+        "SELECT id FROM glpi_tickets WHERE name=%s AND date >= NOW() - INTERVAL 60 SECOND AND status = 1 AND itilcategories_id = %d AND locations_id = %d LIMIT 1",
+        $subject,
+        $cat_id,
+        $loc_id
+    );
+    $dup = $glpi_db->get_var($sql);
+    if ($dup) {
+        wp_send_json(['ok' => true, 'code' => 'already_exists', 'message' => 'Заявка уже существует', 'ticket_id' => (int) $dup]);
+    }
+
+    $start = microtime(true);
+    $res = create_ticket_sql([
+        'name' => $subject,
+        'content' => $content,
+        'itilcategories_id' => $cat_id,
+        'locations_id' => $loc_id,
+        'requester_id' => $glpi_uid,
+        'assignee_id' => $assignee_glpi_id,
+        'type' => 1,
+    ]);
+    $elapsed = (int) round((microtime(true) - $start) * 1000);
+    if (empty($res['ok'])) {
+        error_log('[new-ticket] user=' . $wp_uid . '/' . $glpi_uid . ' sql=ticket+links err code=sql_error ticket_id=0 elapsed=' . $elapsed);
+        wp_send_json(['ok' => false, 'code' => 'sql_error', 'message' => 'Ошибка базы данных. Повторите позже.']);
+    }
+    $tid = (int) $res['ticket_id'];
+    error_log('[new-ticket] user=' . $wp_uid . '/' . $glpi_uid . ' sql=ticket+links ok code=created ticket_id=' . $tid . ' elapsed=' . $elapsed);
+    wp_send_json(['ok' => true, 'code' => 'created', 'message' => 'Заявка создана', 'ticket_id' => $tid]);
 }
