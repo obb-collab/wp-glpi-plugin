@@ -1077,26 +1077,31 @@
           '<textarea id="gexe-cmnt-text" placeholder="Ваш комментарий..." rows="3" maxlength="4000"></textarea>' +
           '<div id="gexe-cmnt-err" class="gexe-cmnt__err" aria-live="polite"></div>' +
         '</div>' +
-        '<div class="gexe-cmnt__foot">' +
-          '<div class="gexe-cmnt__counter"><span id="gexe-cmnt-count">0</span>/4000</div>' +
-          '<button id="gexe-cmnt-send" class="glpi-act">Отправить</button>' +
-        '</div>' +
-      '</div>';
+      '<div class="gexe-cmnt__foot">' +
+        '<div class="gexe-cmnt__counter"><span id="gexe-cmnt-count">0</span>/4000</div>' +
+        '<button id="gexe-cmnt-send" class="glpi-act">Отправить</button>' +
+        '<button id="gexe-cmnt-send-api" class="glpi-act">Отправить через API</button>' +
+      '</div>' +
+    '</div>';
     document.body.appendChild(cmntModal);
     $('.gexe-cmnt__backdrop', cmntModal).addEventListener('click', closeCommentModal);
     $('.gexe-cmnt__close', cmntModal).addEventListener('click', closeCommentModal);
     const sendBtn = $('#gexe-cmnt-send', cmntModal);
+    const sendBtnApi = $('#gexe-cmnt-send-api', cmntModal);
     const txtArea = $('#gexe-cmnt-text', cmntModal);
     if (sendBtn) sendBtn.disabled = true;
+    if (sendBtnApi) sendBtnApi.disabled = true;
     if (txtArea) {
       txtArea.addEventListener('input', updateCommentValidation);
     }
     if (sendBtn) sendBtn.addEventListener('click', () => sendComment(false));
+    if (sendBtnApi) sendBtnApi.addEventListener('click', sendCommentApi);
     return cmntModal;
   }
   function updateCommentValidation(force) {
     const txtArea = $('#gexe-cmnt-text', cmntModal);
     const sendBtn = $('#gexe-cmnt-send', cmntModal);
+    const sendBtnApi = $('#gexe-cmnt-send-api', cmntModal);
     const cntEl = $('#gexe-cmnt-count', cmntModal);
     const errEl = $('#gexe-cmnt-err', cmntModal);
     const raw = txtArea && txtArea.value ? txtArea.value : '';
@@ -1106,7 +1111,9 @@
     if (len > MAX_COMMENT_LEN) msg = 'Слишком длинный комментарий';
     else if (force && len === 0) msg = ERROR_MAP.EMPTY_CONTENT;
     if (errEl) errEl.textContent = msg;
-    if (sendBtn) sendBtn.disabled = len === 0 || len > MAX_COMMENT_LEN;
+    const disabled = len === 0 || len > MAX_COMMENT_LEN;
+    if (sendBtn) sendBtn.disabled = disabled;
+    if (sendBtnApi) sendBtnApi.disabled = disabled;
     return !msg && len > 0;
   }
   function showCommentError(code, details, status) {
@@ -1129,10 +1136,15 @@
     const ta = $('#gexe-cmnt-text', cmntModal); if (ta) { ta.value = ''; ta.focus(); }
     updateCommentValidation();
     const sendBtn = $('#gexe-cmnt-send', cmntModal);
+    const sendBtnApi = $('#gexe-cmnt-send-api', cmntModal);
     const pre = checkPreflight(false);
     if (sendBtn) {
       if (pre.ok) clearPreflight(sendBtn);
       else markPreflight(sendBtn, pre.code);
+    }
+    if (sendBtnApi) {
+      if (pre.ok) clearPreflight(sendBtnApi);
+      else markPreflight(sendBtnApi, pre.code);
     }
     cmntModal.classList.add('is-open'); document.body.classList.add('glpi-modal-open');
   }
@@ -1196,6 +1208,50 @@
       btn.classList.add('is-done');
       setTimeout(() => { btn.classList.remove('is-done'); }, 1500);
       closeCommentModal();
+    } catch (err) {
+      showCommentError('network_error');
+    } finally {
+      clearTimeout(timeoutId);
+      lockAction(id, 'comment', false);
+      setActionLoading(btn, false);
+    }
+  }
+
+  async function sendCommentApi() {
+    if (!cmntModal) return;
+    const pre = checkPreflight(true);
+    if (!pre.ok) return;
+    const id  = Number(cmntModal.getAttribute('data-ticket-id') || '0');
+    const txtEl = $('#gexe-cmnt-text', cmntModal);
+    const btn = $('#gexe-cmnt-send-api', cmntModal);
+    if (!id || !txtEl || !btn) return;
+    if (!updateCommentValidation(true)) return;
+    const txt = txtEl.value.trim();
+    const url = glpiAjax.url;
+    const nonce = glpiAjax.nonce;
+    lockAction(id, 'comment', true);
+    setActionLoading(btn, true);
+    clearCommentError();
+    const fd = new FormData();
+    fd.append('action', 'glpi_send_comment_api');
+    fd.append('nonce', nonce);
+    fd.append('ticket_id', String(id));
+    fd.append('comment', txt);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
+    debugRequest(url, Object.fromEntries(fd.entries()));
+    try {
+      const res = await fetch(url, { method: 'POST', body: fd, signal: controller.signal });
+      await debugResponse(res);
+      let data = null;
+      try { data = await res.clone().json(); }
+      catch (e) { try { await res.clone().text(); } catch (e2) {} }
+      if (!res.ok || !data || !data.ok) {
+        const code = data && data.code ? data.code : 'bad_response';
+        showCommentError(code, null, res.status);
+        return;
+      }
+      location.reload();
     } catch (err) {
       showCommentError('network_error');
     } finally {

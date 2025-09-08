@@ -402,8 +402,10 @@ button.disabled{opacity:.5;cursor:not-allowed;}
 .gexe-cmnt__err{ color:#f87171; font-size:13px; margin-top:4px; }
 .gexe-cmnt__counter{ color:#94a3b8; font-size:12px; margin-bottom:8px; text-align:right; }
 .gexe-cmnt__foot{ padding:12px; border-top:1px solid #334155; }
-#gexe-cmnt-send.glpi-act{background:#475569;border:1px solid #334155;color:#fff;border-radius:10px;font-weight:700;width:100%;display:block}
-#gexe-cmnt-send.glpi-act:hover{background:#334155}
+#gexe-cmnt-send.glpi-act,
+#gexe-cmnt-send-api.glpi-act{background:#475569;border:1px solid #334155;color:#fff;border-radius:10px;font-weight:700;width:100%;display:block}
+#gexe-cmnt-send.glpi-act:hover,
+#gexe-cmnt-send-api.glpi-act:hover{background:#334155}
 .glpi-status-btn.glpi-act{background:#475569;border:1px solid #334155;color:#fff;border-radius:10px;font-weight:700;padding:10px 16px;min-width:120px}
 .glpi-status-btn.glpi-act:hover{background:#334155}
 .glpi-status-btn.glpi-act:disabled{background:#1e293b;color:#64748b;border-color:#334155;cursor:not-allowed}
