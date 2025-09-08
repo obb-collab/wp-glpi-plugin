@@ -1,0 +1,8 @@
+/* Ensure multiline backend errors are visible under the submit button */
+.gnt-submit-error,
+.gnt-error {
+  white-space: pre-line;    /* показываем переносы строк из JS */
+  line-height: 1.2;
+}
+
+/* ... existing styles below ... */
