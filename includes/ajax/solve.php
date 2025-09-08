@@ -1,9 +1,7 @@
 <?php
 if (!defined('ABSPATH')) exit;
 
-// Reuse modal-actions helpers (gexe_ajax_error_compat, etc.)
-require_once __DIR__ . '/modal-actions.php';
-// modal-actions.php already includes utils/sql/auth-map
+require_once dirname(__DIR__) . '/helpers/utils.php';
 
 add_action('wp_ajax_glpi_ticket_resolve', 'gexe_glpi_ticket_resolve');
 function gexe_glpi_ticket_resolve() {

@@ -10,7 +10,6 @@ if (!defined('ABSPATH')) exit;
 require_once dirname(__DIR__) . '/helpers/utils.php';
 require_once dirname(__DIR__) . '/glpi-sql.php';
 require_once dirname(__DIR__) . '/glpi-auth-map.php';
-// paths are from /includes/ajax/ -> /includes/*
 
 function gexe_action_response($ok, $code, $ticket_id, $action, $msg = '', $extra = []) {
     $payload = array_merge([

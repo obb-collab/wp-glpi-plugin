@@ -1,8 +1,6 @@
 <?php
 if (!defined('ABSPATH')) exit;
 
-// legacy file moved to includes/api; logic unchanged
-
 class Gexe_GLPI_API {
     private $base;
     private $app_token;

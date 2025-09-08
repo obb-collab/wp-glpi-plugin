@@ -2,8 +2,7 @@
 if (!defined('ABSPATH')) exit;
 
 require_once __DIR__ . '/rest-client.php';
-// glpi-api.php is already in /includes; db-setup lives in /includes/bootstrap
-require_once __DIR__ . '/bootstrap/db-setup.php';
+require_once __DIR__ . '/../includes/bootstrap/db-setup.php';
 
 /**
  * Retrieve cached GLPI session token or initialize a new session.

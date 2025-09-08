@@ -7,8 +7,7 @@ if (!defined('ABSPATH')) exit;
  * with prepared statements.
  */
 
-// file is in /includes; helpers in /includes/helpers
-require_once __DIR__ . '/helpers/utils.php';
+require_once __DIR__ . '/../includes/helpers/utils.php';
 
 /**
  * Insert a followup into glpi_itilfollowups.
