@@ -5,8 +5,9 @@ if (!defined('CHIEF_DEBUG')) {
     define('CHIEF_DEBUG', false);
 }
 
-require_once __DIR__ . '/../glpi-db-setup.php';
-require_once __DIR__ . '/../glpi-icon-map.php';
+require_once dirname(__DIR__) . '/includes/bootstrap/db-setup.php';
+require_once dirname(__DIR__) . '/includes/helpers/icon-map.php';
+require_once dirname(__DIR__) . '/includes/auth/user-map.php';
 
 if (!function_exists('chief_is_manager')) {
     function chief_is_manager(): bool {
@@ -191,9 +192,9 @@ if (!function_exists('chief_glpi_cards_shortcode')) {
         $total_count = array_sum($status_counts);
 
         $base_file = __DIR__ . '/../gexe-copy.php';
-        $tpl = plugin_dir_path($base_file) . 'templates/glpi-cards-template.php';
+        $tpl = plugin_dir_path($base_file) . 'templates/cards.php';
         if (!file_exists($tpl)) {
-            return '<div style="padding:10px;background:#fee;border:1px solid #f99;">Отсутствует шаблон: templates/glpi-cards-template.php</div>';
+            return '<div style="padding:10px;background:#fee;border:1px solid #f99;">Отсутствует шаблон: templates/cards.php</div>';
         }
 
         $backup = [];

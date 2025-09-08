@@ -8,9 +8,9 @@
 
 if (!defined('ABSPATH')) exit;
 
-require_once __DIR__ . '/glpi-db-setup.php';
-require_once __DIR__ . '/inc/user-map.php';
-require_once __DIR__ . '/includes/glpi-sql.php';
+require_once dirname(__DIR__) . '/bootstrap/db-setup.php';
+require_once dirname(__DIR__) . '/helpers/utils.php';
+require_once dirname(__DIR__) . '/glpi-sql.php';
 
 add_action('wp_enqueue_scripts', function () {
     wp_register_style('glpi-new-task', plugin_dir_url(__FILE__) . 'glpi-new-task.css', [], '1.0.0');
@@ -409,7 +409,7 @@ function glpi_ajax_create_ticket_api() {
         wp_send_json(['ok' => false, 'code' => 'validation']);
     }
 
-    require_once __DIR__ . '/includes/glpi-api.php';
+    require_once dirname(__DIR__) . '/glpi-api.php';
 
     $start      = microtime(true);
     $log_init   = 'err:unknown';

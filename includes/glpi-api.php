@@ -2,7 +2,7 @@
 if (!defined('ABSPATH')) exit;
 
 require_once __DIR__ . '/rest-client.php';
-require_once __DIR__ . '/../glpi-db-setup.php';
+require_once __DIR__ . '/../includes/bootstrap/db-setup.php';
 
 /**
  * Retrieve cached GLPI session token or initialize a new session.
