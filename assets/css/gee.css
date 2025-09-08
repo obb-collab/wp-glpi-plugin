@@ -245,10 +245,12 @@ button.disabled{opacity:.5;cursor:not-allowed;}
 .gnt-submit{display:inline-flex;align-items:center;gap:8px;padding:10px 16px;border-radius:6px;background:#1f2937;color:#e5e7eb;border:1px solid #334155;cursor:pointer;transition:background-color .15s ease;}
 .gnt-submit:hover{background:#273447;}
 .gnt-submit:active{background:#334155;}
-.gnt-submit[disabled]{opacity:.5;cursor:not-allowed;}
+.gnt-submit[disabled],.gnt-submit[aria-disabled="true"]{opacity:.5;cursor:not-allowed;}
 .gnt-submit.is-loading{position:relative;}
 .gnt-submit.is-loading::after{content:"";width:16px;height:16px;border:2px solid #f1f5f9;border-top-color:transparent;border-radius:50%;position:absolute;top:50%;left:50%;margin:-8px 0 0 -8px;animation:gnt-spin 1s linear infinite;}
 @keyframes gnt-spin{to{transform:rotate(360deg);}}
+
+.gnt-input.gnt-invalid,.gnt-textarea.gnt-invalid,.gnt-select.gnt-invalid{border-color:#ef4444;}
 
 /* Инлайн-категории */
  .glpi-categories-inline{
