@@ -66,7 +66,8 @@
           </div>
         </div>
         <div class="gnt-footer">
-          <button type="button" class="gnt-submit">Создать заявку</button>
+          <button type="button" class="gnt-submit" disabled>Создать заявку</button>
+          <div class="gnt-submit-error" aria-live="polite" hidden></div>
         </div>
       </div>
     `;
@@ -81,17 +82,13 @@
     assignChk.addEventListener('change', function(){
       assigneeSel.disabled = this.checked || !executorsLoaded;
       if (this.checked) {
-        const glpiId = Number((gexeAjax && gexeAjax.user_glpi_id) || 0);
-        if (glpiId > 0) {
-          const opt = assigneeSel.querySelector('option[data-glpi-id="' + glpiId + '"]');
-          if (opt) {
-            assigneeSel.value = opt.value;
-          }
-        }
+        const gid = Number((gexeAjax && gexeAjax.user_glpi_id) || 0);
+        assigneeSel.value = gid > 0 ? String(gid) : '';
         setFieldError('assignee');
       } else {
         assigneeSel.value = '';
       }
+      validateAll(false);
     });
     [['#gnt-name','name'],['#gnt-content','content'],['#gnt-category','category'],['#gnt-location','location'],['#gnt-assignee','assignee']].forEach(function(pair){
       const sel = pair[0];
@@ -99,8 +96,11 @@
       modal.querySelector(sel).addEventListener('input', function(){
         setFieldError(field);
         if (field === 'category' || field === 'location') updatePaths();
+        validateAll(false);
       });
     });
+    initAssignees();
+    validateAll(false);
   }
 
   function lockForm(state){
@@ -169,23 +169,6 @@
     }
   }
 
-  function showSubmitError(message){
-    showSubmitStatus(message, 'error');
-  }
-
-  function showSubmitStatus(message, type){
-    const box = modal.querySelector('.gexe-dict-status');
-    if (!box) return;
-    const cls = type === 'error' ? 'error' : (type === 'success' ? 'success' : 'loading');
-    box.className = 'gexe-dict-status ' + cls;
-    if (cls === 'loading') {
-      box.innerHTML = '<span class="spinner"></span>' + (message || '');
-    } else {
-      box.textContent = message || '';
-    }
-    box.hidden = false;
-  }
-
   function setFieldError(field, message){
     const input = modal.querySelector('#gnt-' + field);
     const err = modal.querySelector('#gnt-' + field + '-err');
@@ -229,7 +212,7 @@
     const now = Date.now();
     if (!force && dictCache && (now - dictCache.ts < 5 * 60 * 1000)) {
       const d = dictCache.data;
-      return Promise.resolve({ ok: true, categories: d.categories, locations: d.locations, executors: d.executors, meta: d.meta });
+      return Promise.resolve({ ok: true, categories: d.categories, locations: d.locations, meta: d.meta });
     }
     if (!gexeAjax || !gexeAjax.url) {
       return Promise.resolve({ ok: false, error: { type: 'NETWORK', message: 'Ошибка соединения с сервером' } });
@@ -242,7 +225,7 @@
       .then(resp => {
         if (resp && resp.success && resp.data) {
           dictCache = { ts: now, data: resp.data };
-          return { ok: true, categories: resp.data.categories, locations: resp.data.locations, executors: resp.data.executors, meta: resp.data.meta };
+          return { ok: true, categories: resp.data.categories, locations: resp.data.locations, meta: resp.data.meta };
         }
         const err = (resp && resp.data) || (resp && resp.error);
         return { ok: false, error: err || { type: 'UNKNOWN', message: 'Не удалось загрузить справочники' } };
@@ -255,7 +238,7 @@
     const now = Date.now();
     if (!force && dictCache && (now - dictCache.ts < 5 * 60 * 1000)) {
       const d = dictCache.data;
-      fillDropdowns({ categories: d.categories, locations: d.locations, executors: d.executors });
+      fillDropdowns({ categories: d.categories, locations: d.locations });
       lockForm(false);
       const warns = [];
       if (d.meta && d.meta.empty) {
@@ -267,6 +250,7 @@
       }
       if (warns.length) showError(warns.join('. '));
       else hideStatus();
+      validateAll(false);
       return;
     }
     isLoading = true;
@@ -277,7 +261,7 @@
       if (res.ok) {
         (res.categories || []).forEach(c => { c.path = c.completename || c.path || ''; });
         (res.locations || []).forEach(l => { l.path = l.completename || l.path || ''; });
-        fillDropdowns({ categories: res.categories, locations: res.locations, executors: res.executors });
+        fillDropdowns({ categories: res.categories, locations: res.locations });
         lockForm(false);
         const warns = [];
         if (res.meta && res.meta.empty) {
@@ -289,6 +273,7 @@
         }
         if (warns.length) showError(warns.join('. '));
         else hideStatus();
+        validateAll(false);
       } else {
         const err = res.error || {};
         if (gexeAjax && gexeAjax.debug) {
@@ -348,7 +333,9 @@
     assigneeSel.value = '';
     assigneeSel.disabled = true;
     ['name','content','category','location','assignee'].forEach(function(f){ setFieldError(f); });
+    setSubmitError('');
     updatePaths();
+    validateAll(false);
   }
 
   function ensureSuccessModal(){
@@ -461,35 +448,6 @@
       });
       categoriesLoaded = true;
     }
-    if (!executorsLoaded) {
-      const sel = modal.querySelector('#gnt-assignee');
-      if (data.executors && data.executors.length) {
-        sel.innerHTML = '<option value="">—</option>';
-        data.executors.forEach(function(u){
-          const opt = document.createElement('option');
-          opt.value = u.user_id;
-          opt.textContent = u.display_name;
-          if (u.glpi_user_id) {
-            opt.setAttribute('data-glpi-id', u.glpi_user_id);
-          }
-          sel.appendChild(opt);
-        });
-        executorsLoaded = true;
-        sel.disabled = modal.querySelector('#gnt-assign-me').checked;
-        const assignChk = modal.querySelector('#gnt-assign-me');
-        if (assignChk) assignChk.dispatchEvent(new Event('change'));
-      } else {
-        sel.innerHTML = '';
-        const opt = document.createElement('option');
-        opt.value = '';
-        opt.textContent = 'Список исполнителей временно недоступен. Обновите страницу или попробуйте позже';
-        opt.disabled = true;
-        opt.selected = true;
-        sel.appendChild(opt);
-        sel.disabled = true;
-        executorsLoaded = false;
-      }
-    }
     if (data.locations) {
       const list = modal.querySelector('#gnt-location-list');
       if (!list.childElementCount) {
@@ -522,86 +480,115 @@
     return opt ? parseInt(opt.getAttribute('data-id'),10) : 0;
   }
 
-  function submit(){
-    if (!window.gexeAjax || submitLock) return;
-    submitLock = true;
-    setTimeout(()=>{ submitLock = false; }, 3000);
-    hideLoader();
-    const name = modal.querySelector('#gnt-name').value.trim();
-    const content = modal.querySelector('#gnt-content').value.trim();
-    const catInput = modal.querySelector('#gnt-category');
-    const locInput = modal.querySelector('#gnt-location');
-    const catId = getSelectedId('gnt-category-list', catInput.value);
-    const locId = getSelectedId('gnt-location-list', locInput.value);
+  function initAssignees(){
+    const sel = modal.querySelector('#gnt-assignee');
+    const list = (gexeAjax && Array.isArray(gexeAjax.assignees)) ? gexeAjax.assignees : [];
+    sel.innerHTML = '<option value="">—</option>';
+    list.forEach(function(a){
+      const opt = document.createElement('option');
+      opt.value = a.id;
+      opt.textContent = a.name;
+      sel.appendChild(opt);
+    });
+    executorsLoaded = list.length > 0;
+    sel.disabled = modal.querySelector('#gnt-assign-me').checked || !executorsLoaded;
+  }
+
+  function setSubmitError(message){
+    const box = modal.querySelector('.gnt-submit-error');
+    if (!box) return;
+    box.textContent = message || '';
+    box.hidden = !message;
+  }
+
+  function mapError(code){
+    const map = {
+      'SECURITY/NO_CSRF': 'Сессия устарела. Обновите страницу.',
+      not_logged_in: 'Сессия неактивна. Войдите в систему.',
+      not_mapped: 'Профиль не настроен: нет GLPI-ID.',
+      validation: 'Заполните обязательные поля корректно.',
+      rate_limit_client: 'Слишком часто. Повторите через несколько секунд.',
+      sql_error: 'Ошибка сервера. Повторите позже.',
+      bad_response: 'Ошибка сервера. Повторите позже.',
+      network_error: 'Ошибка сервера. Повторите позже.'
+    };
+    return map[code] || 'Ошибка сервера. Повторите позже.';
+  }
+
+  function validateAll(show){
+    const nameEl = modal.querySelector('#gnt-name');
+    const contentEl = modal.querySelector('#gnt-content');
+    const catId = getSelectedId('gnt-category-list', modal.querySelector('#gnt-category').value);
+    const locId = getSelectedId('gnt-location-list', modal.querySelector('#gnt-location').value);
     const assignMe = modal.querySelector('#gnt-assign-me').checked;
     const assigneeSel = modal.querySelector('#gnt-assignee');
-    const assigneeId = assigneeSel.disabled ? 0 : parseInt(assigneeSel.value,10) || 0;
+    const assigneeId = assignMe ? Number(gexeAjax.user_glpi_id || 0) : (parseInt(assigneeSel.value,10) || 0);
     const errors = {};
-    if (name.length < 3 || name.length > 255) errors.name = 'Тема 3-255 символов';
-    if (!content || content.length > 5000) errors.content = 'Описание 1-5000 символов';
-    if (!assignMe && !assigneeId) errors.assignee = 'Обязательное поле';
-    if (Object.keys(errors).length) {
-      Object.keys(errors).forEach(function(f){ setFieldError(f, errors[f]); });
-      showSubmitError('Заполните обязательные поля');
+    const subj = nameEl.value.trim();
+    const cont = contentEl.value.trim();
+    if (subj.length < 3 || subj.length > 255) errors.name = 'Тема 3-255 символов';
+    if (cont.length < 3 || cont.length > 4096) errors.content = 'Описание 3-4096 символов';
+    if (catId <= 0) errors.category = 'Обязательное поле';
+    if (locId <= 0) errors.location = 'Обязательное поле';
+    if (!assignMe && assigneeId <= 0) errors.assignee = 'Обязательное поле';
+    if (show) {
+      ['name','content','category','location','assignee'].forEach(function(f){ setFieldError(f, errors[f]); });
+    } else {
+      ['name','content','category','location','assignee'].forEach(function(f){ setFieldError(f); });
+    }
+    const valid = Object.keys(errors).length === 0;
+    const btn = modal.querySelector('.gnt-submit');
+    if (btn) btn.disabled = !valid;
+    return { valid: valid, data: { subject: subj, content: cont, category_id: catId, location_id: locId, assignee_glpi_id: assigneeId, is_self_assignee: assignMe } };
+  }
+
+  function showToast(text){
+    const el = document.createElement('div');
+    el.className = 'gnt-toast';
+    el.textContent = text;
+    document.body.appendChild(el);
+    requestAnimationFrame(()=>{ el.classList.add('show'); });
+    setTimeout(()=>{ el.classList.remove('show'); setTimeout(()=>el.remove(),300); },3000);
+  }
+
+  function submit(){
+    if (!window.gexeAjax || submitLock) return;
+    const v = validateAll(true);
+    if (!v.valid) {
+      setSubmitError('Заполните обязательные поля корректно.');
       return;
     }
-    const payload = {
-      subject: name,
-      description: content,
-      category_id: catId,
-      location_id: locId,
-      assign_me: assignMe ? 1 : 0,
-      executor_id: assigneeId
-    };
-    const makeBody = () => {
-      const params = new URLSearchParams();
-      params.append('action','glpi_create_ticket');
-      params.append('nonce', gexeAjax.nonce);
-      Object.keys(payload).forEach(k=>{ if(payload[k] !== undefined && payload[k] !== null) params.append(k, payload[k]); });
-      return params.toString();
-    };
+    submitLock = true;
+    setTimeout(()=>{ submitLock = false; }, 700);
+    setSubmitError('');
     const btn = modal.querySelector('.gnt-submit');
-    const oldText = btn.textContent;
     btn.disabled = true;
     btn.classList.add('is-loading');
-    btn.textContent = 'Создаю...';
-    showSubmitStatus('Создаю...', 'loading');
-    const send = (retry) => {
-      return fetch(gexeAjax.url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: makeBody()
-      }).then(r=>r.json().then(data=>({status:r.status,data:data}))).then(resp=>{
-        if (resp.status === 403 && resp.data && resp.data.error === 'AJAX_FORBIDDEN' && !retry) {
-          return refreshNonce().then(()=>send(true));
+    const params = new URLSearchParams();
+    params.append('action','glpi_create_ticket_sql');
+    params.append('nonce', gexeAjax.nonce);
+    params.append('subject', v.data.subject);
+    params.append('content', v.data.content);
+    params.append('category_id', v.data.category_id);
+    params.append('location_id', v.data.location_id);
+    params.append('assignee_glpi_id', v.data.assignee_glpi_id);
+    params.append('is_self_assignee', v.data.is_self_assignee ? 1 : 0);
+    fetch(gexeAjax.url, { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body: params.toString() })
+      .then(r=>r.json().catch(()=>({ok:false,code:'bad_response'})))
+      .then(data=>{
+        if (data.ok) {
+          close();
+          showToast('Заявка #' + data.ticket_id + ' создана');
+          window.dispatchEvent(new CustomEvent('gexe:tickets:refresh', {detail:{ticketId:data.ticket_id}}));
+        } else {
+          setSubmitError(mapError(data.code));
         }
-        return resp;
+      })
+      .catch(()=>{ setSubmitError(mapError('network_error')); })
+      .finally(()=>{
+        btn.classList.remove('is-loading');
+        validateAll(false);
       });
-    };
-    send(false).then(resp=>{
-      const data = resp.data || resp;
-      if (data && data.success) {
-        showSubmitStatus('Заявка №'+data.id+' создана','success');
-        close();
-        if (data.id) {
-          showSuccessModal(data.id);
-          window.dispatchEvent(new CustomEvent('gexe:tickets:refresh', {detail:{ticketId:data.id}}));
-        }
-      } else {
-        const msg = data && data.error && data.error.message ? data.error.message : 'Ошибка создания заявки';
-        showSubmitStatus(msg,'error');
-        if (data && data.error && data.error.details) {
-          Object.keys(data.error.details).forEach(function(f){ setFieldError(f, data.error.details[f]); });
-        }
-      }
-    }).catch(err=>{
-      logClientError((err && err.code ? err.code + ': ' : '') + (err && err.message ? err.message : String(err)));
-      showSubmitStatus(err && err.message ? err.message : 'Ошибка отправки','error');
-    }).finally(()=>{
-      btn.disabled = false;
-      btn.classList.remove('is-loading');
-      btn.textContent = oldText;
-    });
   }
 
   function updatePaths(){
