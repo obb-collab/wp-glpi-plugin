@@ -14,8 +14,6 @@ if (!defined('ABSPATH')) exit;
 // Path constants
 if (!defined('GEXE_INC')) define('GEXE_INC', plugin_dir_path(__FILE__) . 'includes/');
 if (!defined('GEXE_TPL')) define('GEXE_TPL', plugin_dir_path(__FILE__) . 'templates/');
-// Ensure constants available early for nested includes
-if (!defined('GEXE_ROOT_FILE')) define('GEXE_ROOT_FILE', __FILE__);
 
 require_once __DIR__ . '/includes/helpers/utils.php';
 require_once __DIR__ . '/includes/glpi-profile-fields.php';

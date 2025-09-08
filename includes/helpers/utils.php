@@ -2,7 +2,6 @@
 if (!defined('ABSPATH')) exit;
 // (moved to includes/helpers/)
 
-// this file is /includes/helpers; logger at /includes/logger.php, user-map at /includes/auth/user-map.php
 require_once dirname(__DIR__) . '/logger.php';
 require_once dirname(__DIR__) . '/auth/user-map.php';
 
