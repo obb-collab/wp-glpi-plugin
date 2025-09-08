@@ -307,6 +307,13 @@ button.disabled{opacity:.5;cursor:not-allowed;}
   resize:vertical;
 }
 
+/* Form alert under submit button */
+.glpi-create-modal .form-alert{
+  margin-top:8px;
+  color:#dc2626;
+  font-size:14px;
+}
+
 /* Выпадающие (общие) */
 .glpi-filter-dropdown .glpi-filter-menu{ background:#0f172a; border:1px solid #334155; border-radius:8px; box-shadow:0 6px 12px rgba(0,0,0,.3); }
 
