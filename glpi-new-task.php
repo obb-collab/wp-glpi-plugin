@@ -411,6 +411,22 @@ function glpi_ajax_create_ticket_api() {
 
     require_once __DIR__ . '/includes/glpi-api.php';
 
+    $start      = microtime(true);
+    $log_init   = 'err:unknown';
+    $log_create = 'skip';
+    $log_assign = 'skip';
+    $ticket_id  = 0;
+
+    $token = gexe_glpi_api_get_session_token();
+    if (is_wp_error($token)) {
+        $err = $token->get_error_code();
+        $log_init = 'err:' . $err;
+        $elapsed = (int) round((microtime(true) - $start) * 1000);
+        error_log('[new-ticket-api] initSession=' . $log_init . ' create=' . $log_create . ' assign=' . $log_assign . ' tid=0 elapsed=' . $elapsed);
+        wp_send_json(['ok' => false, 'code' => $err]);
+    }
+    $log_init = 'ok';
+
     $search = '/search/Ticket?criteria[0][field]=1&criteria[0][searchtype]=contains&criteria[0][value]=' . rawurlencode($subject) .
         '&criteria[1][link]=AND&criteria[1][field]=12&criteria[1][searchtype]=equals&criteria[1][value]=' . $cat_id .
         '&criteria[2][link]=AND&criteria[2][field]=82&criteria[2][searchtype]=equals&criteria[2][value]=' . $loc_id .
@@ -422,12 +438,13 @@ function glpi_ajax_create_ticket_api() {
         if ($dup_date && $dup_date >= time() - 60) {
             $dup_id = isset($first['2']) ? (int) $first['2'] : 0;
             if ($dup_id) {
+                $elapsed = (int) round((microtime(true) - $start) * 1000);
+                error_log('[new-ticket-api] initSession=' . $log_init . ' create=skip assign=skip tid=' . $dup_id . ' elapsed=' . $elapsed);
                 wp_send_json(['ok' => true, 'code' => 'already_exists', 'ticket_id' => $dup_id]);
             }
         }
     }
 
-    $start = microtime(true);
     $r1 = gexe_glpi_api_request('POST', '/Ticket', [
         'input' => [
             'name' => $subject,
@@ -438,27 +455,34 @@ function glpi_ajax_create_ticket_api() {
             'type' => 1,
         ],
     ]);
-    $elapsed = (int) round((microtime(true) - $start) * 1000);
     if (is_wp_error($r1)) {
-        error_log('[new-ticket-api] wp_user=' . $wp_uid . ' assignee_glpi=' . $assignee_glpi_id . ' cat=' . $cat_id . ' loc=' . $loc_id . ' result=err code=api_unreachable ticket_id=0 elapsed=' . $elapsed);
+        $log_create = 'err:api_unreachable';
+        $elapsed = (int) round((microtime(true) - $start) * 1000);
+        error_log('[new-ticket-api] initSession=' . $log_init . ' create=' . $log_create . ' assign=' . $log_assign . ' tid=0 elapsed=' . $elapsed);
         wp_send_json(['ok' => false, 'code' => 'api_unreachable']);
     }
     $code1 = (int) $r1['code'];
     $body1 = $r1['body'];
     if ($code1 === 401 || $code1 === 403) {
-        error_log('[new-ticket-api] wp_user=' . $wp_uid . ' assignee_glpi=' . $assignee_glpi_id . ' cat=' . $cat_id . ' loc=' . $loc_id . ' result=err code=api_auth ticket_id=0 elapsed=' . $elapsed);
+        $log_create = 'err:api_auth';
+        $elapsed = (int) round((microtime(true) - $start) * 1000);
+        error_log('[new-ticket-api] initSession=' . $log_init . ' create=' . $log_create . ' assign=' . $log_assign . ' tid=0 elapsed=' . $elapsed);
         wp_send_json(['ok' => false, 'code' => 'api_auth']);
     }
     if ($code1 >= 400) {
-        $ecode = ($code1 === 400) ? 'api_validation' : 'api_unreachable';
-        error_log('[new-ticket-api] wp_user=' . $wp_uid . ' assignee_glpi=' . $assignee_glpi_id . ' cat=' . $cat_id . ' loc=' . $loc_id . ' result=err code=' . $ecode . ' ticket_id=0 elapsed=' . $elapsed);
-        wp_send_json(['ok' => false, 'code' => $ecode]);
+        $log_create = ($code1 === 400) ? 'err:api_validation' : 'err:api_unreachable';
+        $elapsed = (int) round((microtime(true) - $start) * 1000);
+        error_log('[new-ticket-api] initSession=' . $log_init . ' create=' . $log_create . ' assign=' . $log_assign . ' tid=0 elapsed=' . $elapsed);
+        wp_send_json(['ok' => false, 'code' => ($code1 === 400) ? 'api_validation' : 'api_unreachable']);
     }
     $ticket_id = isset($body1['id']) ? (int) $body1['id'] : 0;
     if ($ticket_id <= 0) {
-        error_log('[new-ticket-api] wp_user=' . $wp_uid . ' assignee_glpi=' . $assignee_glpi_id . ' cat=' . $cat_id . ' loc=' . $loc_id . ' result=err code=api_unreachable ticket_id=0 elapsed=' . $elapsed);
+        $log_create = 'err:api_unreachable';
+        $elapsed = (int) round((microtime(true) - $start) * 1000);
+        error_log('[new-ticket-api] initSession=' . $log_init . ' create=' . $log_create . ' assign=' . $log_assign . ' tid=0 elapsed=' . $elapsed);
         wp_send_json(['ok' => false, 'code' => 'api_unreachable']);
     }
+    $log_create = 'ok';
 
     $r2 = gexe_glpi_api_request('POST', '/Ticket/' . $ticket_id . '/Ticket_User', [
         'input' => [
@@ -468,10 +492,14 @@ function glpi_ajax_create_ticket_api() {
         ],
     ]);
     if (is_wp_error($r2) || (int) $r2['code'] >= 400) {
-        error_log('[new-ticket-api] wp_user=' . $wp_uid . ' assignee_glpi=' . $assignee_glpi_id . ' cat=' . $cat_id . ' loc=' . $loc_id . ' result=err code=assign_failed ticket_id=' . $ticket_id . ' elapsed=' . $elapsed);
+        $log_assign = 'err:assign_failed';
+        $elapsed = (int) round((microtime(true) - $start) * 1000);
+        error_log('[new-ticket-api] initSession=' . $log_init . ' create=' . $log_create . ' assign=' . $log_assign . ' tid=' . $ticket_id . ' elapsed=' . $elapsed);
         wp_send_json(['ok' => false, 'code' => 'assign_failed', 'ticket_id' => $ticket_id]);
     }
+    $log_assign = 'ok';
 
-    error_log('[new-ticket-api] wp_user=' . $wp_uid . ' assignee_glpi=' . $assignee_glpi_id . ' cat=' . $cat_id . ' loc=' . $loc_id . ' result=ok code=created ticket_id=' . $ticket_id . ' elapsed=' . $elapsed);
+    $elapsed = (int) round((microtime(true) - $start) * 1000);
+    error_log('[new-ticket-api] initSession=' . $log_init . ' create=' . $log_create . ' assign=' . $log_assign . ' tid=' . $ticket_id . ' elapsed=' . $elapsed);
     wp_send_json(['ok' => true, 'ticket_id' => $ticket_id]);
 }
