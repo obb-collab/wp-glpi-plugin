@@ -489,18 +489,25 @@
   }
 
   // -------- Загрузка справочников для модалки --------
-  function fetchDict(which) {
+  function fetchFormData() {
     const ajax = window.gexeAjax || window.glpiAjax;
-    if (!ajax || !ajax.url) return Promise.resolve({ ok: false, code: 'network_error' });
+    if (!ajax || !ajax.url) {
+      return Promise.resolve({ ok: false, source: 'error', error: { code: 'network_error', message: 'network_error' } });
+    }
     const fd = new FormData();
-    fd.append('action', 'glpi_get_' + which);
+    fd.append('action', 'gexe_get_form_data');
     if (ajax.nonce) fd.append('nonce', ajax.nonce);
     return fetch(ajax.url, { method: 'POST', body: fd })
       .then(r => r.json())
-      .catch(() => ({ ok: false, code: 'network_error' }));
+      .then(res => {
+        if (res && (res.success || res.ok) && res.data) {
+          return { ok: true, source: res.data.source || 'db', data: res.data };
+        }
+        const err = (res && res.error) || {};
+        return { ok: false, source: 'error', error: err };
+      })
+      .catch(() => ({ ok: false, source: 'error', error: { code: 'network_error', message: 'network_error' } }));
   }
-
-  const dictLocks = {};
 
   function fillSelect(sel, list) {
     const el = document.querySelector(sel);
@@ -545,7 +552,6 @@
       loader.hidden = false;
     }
 
-    // Disable all form controls until dictionaries are loaded.
     $$('input,select,textarea,button.gnt-submit', modal).forEach(el => {
       el.classList.add('disabled');
       el.disabled = true;
@@ -553,9 +559,6 @@
 
     if (execSel) {
       fillAssigneeOptions(execSel, '—');
-      if (assignChk && assignChk.checked && glpiId) {
-        execSel.value = String(glpiId);
-      }
       execSel.disabled = true;
     }
 
@@ -576,74 +579,57 @@
       }
     };
 
-    const loadOne = (which, el) => {
-      if (!el) return Promise.resolve(null);
-      if (dictLocks[which]) return dictLocks[which];
-      setStatus(el, 'loading', 'Загрузка…');
-      const p = fetchDict(which).then(res => {
-        if (res && res.ok) {
-          if (which === 'categories') fillSelect('#gnt-category', res.list);
-          else if (which === 'locations') fillSelect('#gnt-location', res.list);
-          else if (which === 'executors') fillAssigneeOptions(el, '—', res.list);
+    setStatus(catSel, 'loading', 'Загрузка…');
+    setStatus(locSel, 'loading', 'Загрузка…');
+    if (execSel && glpiId > 0) setStatus(execSel, 'loading', 'Загрузка…');
+
+    const retryLoad = debounce(() => loadNewTaskDicts(), 700);
+
+    fetchFormData().then(res => {
+      if (res.ok) {
+        const d = res.data || {};
+        fillSelect('#gnt-category', d.categories || []);
+        fillSelect('#gnt-location', d.locations || []);
+        if (execSel) {
+          fillAssigneeOptions(execSel, '—', d.executors || []);
+          execSel.disabled = assignChk && assignChk.checked;
+          execSel.classList.remove('disabled');
+        }
+        $$('input,select,textarea', modal).forEach(el => {
+          if (el === execSel) return;
           el.disabled = false;
           el.classList.remove('disabled');
-          setStatus(el, '', '');
-        } else if (res && res.code === 'dict_empty') {
-          const emptyMap = {
-            categories: 'Категории не найдены',
-            locations: 'Местоположения не найдены',
-            executors: 'Исполнители не найдены'
-          };
-          setStatus(el, 'error', emptyMap[which] || 'Нет данных', () => loadOne(which, el));
-        } else {
-          const errMap = {
-            categories: 'Ошибка загрузки категорий',
-            locations: 'Ошибка загрузки местоположений',
-            executors: 'Ошибка загрузки исполнителей'
-          };
-          setStatus(el, 'error', errMap[which] || 'Не удалось загрузить', () => loadOne(which, el));
+        });
+        if (submit) { submit.disabled = false; submit.classList.remove('disabled'); }
+        setStatus(catSel, '', '');
+        setStatus(locSel, '', '');
+        if (execSel) setStatus(execSel, '', '');
+        if (loader) loader.hidden = true;
+        if ((window.gexeAjax || window.glpiAjax || {}).debug) {
+          console.log('wp-glpi:form-data source', res.source);
         }
-        return res;
-      }).finally(() => {
-        delete dictLocks[which];
-      });
-      dictLocks[which] = p;
-      return p;
-    };
-
-    const promises = [
-      loadOne('categories', catSel),
-      loadOne('locations', locSel)
-    ];
-    let execPromise = null;
-    if (execSel && glpiId > 0) {
-      execPromise = loadOne('executors', execSel);
-      promises.push(execPromise);
-    } else if (execSel) {
-      setStatus(execSel, 'error', 'Исполнители недоступны');
-    }
-
-    Promise.all(promises).then(results => {
-      const cat = results[0];
-      const loc = results[1];
-      const exec = execPromise ? results[2] : null;
-      // Enable common fields once dictionaries have finished loading
-      $$('input,select,textarea', modal).forEach(el => {
-        if (el === catSel || el === locSel || el === execSel) return; // handled above
-        el.disabled = false;
-        el.classList.remove('disabled');
-      });
-      if (execSel && glpiId > 0 && exec && exec.ok) {
-        execSel.classList.remove('disabled');
-        execSel.disabled = assignChk && assignChk.checked;
-      }
-      const allOk = cat && cat.ok && loc && loc.ok && (!execSel || glpiId <= 0 || (exec && exec.ok));
-      if (submit && allOk) {
-        submit.disabled = false;
-        submit.classList.remove('disabled');
+      } else {
+        const err = res.error || {};
+        const msg = err.message || err.code || '';
+        setStatus(catSel, 'error', 'Ошибка загрузки категорий', retryLoad);
+        setStatus(locSel, 'error', 'Ошибка загрузки местоположений', retryLoad);
+        if (execSel && glpiId > 0) setStatus(execSel, 'error', 'Ошибка загрузки исполнителей', retryLoad);
+        if (loader) {
+          loader.innerHTML = '';
+          const span = document.createElement('span');
+          span.className = 'error';
+          span.textContent = msg ? 'Ошибка загрузки справочников: ' + msg : 'Ошибка загрузки справочников';
+          loader.appendChild(span);
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'gnt-retry';
+          btn.textContent = 'Повторить';
+          btn.addEventListener('click', () => { if (modal.__dictLoading) return; btn.disabled = true; loader.innerHTML = ''; loader.hidden = true; retryLoad(); });
+          loader.appendChild(btn);
+          loader.hidden = false;
+        }
       }
     }).finally(() => {
-      if (loader) { loader.hidden = true; loader.innerHTML = ''; }
       modal.__dictLoading = false;
       bindNewTaskForm(modal);
     });
