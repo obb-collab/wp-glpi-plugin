@@ -10,7 +10,7 @@ if (!defined('ABSPATH')) { exit; } // только из WP
 add_shortcode('glpi_categories', function () {
 
     // 1) Подключаем модуль инициализации БД GLPI
-    require_once dirname(__DIR__) . '/bootstrap/db-setup.php';
+    require_once __DIR__ . '/glpi-db-setup.php';
 
     // 2) Проверяем готовый $glpi_db (wpdb)
     global $glpi_db;

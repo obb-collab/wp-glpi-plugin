@@ -124,7 +124,7 @@ function gexe_cat_slug($leaf) {
 
   <!-- Панель фильтрации -->
   <div class="glpi-filtering-panel">
-    <?php include __DIR__ . '/header.php'; ?>
+    <?php include __DIR__ . '/glpi-header.php'; ?>
   </div>
 
 
