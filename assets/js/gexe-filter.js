@@ -502,16 +502,6 @@
 
   const dictLocks = {};
 
-  // expose executors loader for reuse by other modules
-  window.GEXEExecutors = {
-    load: () => fetchDict('executors').then(res => {
-      if (res && res.ok && Array.isArray(res.list)) {
-        return res.list;
-      }
-      throw res;
-    })
-  };
-
   function fillSelect(sel, list) {
     const el = document.querySelector(sel);
     if (!el) return;
