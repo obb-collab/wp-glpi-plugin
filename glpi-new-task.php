@@ -10,8 +10,6 @@ if (!defined('ABSPATH')) exit;
 
 require_once __DIR__ . '/glpi-db-setup.php';
 require_once __DIR__ . '/inc/user-map.php';
-require_once __DIR__ . '/includes/glpi-form-data.php';
-require_once __DIR__ . '/includes/executors-cache.php';
 
 add_action('wp_enqueue_scripts', function () {
     wp_register_style('glpi-new-task', plugin_dir_url(__FILE__) . 'glpi-new-task.css', [], '1.0.0');
@@ -45,10 +43,128 @@ function glpi_nt_verify_nonce() {
 }
 
 // -------- Dictionaries --------
-add_action('wp_ajax_glpi_load_dicts', 'gexe_get_form_data');
-add_action('wp_ajax_glpi_get_categories', 'gexe_get_form_data');
-add_action('wp_ajax_glpi_get_locations', 'gexe_get_form_data');
-add_action('wp_ajax_glpi_get_executors', 'gexe_get_form_data');
+/* legacy loader (rollback)
+add_action('wp_ajax_glpi_get_categories', 'glpi_ajax_get_categories');
+function glpi_ajax_get_categories() { old implementation }
+
+add_action('wp_ajax_glpi_get_locations', 'glpi_ajax_get_locations');
+function glpi_ajax_get_locations() { old implementation }
+
+add_action('wp_ajax_glpi_get_executors', 'glpi_ajax_get_executors');
+function glpi_ajax_get_executors() { old implementation }
+
+function glpi_db_get_executors() { old implementation }
+*/
+
+add_action('wp_ajax_glpi_load_dicts', 'glpi_ajax_load_dicts');
+
+function glpi_get_wp_executors(): array {
+    global $wpdb, $glpi_db;
+    $rows = $wpdb->get_results(
+        "SELECT user_id, meta_value FROM {$wpdb->usermeta} WHERE meta_key='glpi_user_id' AND meta_value <> ''",
+        ARRAY_A
+    );
+    if (!$rows) {
+        return [];
+    }
+    $map = [];
+    $ids = [];
+    foreach ($rows as $r) {
+        $gid = (int) ($r['meta_value'] ?? 0);
+        if ($gid > 0) {
+            $map[$gid] = (int) ($r['user_id'] ?? 0);
+            $ids[] = $gid;
+        }
+    }
+    if (empty($ids)) {
+        return [];
+    }
+    $place = implode(',', array_fill(0, count($ids), '%d'));
+    $sql = $glpi_db->prepare(
+        "SELECT u.id, u.name, u.realname, u.firstname FROM glpi_users u WHERE u.id IN ($place) ORDER BY u.realname COLLATE utf8mb4_unicode_ci ASC, u.firstname COLLATE utf8mb4_unicode_ci ASC",
+        ...$ids
+    );
+    $grows = $glpi_db->get_results($sql, ARRAY_A);
+    $out = [];
+    foreach ($grows as $g) {
+        $gid = (int) ($g['id'] ?? 0);
+        if (!$gid || !isset($map[$gid])) continue;
+        $label = trim(($g['realname'] ?? '') . ' ' . ($g['firstname'] ?? ''));
+        $uname = $g['name'] ?? '';
+        if ($uname === 'vks_m5_local' || $label === '') {
+            $label = 'Куткин Павел';
+        }
+        $out[] = [
+            'user_id'      => $map[$gid],
+            'display_name' => $label,
+            'glpi_user_id' => $gid,
+        ];
+    }
+    usort($out, function ($a, $b) {
+        return strcmp(mb_strtolower($a['display_name'], 'UTF-8'), mb_strtolower($b['display_name'], 'UTF-8'));
+    });
+    return $out;
+}
+
+function glpi_ajax_load_dicts() {
+    glpi_nt_verify_nonce();
+    if (!is_user_logged_in()) {
+        wp_send_json_error([
+            'error' => [
+                'type'    => 'SECURITY',
+                'scope'   => 'all',
+                'code'    => 'NO_AUTH',
+                'message' => 'Пользователь не авторизован',
+            ]
+        ]);
+    }
+    try {
+        $pdo = glpi_get_pdo();
+        $pdo->beginTransaction();
+
+        // Entity-based filtering temporarily disabled. Legacy code preserved below for future restoration.
+        /*
+        $use_filter = defined('WP_GLPI_FILTER_CATALOGS_BY_ENTITY') && WP_GLPI_FILTER_CATALOGS_BY_ENTITY;
+        $allowed = [];
+        if ($use_filter) {
+            // ... previous entity filtering logic ...
+        }
+        */
+
+        $categories = $pdo->query(
+            "SELECT c.id, c.name, c.completename FROM glpi_itilcategories AS c WHERE c.is_helpdeskvisible = 1 ORDER BY c.completename ASC"
+        )->fetchAll(PDO::FETCH_ASSOC);
+
+        $locations = $pdo->query(
+            "SELECT l.id, l.name, l.completename FROM glpi_locations AS l ORDER BY l.completename ASC"
+        )->fetchAll(PDO::FETCH_ASSOC);
+
+        $pdo->commit();
+
+        $executors = glpi_get_wp_executors();
+        $meta = ['empty' => ['categories' => empty($categories), 'locations' => empty($locations)]];
+
+        error_log('[wp-glpi:new-task] catalogs loaded: cats=' . count($categories) . ', locs=' . count($locations));
+
+        wp_send_json_success([
+            'categories' => $categories,
+            'locations'  => $locations,
+            'executors'  => $executors,
+            'meta'       => $meta,
+        ]);
+    } catch (PDOException $e) {
+        if (isset($pdo) && $pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        error_log('[wp-glpi:new-task] SQL locations: ' . $e->getMessage());
+        wp_send_json_error([
+            'type'    => 'SQL',
+            'scope'   => 'locations',
+            'message' => 'Ошибка SQL при загрузке локаций',
+            'details' => $e->getMessage(),
+        ]);
+    }
+}
 
 // -------- Create ticket --------
 add_action('wp_ajax_glpi_create_ticket', 'glpi_ajax_create_ticket');
@@ -78,10 +194,10 @@ function glpi_ajax_create_ticket() {
     if (mb_strlen($desc, 'UTF-8') === 0 || mb_strlen($desc, 'UTF-8') > 5000) {
         $errors['content'] = 'Описание 1-5000 символов';
     }
-    [$execs] = gexe_get_wp_executors_cached();
+    $executors = glpi_get_wp_executors();
     $allowed = [];
-    foreach ($execs as $e) {
-        $allowed[$e['id']] = $e['glpi_user_id'];
+    foreach ($executors as $e) {
+        $allowed[$e['user_id']] = $e['glpi_user_id'];
     }
     $executor_glpi = 0;
     if ($executor_wp > 0) {
