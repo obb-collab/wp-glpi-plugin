@@ -1,6 +1,5 @@
 <?php
 if (!defined('ABSPATH')) exit;
-// NOTE: This patch only adds per-user token infrastructure. No call sites are changed.
 
 global $glpi_db;
 if (!isset($glpi_db) || !($glpi_db instanceof wpdb)) {
@@ -419,7 +418,7 @@ function glpi_db_get_locations() {
  * Create ticket transaction.
  *
  * @param array $payload
- * @return array{ok:bool,code?:string,ticket_id?:int,assigned?:int|null}
+ * @return array{ok:bool,code?:string,msg?:string,ticket_id?:int,assigned?:int|null,message?:string}
  */
 function glpi_db_create_ticket(array $payload) {
     global $glpi_db;
@@ -442,14 +441,11 @@ function glpi_db_create_ticket(array $payload) {
         return ['ok' => false, 'code' => 'validation'];
     }
 
-    $glpi_db->query('START TRANSACTION');
-
     $is_leaf = (int)$glpi_db->get_var($glpi_db->prepare(
         "SELECT COUNT(*) FROM glpi_itilcategories c WHERE c.id=%d AND c.is_helpdeskvisible=1 AND NOT EXISTS (SELECT 1 FROM glpi_itilcategories ch WHERE ch.completename LIKE CONCAT(c.completename, ' > %%'))",
         $cat
     ));
     if (!$is_leaf) {
-        $glpi_db->query('ROLLBACK');
         return ['ok' => false, 'code' => 'invalid_category'];
     }
 
@@ -459,34 +455,22 @@ function glpi_db_create_ticket(array $payload) {
             $loc
         ));
         if (!$loc_leaf) {
-            $glpi_db->query('ROLLBACK');
             return ['ok' => false, 'code' => 'invalid_location'];
         }
     } else {
         $loc = null;
     }
 
+    // Определить назначенного исполнителя (как было в SQL-версии).
     $assigned = $assign_me ? $author : $exec;
     $user_row = $glpi_db->get_row($glpi_db->prepare(
         'SELECT id, entities_id FROM glpi_users WHERE id=%d AND is_deleted=0',
         $assigned
     ), ARRAY_A);
     if (!$user_row) {
-        $glpi_db->query('ROLLBACK');
         return ['ok' => false, 'code' => 'invalid_executor'];
     }
     $entities_id = (int)$user_row['entities_id'];
-
-    $dup_id = $glpi_db->get_var($glpi_db->prepare(
-        'SELECT id FROM glpi_tickets WHERE users_id_recipient=%d AND name=%s AND content=%s AND TIMESTAMPDIFF(SECOND,date,NOW())<=300 LIMIT 1',
-        $author,
-        $name,
-        $desc
-    ));
-    if ($dup_id) {
-        $glpi_db->query('COMMIT');
-        return ['ok' => true, 'ticket_id' => (int)$dup_id, 'message' => 'already_exists'];
-    }
 
     $tz = wp_timezone();
     $now = new DateTime('now', $tz);
@@ -497,48 +481,76 @@ function glpi_db_create_ticket(array $payload) {
     $due->setTime(18, 0, 0);
     $due_str = $due->format('Y-m-d H:i:s');
 
-    $sql = $glpi_db->prepare(
-        'INSERT INTO glpi_tickets (name, content, status, itilcategories_id, locations_id, entities_id, users_id_lastupdater, users_id_recipient, date, date_mod, due_date) VALUES (%s,%s,1,%d,%s,%d,%d,%d,NOW(),NOW(),%s)',
-        $name,
-        $desc,
-        $cat,
-        $loc,
-        $entities_id,
-        $author,
-        $author,
-        $due_str
-    );
-    if (!$glpi_db->query($sql)) {
-        $err = $glpi_db->last_error;
-        $glpi_db->query('ROLLBACK');
-        return ['ok' => false, 'code' => 'sql_error', 'msg' => $err];
-    }
-    $ticket_id = (int)$glpi_db->insert_id;
+    /**
+     * -------- NEW: create via GLPI REST API --------
+     * Поля соответствуют прежней SQL-логике.
+     */
+    $endpoint = gexe_glpi_api_url() . '/Ticket';
+    $input = [
+        'name'                 => $name,
+        'content'              => $desc,
+        'status'               => 1,
+        'itilcategories_id'    => $cat,
+        'locations_id'         => ($loc > 0 ? $loc : null),
+        'entities_id'          => $entities_id,
+        '_users_id_requester'  => $author,
+        '_users_id_assign'     => $assigned,
+        'due_date'             => $due_str,
+    ];
 
-    $sql = $glpi_db->prepare('INSERT INTO glpi_tickets_users (tickets_id, users_id, type) VALUES (%d,%d,1)', $ticket_id, $author);
-    if (!$glpi_db->query($sql)) {
-        $err = $glpi_db->last_error;
-        $glpi_db->query('ROLLBACK');
-        return ['ok' => false, 'code' => 'sql_error', 'msg' => $err];
-    }
-    $sql = $glpi_db->prepare('INSERT INTO glpi_tickets_users (tickets_id, users_id, type) VALUES (%d,%d,2)', $ticket_id, $assigned);
-    if (!$glpi_db->query($sql)) {
-        $err = $glpi_db->last_error;
-        $glpi_db->query('ROLLBACK');
-        return ['ok' => false, 'code' => 'sql_error', 'msg' => $err];
+    // Анти-дубликат: лёгкая проверка перед API-вставкой (как было).
+    $dup_id = $glpi_db->get_var($glpi_db->prepare(
+        'SELECT id FROM glpi_tickets WHERE users_id_recipient=%d AND name=%s AND content=%s AND TIMESTAMPDIFF(SECOND,date,NOW())<=300 LIMIT 1',
+        $author, $name, $desc
+    ));
+    if ($dup_id) {
+        return ['ok' => true, 'ticket_id' => (int)$dup_id, 'message' => 'already_exists'];
     }
 
-    $sql = $glpi_db->prepare(
-        "INSERT INTO glpi_itilfollowups (items_id, itemtype, users_id, is_private, content, date) VALUES (%d,'Ticket',%d,1,%s,NOW())",
-        $ticket_id,
-        $author,
-        'Создано через WordPress'
-    );
-    $glpi_db->query($sql);
+    $args = [
+        'headers' => gexe_glpi_api_headers_current(),
+        'timeout' => 10,
+        'body'    => wp_json_encode(['input' => $input], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+    ];
+    $resp = wp_remote_post($endpoint, $args);
+    if (is_wp_error($resp)) {
+        return ['ok' => false, 'code' => 'api_network', 'msg' => $resp->get_error_message()];
+    }
+    $code = (int) wp_remote_retrieve_response_code($resp);
+    $body = wp_remote_retrieve_body($resp);
+    $json = json_decode($body, true);
+    if ($code === 201 && is_array($json) && !empty($json['id'])) {
+        $ticket_id = (int)$json['id'];
+        // Добавим приватный followup «Создано через WordPress» (как раньше), неблокирующе.
+        $fu = [
+            'itemtype'  => 'Ticket',
+            'items_id'  => $ticket_id,
+            'content'   => 'Создано через WordPress',
+            'is_private'=> 1,
+            'users_id'  => $author,
+        ];
+        $fu_args = [
+            'headers' => gexe_glpi_api_headers_current(),
+            'timeout' => 6,
+            'body'    => wp_json_encode(['input' => $fu], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+        ];
+        $fu_ep = gexe_glpi_api_url() . '/ITILFollowup';
+        $fu_resp = wp_remote_post($fu_ep, $fu_args);
+        // Ошибку followup не считаем фатальной: продолжаем, даже если не удалось.
+        return ['ok' => true, 'ticket_id' => $ticket_id, 'message' => 'created'];
+    }
+    // Диагностика кода ответа
+    if ($code === 401 || $code === 403) {
+        return ['ok' => false, 'code' => 'api_auth', 'msg' => 'GLPI auth denied'];
+    }
+    if ($code >= 500) {
+        return ['ok' => false, 'code' => 'api_server', 'msg' => 'GLPI server error'];
+    }
+    return ['ok' => false, 'code' => 'api_failed', 'msg' => (string)$body];
 
-    $glpi_db->query('COMMIT');
-    return ['ok' => true, 'ticket_id' => $ticket_id, 'message' => 'created'];
+    // --- END REST path ---
 }
+
 
 /**
  * Load status IDs from glpi_itilstatuses and map common names.
