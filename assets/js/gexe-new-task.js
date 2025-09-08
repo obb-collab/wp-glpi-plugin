@@ -67,6 +67,7 @@
         </div>
         <div class="gnt-footer">
           <button type="button" class="gnt-submit">Создать заявку</button>
+          <div id="gnt-form-alert" class="form-alert" hidden></div>
         </div>
       </div>
     `;
@@ -167,6 +168,22 @@
         setTimeout(retry, 0);
       });
     }
+  }
+
+  function showFormAlert(message, details){
+    const box = modal.querySelector('#gnt-form-alert');
+    if (!box) return;
+    let html = esc(message);
+    if (details) html += '<details><code>' + esc(details) + '</code></details>';
+    box.innerHTML = html;
+    box.hidden = false;
+  }
+
+  function clearFormAlert(){
+    const box = modal.querySelector('#gnt-form-alert');
+    if (!box) return;
+    box.hidden = true;
+    box.innerHTML = '';
   }
 
   function showSubmitError(message){
@@ -324,7 +341,9 @@
     buildModal();
     modal.classList.add('open');
     document.body.classList.add('glpi-modal-open');
-    startDictLoad(false);
+    loadCategories();
+    loadLocations();
+    loadExecutors();
     updatePaths();
   }
 
@@ -349,6 +368,7 @@
     assigneeSel.disabled = true;
     ['name','content','category','location','assignee'].forEach(function(f){ setFieldError(f); });
     updatePaths();
+    clearFormAlert();
   }
 
   function ensureSuccessModal(){
@@ -526,7 +546,7 @@
     if (!window.gexeAjax || submitLock) return;
     submitLock = true;
     setTimeout(()=>{ submitLock = false; }, 3000);
-    hideLoader();
+    clearFormAlert();
     const name = modal.querySelector('#gnt-name').value.trim();
     const content = modal.querySelector('#gnt-content').value.trim();
     const catInput = modal.querySelector('#gnt-category');
@@ -542,7 +562,7 @@
     if (!assignMe && !assigneeId) errors.assignee = 'Обязательное поле';
     if (Object.keys(errors).length) {
       Object.keys(errors).forEach(function(f){ setFieldError(f, errors[f]); });
-      showSubmitError('Заполните обязательные поля');
+      showFormAlert('Заполните обязательные поля');
       return;
     }
     const payload = {
@@ -555,7 +575,7 @@
     };
     const makeBody = () => {
       const params = new URLSearchParams();
-      params.append('action','glpi_create_ticket');
+      params.append('action','wpglpi_create_ticket_api');
       params.append('nonce', gexeAjax.nonce);
       Object.keys(payload).forEach(k=>{ if(payload[k] !== undefined && payload[k] !== null) params.append(k, payload[k]); });
       return params.toString();
@@ -565,7 +585,6 @@
     btn.disabled = true;
     btn.classList.add('is-loading');
     btn.textContent = 'Создаю...';
-    showSubmitStatus('Создаю...', 'loading');
     const send = (retry) => {
       return fetch(gexeAjax.url, {
         method: 'POST',
@@ -581,22 +600,23 @@
     send(false).then(resp=>{
       const data = resp.data || resp;
       if (data && data.success) {
-        showSubmitStatus('Заявка №'+data.id+' создана','success');
         close();
+        if (data.warning) showFormAlert(data.message || 'Назначение исполнителя не выполнено');
         if (data.id) {
           showSuccessModal(data.id);
           window.dispatchEvent(new CustomEvent('gexe:tickets:refresh', {detail:{ticketId:data.id}}));
         }
       } else {
-        const msg = data && data.error && data.error.message ? data.error.message : 'Ошибка создания заявки';
-        showSubmitStatus(msg,'error');
-        if (data && data.error && data.error.details) {
-          Object.keys(data.error.details).forEach(function(f){ setFieldError(f, data.error.details[f]); });
+        const msg = data && data.message ? data.message : (data && data.error && data.error.message ? data.error.message : 'Ошибка отправки');
+        const details = data && data.details ? (typeof data.details === 'string' ? data.details : JSON.stringify(data.details)) : null;
+        if (data && data.details && data.type === 'VALIDATION') {
+          Object.keys(data.details).forEach(function(f){ setFieldError(f, data.details[f]); });
         }
+        showFormAlert('Ошибка отправки: '+msg, details);
       }
     }).catch(err=>{
       logClientError((err && err.code ? err.code + ': ' : '') + (err && err.message ? err.message : String(err)));
-      showSubmitStatus(err && err.message ? err.message : 'Ошибка отправки','error');
+      showFormAlert('Ошибка отправки', err && err.message ? err.message : String(err));
     }).finally(()=>{
       btn.disabled = false;
       btn.classList.remove('is-loading');
@@ -611,6 +631,105 @@
     const locVal = modal.querySelector('#gnt-location').value;
     const locOpt = Array.from(modal.querySelector('#gnt-location-list').options).find(o=>o.value===locVal);
     modal.querySelector('#gnt-location-path').textContent = locOpt ? locOpt.getAttribute('data-path') : '';
+  }
+
+  function loadCategories(){
+    const status = modal.querySelector('#gnt-category-status');
+    const list = modal.querySelector('#gnt-category-list');
+    if (!status || !list || !gexeAjax) return;
+    status.innerHTML = '<span class="spinner"></span>';
+    const fd = new FormData();
+    fd.append('action','wpglpi_load_categories');
+    if (gexeAjax.nonce) fd.append('nonce', gexeAjax.nonce);
+    fetch(gexeAjax.url,{method:'POST',body:fd}).then(r=>r.json()).then(function(resp){
+      if (resp && resp.success && resp.data && resp.data.categories){
+        list.innerHTML = '';
+        resp.data.categories.forEach(function(c){
+          const opt = document.createElement('option');
+          opt.value = c.name;
+          opt.setAttribute('data-id', c.id);
+          opt.setAttribute('data-path', c.completename || '');
+          list.appendChild(opt);
+        });
+        status.innerHTML = '';
+        updatePaths();
+      } else {
+        status.innerHTML = '<span class="error">Ошибка SQL при загрузке категорий</span> <button type="button" class="gnt-retry">Повторить</button>';
+        const btn = status.querySelector('.gnt-retry');
+        if (btn) btn.addEventListener('click', function(){ loadCategories(); });
+      }
+    }).catch(function(){
+      status.innerHTML = '<span class="error">Ошибка загрузки</span> <button type="button" class="gnt-retry">Повторить</button>';
+      const btn = status.querySelector('.gnt-retry');
+      if (btn) btn.addEventListener('click', function(){ loadCategories(); });
+    });
+  }
+
+  function loadLocations(){
+    const status = modal.querySelector('#gnt-location-status');
+    const list = modal.querySelector('#gnt-location-list');
+    if (!status || !list || !gexeAjax) return;
+    status.innerHTML = '<span class="spinner"></span>';
+    const fd = new FormData();
+    fd.append('action','wpglpi_load_locations');
+    if (gexeAjax.nonce) fd.append('nonce', gexeAjax.nonce);
+    fetch(gexeAjax.url,{method:'POST',body:fd}).then(r=>r.json()).then(function(resp){
+      if (resp && resp.success && resp.data && resp.data.locations){
+        list.innerHTML = '';
+        resp.data.locations.forEach(function(l){
+          const opt = document.createElement('option');
+          opt.value = l.name;
+          opt.setAttribute('data-id', l.id);
+          opt.setAttribute('data-path', l.completename || '');
+          list.appendChild(opt);
+        });
+        status.innerHTML = '';
+        updatePaths();
+      } else {
+        status.innerHTML = '<span class="error">Ошибка SQL при загрузке локаций</span> <button type="button" class="gnt-retry">Повторить</button>';
+        const btn = status.querySelector('.gnt-retry');
+        if (btn) btn.addEventListener('click', function(){ loadLocations(); });
+      }
+    }).catch(function(){
+      status.innerHTML = '<span class="error">Ошибка загрузки</span> <button type="button" class="gnt-retry">Повторить</button>';
+      const btn = status.querySelector('.gnt-retry');
+      if (btn) btn.addEventListener('click', function(){ loadLocations(); });
+    });
+  }
+
+  function loadExecutors(){
+    const status = modal.querySelector('#gnt-assignee-status');
+    const sel = modal.querySelector('#gnt-assignee');
+    if (!status || !sel || !gexeAjax) return;
+    status.innerHTML = '<span class="spinner"></span>';
+    const fd = new URLSearchParams();
+    fd.append('action','wpglpi_load_executors');
+    if (gexeAjax.nonce) fd.append('nonce', gexeAjax.nonce);
+    fetch(gexeAjax.url,{method:'POST',body:fd}).then(r=>r.json()).then(function(resp){
+      if (resp && resp.success && resp.data && resp.data.executors){
+        sel.innerHTML = '<option value="">—</option>';
+        resp.data.executors.forEach(function(e){
+          if (!e.id) return;
+          const opt = document.createElement('option');
+          opt.value = e.id;
+          opt.textContent = e.label;
+          opt.setAttribute('data-glpi-id', e.id);
+          sel.appendChild(opt);
+        });
+        executorsLoaded = true;
+        status.innerHTML = '';
+        const assignChk = modal.querySelector('#gnt-assign-me');
+        if (assignChk && !assignChk.checked) sel.disabled = false;
+      } else {
+        status.innerHTML = '<span class="error">Ошибка SQL при загрузке исполнителей</span> <button type="button" class="gnt-retry">Повторить</button>';
+        const btn = status.querySelector('.gnt-retry');
+        if (btn) btn.addEventListener('click', function(){ loadExecutors(); });
+      }
+    }).catch(function(){
+      status.innerHTML = '<span class="error">Ошибка загрузки</span> <button type="button" class="gnt-retry">Повторить</button>';
+      const btn = status.querySelector('.gnt-retry');
+      if (btn) btn.addEventListener('click', function(){ loadExecutors(); });
+    });
   }
 
   document.addEventListener('DOMContentLoaded', function(){
