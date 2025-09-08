@@ -320,6 +320,6 @@ require_once __DIR__ . '/glpi-solve.php';
 require_once __DIR__ . '/glpi-icon-map.php';
 require_once __DIR__ . '/glpi-new-task.php';
 require_once __DIR__ . '/glpi-settings.php';
-// Loader for the standalone chief interface
-require_once __DIR__ . '/includes/glpi-chief-loader.php';
+// Register the standalone chief shortcode
+require_once __DIR__ . '/chief/glpi-chief.php';
 
