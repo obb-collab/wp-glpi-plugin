@@ -218,4 +218,11 @@
         .finally(() => { busy = false; });
     });
   }
+  // Неброский маркер для отладки — виден только в API-модале
+  if (dom.modal) {
+    const badge = document.createElement('div');
+    badge.className = 'gexe-nm__badge';
+    badge.textContent = 'API modal';
+    dom.modal.querySelector('.gexe-nm__card').appendChild(badge);
+  }
 }());
