@@ -9,6 +9,9 @@
   const ajax = gexeNewModal.ajaxUrl;
   const { nonce } = gexeNewModal;
 
+  // Помечаем страницу как «активный newmodal» — это нужно для CSS-блокировки старых модалок
+  if (document.body) document.body.setAttribute('data-newmodal-active', '1');
+
   const dom = {
     backdrop: document.getElementById('gexe-newmodal-backdrop'),
     modal: document.getElementById('gexe-newmodal'),
@@ -116,19 +119,35 @@
     return sp.get(qsKey) === '1';
   }
   function attachDelegatedOpener() {
-    if (!enabledByQS()) return;
+    // В режиме глобального включения (через define) — перехватываем всегда.
+    // Если включение предполагалось только через QS, оставим старую проверку.
+    const globalEnabled = true;
+    if (!globalEnabled && !enabledByQS()) return;
+
+    // Расширенный список триггеров открытия (карточки, старые кнопки, твои классы)
+    const OPEN_SELECTORS = [
+      '[data-ticket-id]',
+      '.gexe-ticket-card',
+      '.ticket-card',
+      '.gexe-modal_open',
+      '.gexe-cmnt_open',
+      '.glpi-card-in-modal',
+    ].join(',');
+
     document.addEventListener('click', (ev) => {
-      const a = ev.target.closest('[data-ticket-id], .gexe-ticket-card, .ticket-card');
+      const a = ev.target.closest(OPEN_SELECTORS);
       if (!a) return;
-      const idAttr = a.getAttribute('data-ticket-id') || (a.dataset && a.dataset.ticketId);
-      const titleAttr = a.getAttribute('data-ticket-title') || '';
+      const idAttr = a.getAttribute('data-ticket-id') || (a.dataset ? a.dataset.ticketId : null);
+      const titleAttr = a.getAttribute('data-ticket-title') || a.getAttribute('data-title') || '';
       const id = parseInt(idAttr, 10);
       if (!id || Number.isNaN(id)) return;
+      // Гасим старые обработчики жёстко
       ev.preventDefault();
+      ev.stopImmediatePropagation();
       openModal();
       dom.title.textContent = titleAttr ? (`#${id} — ${titleAttr}`) : `#${id}`;
       loadTicket(id);
-    }, true);
+    }, true); // capture=true
   }
   attachDelegatedOpener();
 
@@ -217,5 +236,13 @@
       })
         .finally(() => { busy = false; });
     });
+  }
+
+  // Неброский маркер для визуальной проверки, что это новый модал
+  if (dom.modal) {
+    const badge = document.createElement('div');
+    badge.className = 'gexe-nm__badge';
+    badge.textContent = 'API modal';
+    dom.modal.appendChild(badge);
   }
 }());
