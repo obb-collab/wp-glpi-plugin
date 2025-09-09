@@ -32,7 +32,7 @@ function nta_render_shortcode_api(){
 }
 
 // nopriv -> auth required
-function nta_ajax_nopriv_api(){ nta_response_error('auth','Auth required'); }
+function nta_ajax_nopriv_api(){ nta_response_error('auth','Нужна авторизация'); }
 add_action('wp_ajax_nopriv_nta_get_categories', 'nta_ajax_nopriv_api');
 add_action('wp_ajax_nopriv_nta_get_locations',  'nta_ajax_nopriv_api');
 add_action('wp_ajax_nopriv_nta_get_assignees',  'nta_ajax_nopriv_api');

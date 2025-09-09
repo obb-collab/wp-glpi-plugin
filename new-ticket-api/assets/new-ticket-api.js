@@ -53,6 +53,23 @@
     }
   });
 
+  // Закрытие по клику на подложку
+  document.addEventListener('click', function(e){
+    const wrap = document.querySelector('.nta-wrap.nta-wrap--open');
+    if(!wrap) return;
+    // если кликнули прямо по подложке (а не внутри модалки) — закрываем
+    if(e.target === wrap){
+      wrap.classList.remove('nta-wrap--open');
+    }
+  });
+
+  // Закрытие по Esc
+  document.addEventListener('keydown', function(e){
+    if(e.key === 'Escape'){
+      document.querySelector('.nta-wrap')?.classList.remove('nta-wrap--open');
+    }
+  });
+
   async function loadDicts(scope){
     const form = scope.querySelector('form.nta-form'); if(!form) return;
     const catWrap = form.querySelector('[data-nta-field="category"]');

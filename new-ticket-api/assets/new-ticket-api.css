@@ -6,14 +6,15 @@
 .nta-wrap{display:none}
 .nta-wrap.nta-wrap--open{display:block;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.6);z-index:9990}
 .nta-wrap .nta-modal{position:relative;background:#0f172a;color:#fff;padding:24px;margin:40px auto;max-width:760px;border-radius:16px;box-shadow:0 10px 30px rgba(0,0,0,.5)}
-.nta-wrap .nta-modal h3{margin:0 0 14px;font-size:18px}
+/* заголовок убран в разметке */
 .nta-wrap .nta-close-modal{position:absolute;right:12px;top:12px;background:#333;border:none;color:#fff;border-radius:8px;cursor:pointer;padding:6px 10px}
 .nta-wrap .nta-close-modal:hover{background:#444}
 
 /* Inputs */
 .nta-wrap label{display:block;margin-bottom:12px}
 .nta-wrap input,.nta-wrap select,.nta-wrap textarea{width:100%;margin-top:6px;background:#0b1220;border:1px solid #2b3550;border-radius:10px;color:#fff;padding:10px 12px}
-.nta-wrap textarea{min-height:100px;resize:vertical}
+/* уменьшили поле описания на ~1 строку */
+.nta-wrap textarea{min-height:84px;resize:vertical}
 .nta-inline{display:flex;gap:16px}
 .nta-inline > label{flex:1}
 
