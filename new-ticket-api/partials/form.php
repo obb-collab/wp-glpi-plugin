@@ -31,11 +31,8 @@
           <div class="nta-error" data-nta-error="location" hidden></div>
         </label>
       </div>
-      <label><input type="checkbox" name="self_assign" class="nta-self" checked /> Я исполнитель</label>
-      <label data-nta-field="assignee">Исполнитель
-        <select name="assignee_id"></select>
-        <div class="nta-error" data-nta-error="assignee" hidden></div>
-      </label>
+      <div class="nta-checkrow"><input type="checkbox" name="self_assign" class="nta-self" checked /><span>Я исполнитель</span></div>
+      <div data-nta-field="assignee"><select name="assignee_id"></select><div class="nta-error" data-nta-error="assignee" hidden></div></div>
       <button type="submit" class="nta-submit" disabled>Создать заявку</button>
       <div class="nta-submit-error"></div>
       <div class="nta-success nta-submit-success"></div>

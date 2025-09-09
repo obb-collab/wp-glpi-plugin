@@ -1,6 +1,19 @@
 <?php
 if (!defined('ABSPATH')) exit;
 
+/** Common postprocess for assignee labels (UX tweaks). */
+function nta_assignees_postprocess($list){
+    if (!is_array($list)) return $list;
+    foreach ($list as &$it){
+        if (!is_array($it)) continue;
+        $label = isset($it['label']) ? (string)$it['label'] : '';
+        if ($label === 'vks_m5_local' || mb_strtolower($label,'UTF-8') === 'vks_m5_local') {
+            $it['label'] = 'Павел Куткин';
+        }
+    }
+    return $list;
+}
+
 /**
  * Try to read assignees map from project files via filter/constant;
  * fallback to DB list if nothing provided.
@@ -61,17 +74,17 @@ function nta_sql_get_assignees(){
     // try project-provided list first (фильтр/константа/функция)
     $provided = nta_resolve_assignees_from_project();
     if (is_array($provided) && !empty($provided)) {
-        return $provided;
+        return nta_assignees_postprocess($provided);
     }
     $db = nta_db();
     $sql = "SELECT id, name, realname, firstname FROM glpi_users WHERE is_active=1 ORDER BY realname, firstname LIMIT 2000";
     $rows = $db->get_results($sql, ARRAY_A) ?: [];
-    return array_map(function($r){
+    $list = array_map(function($r){
         $label = trim(($r['realname'] ?? '').' '.($r['firstname'] ?? ''));
         if($label===''){ $label = $r['name'] ?? ''; }
-        if (($r['name'] ?? '') === 'vks_m5_local') { $label = 'Павел Куткин'; }
         return ['id'=>(int)$r['id'],'label'=>$label];
     }, $rows);
+    return nta_assignees_postprocess($list);
 }
 
 function nta_sql_find_duplicate($uid, $title, $content){

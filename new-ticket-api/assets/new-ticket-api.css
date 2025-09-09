@@ -12,11 +12,20 @@
 
 /* Inputs */
 .nta-wrap label{display:block;margin-bottom:12px}
+/* Скрыть любые случайно оставшиеся подписи над селектом исполнителя */
+[data-nta-field="assignee"] > label,
+[data-nta-field="assignee"] > .nta-title {display:none !important}
 .nta-wrap input,.nta-wrap select,.nta-wrap textarea{width:100%;margin-top:6px;background:#0b1220;border:1px solid #2b3550;border-radius:10px;color:#fff;padding:10px 12px}
 /* уменьшили поле описания на ~1 строку */
 .nta-wrap textarea{min-height:84px;resize:vertical}
+
 .nta-inline{display:flex;gap:16px}
 .nta-inline > label{flex:1}
+
+/* Inline checkbox "Я исполнитель" */
+.nta-checkrow{display:inline-flex;align-items:center;gap:10px;margin:8px 0 12px 0}
+.nta-checkrow input[type="checkbox"]{width:18px;height:18px}
+.nta-checkrow span{color:#e5e7eb;font-size:14px;line-height:1}
 
 /* States & errors */
 .nta-field--loading{opacity:.7;filter:saturate(.7)}

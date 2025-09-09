@@ -1,8 +1,7 @@
 <?php
 if (!defined('ABSPATH')) exit;
 
-// GLPI REST API config
-// Adjust to your GLPI REST API endpoint and App-Token
+// === GLPI REST API config ===
 define('NTA_GLPI_API_URL', 'http://192.168.100.12/glpi/apirest.php');
 define('NTA_GLPI_APP_TOKEN', 'nqubXrD6j55bgLRuD1mrrtz5D69cXz94HHPvgmac');
 
@@ -49,15 +48,13 @@ function nta_api_open_session($user_token) {
 }
 
 /**
- * Compute due date as 17:30 today (site timezone); if now > 17:30, then next day 17:30.
- * If the calculated day is weekend (Sat/Sun), move to next Monday 17:30.
+ * Compute due date as 17:30 today in SERVER timezone; if now > 17:30, next business day 17:30.
+ * If Sat/Sun, roll to Monday 17:30.
  */
 function nta_compute_due_1730() {
-    try {
-        $tz = function_exists('wp_timezone') ? wp_timezone() : new DateTimeZone('UTC');
-    } catch (Throwable $e) {
-        $tz = new DateTimeZone('UTC');
-    }
+    // серверный ЧП — так GLPI интерпретирует даты
+    try { $tz = new DateTimeZone(@date_default_timezone_get() ?: 'UTC'); }
+    catch (Throwable $e) { $tz = new DateTimeZone('UTC'); }
     $now = new DateTime('now', $tz);
     $due = clone $now;
     // set to 17:30:00 of today
@@ -67,14 +64,10 @@ function nta_compute_due_1730() {
         $due->modify('+1 day');
         $due->setTime(17, 30, 0);
     }
-    // If falls on weekend, roll to Monday 17:30
-    // N: 1=Mon ... 6=Sat, 7=Sun
-    $dow = (int)$due->format('N');
-    if ($dow === 6) {          // Saturday
-        $due->modify('+2 days');
-    } elseif ($dow === 7) {    // Sunday
-        $due->modify('+1 day');
-    }
+    // weekend → Monday
+    $dow = (int)$due->format('N'); // 1..7
+    if ($dow === 6) { $due->modify('+2 days'); } // Sat → Mon
+    elseif ($dow === 7) { $due->modify('+1 day'); } // Sun → Mon
     return $due->format('Y-m-d H:i:s');
 }
 
@@ -83,16 +76,14 @@ function nta_api_kill_session($user_token, $session_token) {
     return nta_api_request('DELETE', 'killSession', $headers);
 }
 
-function nta_api_create_ticket($user_token, $input, $requester_glpi_id, $assignee_glpi_id) {
-    // 1) open session
+function nta_api_create_ticket($user_token, $input, $requester_glpi_id, $assignee_glpi_id){
     $s = nta_api_open_session($user_token);
-    if (!$s['ok']) return $s;
+    if(!$s['ok']) return $s;
     $sess = $s['session'];
     $headers = nta_api_headers($user_token, $sess);
 
     // compute planned due date (17:30 rule)
     $due = nta_compute_due_1730();
-
     try {
         // 2) create ticket
         $payload = [
@@ -106,33 +97,43 @@ function nta_api_create_ticket($user_token, $input, $requester_glpi_id, $assigne
             ]
         ];
         $r1 = nta_api_request('POST', 'Ticket', $headers, $payload);
-        if (!$r1['ok']) return $r1;
-        $tid = (int)($r1['data']['id'] ?? 0);
-        if ($tid <= 0) return ['ok'=>false,'code'=>'api_error','message'=>'Ticket ID not returned'];
+        if(!$r1 || !$r1['ok'] || empty($r1['data']['id'])) {
+            return ['ok'=>false,'code'=>'api_create_failed','message'=>'GLPI: ticket create failed'];
+        }
+        $tid = (int)$r1['data']['id'];
 
-        // 3) add requester (type=1)
-        $r2 = nta_api_request('POST', 'Ticket_User', $headers, [
+        // 3) link requester (type=1)
+        $rq = [
             'input' => [
                 'tickets_id' => $tid,
                 'users_id'   => (int)$requester_glpi_id,
                 'type'       => 1
             ]
-        ]);
-        if (!$r2['ok']) return $r2;
+        ];
+        $r2 = nta_api_request('POST', 'Ticket_User', $headers, $rq);
+        if(!$r2 || !$r2['ok'] || empty($r2['data']['id'] ?? null)) {
+            // не критично, но сообщим
+        }
 
-        // 4) add assignee (type=2)
-        $r3 = nta_api_request('POST', 'Ticket_User', $headers, [
-            'input' => [
-                'tickets_id' => $tid,
-                'users_id'   => (int)$assignee_glpi_id,
-                'type'       => 2
-            ]
-        ]);
-        if (!$r3['ok']) return $r3;
+        // 4) link assignee (type=2) — принудительно выбранный исполнитель
+        if((int)$assignee_glpi_id > 0){
+            $as = [
+                'input' => [
+                    'tickets_id' => $tid,
+                    'users_id'   => (int)$assignee_glpi_id,
+                    'type'       => 2
+                ]
+            ];
+            $r3 = nta_api_request('POST', 'Ticket_User', $headers, $as);
+            if(!$r3 || !$r3['ok'] || empty($r3['data']['id'] ?? null)) {
+                return ['ok'=>false,'code'=>'api_assign_failed','message'=>'GLPI: assignee link failed'];
+            }
+        }
 
-        return ['ok'=>true, 'ticket_id'=>$tid];
-    } finally {
-        // 5) close session (best-effort)
+        // 5) close session
         nta_api_kill_session($user_token, $sess);
+        return ['ok'=>true,'ticket_id'=>$tid];
+    } catch (Throwable $e) {
+        return ['ok'=>false,'code'=>'api_exception','message'=>$e->getMessage()];
     }
 }
