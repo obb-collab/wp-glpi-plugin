@@ -21,7 +21,7 @@ add_action('wp_enqueue_scripts', function () {
 
     $data = [
         'url'          => admin_url('admin-ajax.php'),
-        'nonce'        => wp_create_nonce('gexe_form_data'),
+        'nonce'        => wp_create_nonce('gexe_actions'),
         'user_glpi_id' => (int) gexe_get_current_glpi_uid(),
         'assignees'    => function_exists('gexe_get_assignee_options') ? gexe_get_assignee_options() : [],
         'debug'        => defined('WP_GLPI_DEBUG') && WP_GLPI_DEBUG,
@@ -31,7 +31,7 @@ add_action('wp_enqueue_scripts', function () {
 
 /** Verify AJAX nonce. */
 function glpi_nt_verify_nonce() {
-    if (!check_ajax_referer('gexe_form_data', 'nonce', false)) {
+    if (!check_ajax_referer('gexe_actions', 'nonce', false)) {
         wp_send_json_error([
             'error' => [
                 'type'    => 'SECURITY',
@@ -292,7 +292,7 @@ function glpi_ajax_create_ticket() {
 
 add_action('wp_ajax_glpi_create_ticket_sql', 'glpi_ajax_create_ticket_sql');
 function glpi_ajax_create_ticket_sql() {
-    if (!check_ajax_referer('gexe_form_data', 'nonce', false)) {
+    if (!check_ajax_referer('gexe_actions', 'nonce', false)) {
         wp_send_json(['ok' => false, 'code' => 'SECURITY/NO_CSRF', 'message' => 'Сессия устарела. Обновите страницу.']);
     }
     if (!is_user_logged_in() || !current_user_can('read')) {
