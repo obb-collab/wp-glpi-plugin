@@ -361,6 +361,16 @@ function glpi_ajax_create_ticket_sql() {
     }
     $tid = (int) $res['ticket_id'];
     error_log('[new-ticket] user=' . $wp_uid . '/' . $glpi_uid . ' sql=ticket+links ok code=created ticket_id=' . $tid . ' elapsed=' . $elapsed);
+
+    // Пинаем GLPI для выполнения уведомлений по заявке
+    $kick = gexe_glpi_trigger([
+        'ticket_id' => $tid,
+        'tasks'     => ['queuednotification'],
+    ]);
+    if (empty($kick['ok'])) {
+        error_log('[new-ticket][trigger] fail method=' . ($kick['method'] ?? 'n/a') . ' detail=' . ($kick['detail'] ?? ''));
+    }
+
     wp_send_json(['ok' => true, 'code' => 'created', 'message' => 'Заявка создана', 'ticket_id' => $tid]);
 }
 // NOTE: Fix nonce key to match frontend ('gexe_form_data') to allow ticket creation.
