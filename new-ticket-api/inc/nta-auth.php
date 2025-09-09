@@ -4,12 +4,16 @@ if (!defined('ABSPATH')) exit;
 /**
  * Try to resolve GLPI User Token using several sources:
  *  1) usermeta 'glpi_user_token'
- *  2) external integration via filter 'nt_glpi_user_token' (return non-empty string to use it)
- *  3) existing project glue (optional, non-fatal):
- *     - function glpi_get_user_token( $wp_user_id, $glpi_user_id ) or gexe_get_glpi_user_token(...)
- *     - constant/array GEXE_GLPI_USER_TOKENS keyed by login/email/user_id/glpi_id
+ *  2) project function gexe_glpi_get_current_user_token() (основной путь в вашем проекте)
+ *  3) external integration via filter 'nt_glpi_user_token'
+ *  4) optional constants/arrays GEXE_GLPI_USER_TOKENS
  */
 function nta_resolve_glpi_token($wp_user, $glpi_uid) {
+    // 2) основной путь: встроенная в проект функция (реестр токенов)
+    if (function_exists('gexe_glpi_get_current_user_token')) {
+        $t = (string) gexe_glpi_get_current_user_token();
+        if ($t !== '') return trim($t);
+    }
     // 1) usermeta
     $tok = (string) get_user_meta($wp_user->ID, 'glpi_user_token', true);
     $tok = trim($tok);
@@ -17,23 +21,13 @@ function nta_resolve_glpi_token($wp_user, $glpi_uid) {
         return $tok;
     }
 
-    // 2) allow integrators to provide token
+    // 3) allow integrators to provide token
     $filtered = apply_filters('nt_glpi_user_token', '', $wp_user, (int)$glpi_uid);
     if (is_string($filtered) && $filtered !== '') {
         return trim($filtered);
     }
 
-    // 3) optional: use existing project helpers if present (keeps isolation; no hard require)
-    // 3.1 functions
-    if (function_exists('glpi_get_user_token')) {
-        $t = (string) glpi_get_user_token($wp_user->ID, (int)$glpi_uid);
-        if ($t !== '') return trim($t);
-    }
-    if (function_exists('gexe_get_glpi_user_token')) {
-        $t = (string) gexe_get_glpi_user_token($wp_user->ID, (int)$glpi_uid);
-        if ($t !== '') return trim($t);
-    }
-    // 3.2 array constant map
+    // 4) array constant map
     if (defined('GEXE_GLPI_USER_TOKENS') && is_array(GEXE_GLPI_USER_TOKENS)) {
         $map = GEXE_GLPI_USER_TOKENS;
         $candidates = [];
@@ -52,6 +46,12 @@ function nta_resolve_glpi_token($wp_user, $glpi_uid) {
 }
 
 function nta_get_current_glpi_uid() {
+    // В проекте уже есть готовая функция, используем её при наличии.
+    if (function_exists('gexe_get_current_glpi_uid')) {
+        $id = (int) gexe_get_current_glpi_uid();
+        if ($id > 0) return $id;
+    }
+    // Фолбэк: читаем из usermeta
     $u = wp_get_current_user();
     if (!$u || empty($u->ID)) return 0;
     return (int) get_user_meta($u->ID, 'glpi_user_id', true);
@@ -74,11 +74,12 @@ function nta_require_glpi_user_and_token() {
     }
     $tok = nta_get_current_glpi_token();
     if ($tok === '') {
-        // Give integrators a hint how to wire the token
+        // Подсказка интеграторам, куда подключиться
         nta_response_error(
             'no_glpi_token',
-            'У пользователя не задан GLPI user token. Задайте usermeta glpi_user_token, ' .
-            'или верните токен фильтром nt_glpi_user_token, или добавьте в GEXE_GLPI_USER_TOKENS (login/email/wp:id/glpi:id).'
+            'У пользователя не найден GLPI user token. В проекте обычно используется gexe_glpi_get_current_user_token(); ' .
+            'также можно задать usermeta glpi_user_token, вернуть через фильтр nt_glpi_user_token, ' .
+            'или добавить в GEXE_GLPI_USER_TOKENS (login/email/wp:id/glpi:id).'
         );
     }
     return [$uid, $tok];

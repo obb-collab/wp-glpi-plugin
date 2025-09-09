@@ -24,6 +24,18 @@ function nta_resolve_assignees_from_project(){
         }
         if ($out) return $out;
     }
+    // project helper: gexe_get_executors_list() → [{display_name,glpi_user_id}]
+    if (function_exists('gexe_get_executors_list')) {
+        $res = gexe_get_executors_list();
+        if (is_array($res) && !empty($res['ok']) && !empty($res['list']) && is_array($res['list'])) {
+            return array_map(function($r){
+                return [
+                    'id'    => (int) ($r['glpi_user_id'] ?? 0),
+                    'label' => (string) ($r['display_name'] ?? ''),
+                ];
+            }, $res['list']);
+        }
+    }
     return null;
 }
 
@@ -46,7 +58,7 @@ function nta_sql_get_locations(){
 }
 
 function nta_sql_get_assignees(){
-    // try project-provided list first
+    // try project-provided list first (фильтр/константа/функция)
     $provided = nta_resolve_assignees_from_project();
     if (is_array($provided) && !empty($provided)) {
         return $provided;
