@@ -16,3 +16,4 @@ require_once __DIR__ . '/new-ticket-api/new-ticket-api.php';
 - Ticket creation uses API: initSession → POST /Ticket → POST /Ticket_User (requester, assignee) → killSession.
 - Duplicate protection uses a short SQL check (≤3 seconds window).
 - Errors are returned to the frontend with clear messages; no file/DB logging is performed.
+- Tickets are planned for 17:30 local time; after 17:30 or on weekends, the due date moves to the next business day at 17:30.
