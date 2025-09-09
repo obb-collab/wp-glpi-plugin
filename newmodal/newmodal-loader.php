@@ -43,23 +43,33 @@ add_action('wp_enqueue_scripts', function () {
     wp_register_style('gexe-newmodal', $base . 'newmodal.css', [], $ver);
     wp_enqueue_style('gexe-newmodal');
 
-    wp_register_script('gexe-newmodal', $base . 'newmodal.js', ['jquery'], $ver, true);
+    // Без зависимостей, чтобы повесить capture-обработчик максимально рано
+    wp_register_script('gexe-newmodal', $base . 'newmodal.js', [], $ver, true);
     wp_enqueue_script('gexe-newmodal');
 
-    // Nonce + flags (enabled=true, т.к. до сюда дошли только при включённом модуле)
+    // Nonce + flags
     wp_localize_script('gexe-newmodal', 'gexeNewModal', [
         'ajaxUrl' => admin_url('admin-ajax.php'),
         'nonce'   => wp_create_nonce('gexe_newmodal_nonce'),
         'enabled' => true,
         'qs'      => defined('GEXE_NEWMODAL_QS') ? GEXE_NEWMODAL_QS : 'use_newmodal',
     ]);
-});
+}, 1); // priority=1 — грузим раньше прочих скриптов
 
 add_action('wp_footer', function () {
     if (!gexe_newmodal_is_enabled()) return;
     // Inject hidden modal container (HTML markup kept minimal; visual parity in CSS)
     echo gexe_newmodal_render_container();
 }, 100);
+
+/**
+ * Добавляем класс в body для надёжного скрытия старых модалок CSS-ом,
+ * даже если JS ещё не успел инициализироваться.
+ */
+add_filter('body_class', function(array $classes){
+    if (gexe_newmodal_is_enabled()) $classes[] = 'gexe-newmodal-active';
+    return $classes;
+});
 
 /**
  * AJAX: Fetch ticket with followups (comments) via API
