@@ -193,18 +193,20 @@
     fetch(gexeAjax.url, { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body: params.toString() });
   }
 
+  // Refresh WP nonce (store into gexeAjax.nonce — single source of truth)
   function refreshNonce(){
     if (!window.gexeAjax) return Promise.reject(new Error('no_ajax'));
     const params = new URLSearchParams();
     params.append('action','gexe_refresh_nonce');
+    if (gexeAjax.nonce) params.append('nonce', gexeAjax.nonce);
     return fetch(gexeAjax.url, {
       method:'POST',
       headers:{'Content-Type':'application/x-www-form-urlencoded'},
       body: params.toString()
     }).then(r=>r.json()).then(function(data){
       if (data && data.success && data.data && data.data.nonce){
-        gexeAjax.formNonce = data.data.nonce;
-        return gexeAjax.formNonce;
+        gexeAjax.nonce = data.data.nonce;
+        return gexeAjax.nonce;
       }
       throw new Error('nonce_refresh_failed');
     });
