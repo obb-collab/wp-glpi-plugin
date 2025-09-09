@@ -5,6 +5,9 @@
  * Поддержка AJAX для: загрузки комментариев, проверки "Принято в работу",
  * добавления комментария, действий "start/done", счетчика комментариев.
  */
+if (!defined('ABSPATH')) exit;
+// Требуется glpi-db-setup.php, который уже подключает includes/glpi-trigger.php
+
 require_once __DIR__ . '/glpi-utils.php';
 require_once __DIR__ . '/includes/glpi-sql.php';
 require_once __DIR__ . '/includes/glpi-auth-map.php';
@@ -749,6 +752,7 @@ function gexe_glpi_comment_add($action = 'comment', $content_override = null) {
     }
     $glpi_db->query('COMMIT');
     gexe_clear_comments_cache($ticket_id);
+    gexe_after_sql_action_trigger_glpi($ticket_id);
     gexe_action_response(true, 'ok', $ticket_id, $action, '', ['extra' => ['followup' => $res['followup']]]);
 }
 
@@ -836,6 +840,7 @@ function gexe_change_assignee_sql() {
 
     $glpi_db->query('COMMIT');
     gexe_clear_comments_cache($ticket_id);
+    gexe_after_sql_action_trigger_glpi($ticket_id);
     gexe_action_response(true, 'ok', $ticket_id, $action, '', [
         'extra' => [
             'new_assignee' => ['id' => $target_id, 'name' => $short],
@@ -935,7 +940,22 @@ function gexe_create_ticket_sql() {
     }
 
     $glpi_db->query('COMMIT');
+    gexe_after_sql_action_trigger_glpi($ticket_id);
     gexe_action_response(true, 'ok', $ticket_id, $action);
+}
+
+/**
+ * Хук «пинка» триггеров после успешных SQL-операций.
+ * Вызывается после COMMIT в обработчиках.
+ */
+function gexe_after_sql_action_trigger_glpi($ticket_id) {
+    $kick = gexe_glpi_trigger([
+        'ticket_id' => (int) $ticket_id,
+        'tasks'     => ['queuednotification'],
+    ]);
+    if (empty($kick['ok'])) {
+        error_log('[gexe_after_sql_action] trigger failed: ' . ($kick['method'] ?? 'n/a') . ' | ' . ($kick['detail'] ?? ''));
+    }
 }
 
 // ====== DICTIONARIES: categories & locations ======
