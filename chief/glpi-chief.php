@@ -27,6 +27,23 @@ function chief_is_chief_user(): bool {
     return (int) get_current_user_id() === (int) CHIEF_WP_USER_ID;
 }
 
+// Подключаем ИМЕННО наши файлы из подпапки chief и локализуем данные
+add_action('wp_enqueue_scripts', function () {
+    $base = plugins_url('', __FILE__); // .../chief
+    // JS
+    wp_enqueue_script('glpi-chief-js', $base . '/glpi-chief.js', [], '1.0', true);
+    // CSS
+    wp_enqueue_style('glpi-chief-css', $base . '/glpi-chief.css', [], '1.0');
+    // Локализация (ajaxurl обязателен для fetch/jQuery.post)
+    wp_localize_script('glpi-chief-js', 'GEXE_CHIEF', [
+        'isChief'     => chief_is_chief_user(),
+        'chiefWpId'   => (int) CHIEF_WP_USER_ID,
+        'chiefGlpiId' => (int) CHIEF_GLPI_USER_ID,
+        'nonce'       => wp_create_nonce('gexe_chief_nonce'),
+        'ajaxurl'     => admin_url('admin-ajax.php'),
+    ]);
+}, 20);
+
 /**
  * Получить список исполнителей для селекта начальника.
  * Берём пользователей, которые фигурируют как назначенные (type=2) в текущих тикетах,
@@ -51,17 +68,6 @@ function chief_fetch_executors(): array {
     return $rows;
 }
 
-// Localize data for chief front-end (nonce, defaults, ajaxurl)
-add_action('wp_enqueue_scripts', function () {
-    wp_localize_script('glpi-chief-js', 'GEXE_CHIEF', [
-        'isChief'     => chief_is_chief_user(),
-        'chiefWpId'   => (int) CHIEF_WP_USER_ID,
-        'chiefGlpiId' => (int) CHIEF_GLPI_USER_ID,
-        'nonce'       => wp_create_nonce('gexe_chief_nonce'),
-        'ajaxurl'     => admin_url('admin-ajax.php'),
-    ]);
-}, 100);
-
 // Подключаем эндпоинты ТОЛЬКО из подпапки chief
 require_once __DIR__ . '/glpi-chief-actions.php';
 
@@ -81,10 +87,17 @@ if (!function_exists('glpi_chief_shortcode')) {
                 </select>
                 <!-- Остальные элементы хедера страницы (категории/новая заявка/поиск) выводятся основным шаблоном -->
             </div>
-            <?php // ниже рендер основного списка заявок (существующий вывод плагина, не трогаем) ?>
+            <?php
+            // Рендер основного списка заявок через уже существующий шорткод плагина
+            // Ничего в ядре не меняем — просто переиспользуем.
+            echo do_shortcode('[glpi_cards]');
+            ?>
         </div>
         <?php
         return ob_get_clean();
     }
 }
+// Поддерживаем ОРИГИНАЛЬНЫЙ шорткод страницы начальника
+add_shortcode('glpi_cards_chief', 'glpi_chief_shortcode');
+// И алиас, если нужен
 add_shortcode('glpi_chief', 'glpi_chief_shortcode');
