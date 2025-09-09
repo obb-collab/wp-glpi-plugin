@@ -623,6 +623,24 @@
       });
   }
 
+  // Unified fetch helper used by API create button
+  async function postAjax(params){
+    const res = await fetch(gexeAjax.url || gexeAjax.ajax_url || '', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
+      body: new URLSearchParams(params).toString()
+    });
+    const text = await res.text();
+    let json = {};
+    try { json = JSON.parse(text); } catch(_){ }
+    if (res.status < 200 || res.status >= 300) {
+      if (json && json.ok) return json;
+      throw new Error('HTTP ' + res.status + (json && json.message ? (': ' + json.message) : ''));
+    }
+    return json;
+  }
+
   function updatePaths(){
     const catVal = modal.querySelector('#gnt-category').value;
     const catOpt = Array.from(modal.querySelector('#gnt-category-list').options).find(o=>o.value===catVal);
