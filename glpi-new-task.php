@@ -42,18 +42,107 @@ function glpi_nt_verify_nonce() {
 }
 
 // -------- Dictionaries --------
-/* legacy loader (rollback)
+// === Restore legacy per-dictionary AJAX endpoints used by front-end (gexe-filter.js) ===
+// Categories
 add_action('wp_ajax_glpi_get_categories', 'glpi_ajax_get_categories');
-function glpi_ajax_get_categories() { old implementation }
+function glpi_ajax_get_categories() {
+    glpi_nt_verify_nonce();
+    if (!is_user_logged_in()) {
+        wp_send_json(['ok' => false, 'code' => 'no_auth']);
+    }
+    try {
+        $pdo = glpi_get_pdo();
+        $rows = $pdo->query(
+            "SELECT c.id, c.name, c.completename
+             FROM glpi_itilcategories AS c
+             WHERE c.is_helpdeskvisible = 1
+             ORDER BY c.completename ASC"
+        )->fetchAll(PDO::FETCH_ASSOC);
+        $list = array_map(function ($r) {
+            return [
+                'id'           => (int) ($r['id'] ?? 0),
+                'name'         => (string) ($r['name'] ?? ''),
+                'completename' => (string) ($r['completename'] ?? ''),
+            ];
+        }, $rows ?: []);
+        if (empty($list)) {
+            wp_send_json(['ok' => false, 'code' => 'dict_empty', 'list' => []]);
+        }
+        wp_send_json(['ok' => true, 'list' => $list]);
+    } catch (Throwable $e) {
+        wp_send_json(['ok' => false, 'code' => 'sql_error', 'message' => $e->getMessage()]);
+    }
+}
 
+// Locations
 add_action('wp_ajax_glpi_get_locations', 'glpi_ajax_get_locations');
-function glpi_ajax_get_locations() { old implementation }
+function glpi_ajax_get_locations() {
+    glpi_nt_verify_nonce();
+    if (!is_user_logged_in()) {
+        wp_send_json(['ok' => false, 'code' => 'no_auth']);
+    }
+    try {
+        $pdo = glpi_get_pdo();
+        $rows = $pdo->query(
+            "SELECT l.id, l.name, l.completename
+             FROM glpi_locations AS l
+             ORDER BY l.completename ASC"
+        )->fetchAll(PDO::FETCH_ASSOC);
+        $list = array_map(function ($r) {
+            return [
+                'id'           => (int) ($r['id'] ?? 0),
+                'name'         => (string) ($r['name'] ?? ''),
+                'completename' => (string) ($r['completename'] ?? ''),
+            ];
+        }, $rows ?: []);
+        if (empty($list)) {
+            wp_send_json(['ok' => false, 'code' => 'dict_empty', 'list' => []]);
+        }
+        wp_send_json(['ok' => true, 'list' => $list]);
+    } catch (Throwable $e) {
+        wp_send_json(['ok' => false, 'code' => 'sql_error', 'message' => $e->getMessage()]);
+    }
+}
 
+// Executors
 add_action('wp_ajax_glpi_get_executors', 'glpi_ajax_get_executors');
-function glpi_ajax_get_executors() { old implementation }
-
-function glpi_db_get_executors() { old implementation }
-*/
+function glpi_ajax_get_executors() {
+    glpi_nt_verify_nonce();
+    if (!is_user_logged_in()) {
+        wp_send_json(['ok' => false, 'code' => 'no_auth']);
+    }
+    try {
+        $list = [];
+        if (function_exists('gexe_get_assignee_options')) {
+            $raw = gexe_get_assignee_options(); // [{id, name}]
+            foreach ($raw as $a) {
+                $id = isset($a['id']) ? (int) $a['id'] : (int) ($a['glpi_user_id'] ?? 0);
+                $name = $a['name'] ?? ($a['display_name'] ?? '');
+                if ($id > 0 && $name !== '') {
+                    $list[] = ['id' => $id, 'name' => $name];
+                }
+            }
+        } else {
+            // Fallback to internal mapper (glpi-new-task.php)
+            if (function_exists('glpi_get_wp_executors')) {
+                $raw = glpi_get_wp_executors(); // [{display_name, glpi_user_id}]
+                foreach ($raw as $a) {
+                    $id = (int) ($a['glpi_user_id'] ?? 0);
+                    $name = (string) ($a['display_name'] ?? '');
+                    if ($id > 0 && $name !== '') {
+                        $list[] = ['id' => $id, 'name' => $name];
+                    }
+                }
+            }
+        }
+        if (empty($list)) {
+            wp_send_json(['ok' => false, 'code' => 'dict_empty', 'list' => []]);
+        }
+        wp_send_json(['ok' => true, 'list' => $list]);
+    } catch (Throwable $e) {
+        wp_send_json(['ok' => false, 'code' => 'sql_error', 'message' => $e->getMessage()]);
+    }
+}
 
 add_action('wp_ajax_glpi_load_dicts', 'glpi_ajax_load_dicts');
 
