@@ -75,8 +75,10 @@
 
     modal.querySelector('.gnt-backdrop').addEventListener('click', close);
     modal.querySelector('.gnt-close').addEventListener('click', close);
-    modal.querySelector('.gnt-submit').addEventListener('click', submit);
+    // SQL canonical: submission is bound in gexe-filter.js (bindNewTaskForm)
+    // modal.querySelector('.gnt-submit').addEventListener('click', submit);
 
+    // Assignment toggle & validation are handled in gexe-filter.js to avoid double-binding
     const assignChk = modal.querySelector('#gnt-assign-me');
     const assigneeSel = modal.querySelector('#gnt-assignee');
     assignChk.addEventListener('change', function(){
@@ -309,8 +311,8 @@
     buildModal();
     modal.classList.add('open');
     document.body.classList.add('glpi-modal-open');
-    startDictLoad(false);
-    updatePaths();
+    // Delegate dictionaries loading to gexe-filter.js (SQL canonical path)
+    window.dispatchEvent(new CustomEvent('gexe:newtask:open'));
   }
 
   function close(){
