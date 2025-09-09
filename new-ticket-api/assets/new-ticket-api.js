@@ -49,7 +49,8 @@
       loadDicts(wrap);
     }
     if(e.target.closest('.nta-close-modal')){
-      $('.nta-wrap')?.classList.remove('nta-wrap--open');
+      const wrapEl = $('.nta-wrap');
+      if(wrapEl){ wrapEl.classList.remove('nta-wrap--open'); }
     }
   });
 
@@ -66,7 +67,8 @@
   // Закрытие по Esc
   document.addEventListener('keydown', function(e){
     if(e.key === 'Escape'){
-      document.querySelector('.nta-wrap')?.classList.remove('nta-wrap--open');
+      const wrap = document.querySelector('.nta-wrap');
+      if(wrap){ wrap.classList.remove('nta-wrap--open'); }
     }
   });
 
@@ -105,6 +107,7 @@
     if(ass && ass.ok){ renderOptions(assSel, ass.list, 'Select assignee…'); }
     else { setError(assErr, (ass && ass.message) || 'Failed to load assignees'); }
     setLoading(assWrap,false);
+    if(ass && ass.ok){ renderOptions(assSel, ass.list, 'Назначить исполнителя'); }
 
     // build typeahead lists
     setupLookup(form, 'category', form._ntaCats, catId, catNote);
@@ -161,10 +164,10 @@
           const tid = res.ticket_id || (res.data && res.data.ticket_id);
           if(ok){ ok.textContent = tid ? ('Заявка #'+tid+' создана по API') : 'Заявка создана по API'; }
           form.reset(); toggleAssignee(form);
-          setTimeout(()=>{ document.querySelector('.nta-wrap')?.classList.remove('nta-wrap--open'); }, 800);
+          setTimeout(()=>{ const wrap=document.querySelector('.nta-wrap'); if(wrap){ wrap.classList.remove('nta-wrap--open'); } }, 800);
         }else if(res && res.code === 'already_exists'){
           if(ok){ ok.textContent = 'Такая заявка уже создана недавно'+(res.ticket_id?(' (#'+res.ticket_id+')'):''); }
-          setTimeout(()=>{ document.querySelector('.nta-wrap')?.classList.remove('nta-wrap--open'); }, 800);
+          setTimeout(()=>{ const wrap=document.querySelector('.nta-wrap'); if(wrap){ wrap.classList.remove('nta-wrap--open'); } }, 800);
         }else{
           setError(err, (res && res.message) || 'Ошибка отправки по API');
         }
@@ -213,6 +216,7 @@
     if(!wrap) return;
     const input = wrap.querySelector('.nta-lookup-input');
     const dropdown = wrap.querySelector('.nta-lookup-list');
+    const toggle = wrap.querySelector('.nta-lookup-toggle');
     const {counts} = dedupeLeafs(list);
 
     function render(items){
@@ -239,6 +243,7 @@
         dropdown.appendChild(div);
       });
       dropdown.classList.toggle('nta-open', items.length>0);
+      if(toggle){ toggle.classList.toggle('nta-open', items.length>0); }
     }
 
     function doFilter(){
@@ -257,8 +262,16 @@
       validateForm(form);
     });
     input.addEventListener('focus', ()=>{ if(input.value){ doFilter(); } });
+    if(toggle){
+      toggle.addEventListener('click', (e)=>{
+        e.preventDefault();
+        if(dropdown.classList.contains('nta-open')){
+          dropdown.classList.remove('nta-open'); toggle.classList.remove('nta-open');
+        } else { render(list); }
+      });
+    }
     document.addEventListener('click', (e)=>{
-      if(!wrap.contains(e.target)) dropdown.classList.remove('nta-open');
+      if(!wrap.contains(e.target)) { dropdown.classList.remove('nta-open'); if(toggle){toggle.classList.remove('nta-open');} }
     });
   }
 })();

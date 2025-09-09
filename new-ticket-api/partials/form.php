@@ -13,6 +13,7 @@
         <label data-nta-field="category">Категория
           <div class="nta-lookup-wrap" data-nta-lookup="category">
             <input type="text" class="nta-lookup-input" placeholder="Начните вводить..." />
+            <button type="button" class="nta-lookup-toggle" aria-label="Показать список"></button>
             <div class="nta-lookup-list"></div>
           </div>
           <input type="hidden" name="category_id" />
@@ -22,6 +23,7 @@
         <label data-nta-field="location">Местоположение
           <div class="nta-lookup-wrap" data-nta-lookup="location">
             <input type="text" class="nta-lookup-input" placeholder="Начните вводить..." />
+            <button type="button" class="nta-lookup-toggle" aria-label="Показать список"></button>
             <div class="nta-lookup-list"></div>
           </div>
           <input type="hidden" name="location_id" />
