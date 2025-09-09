@@ -13,9 +13,7 @@ require_once __DIR__ . '/inc/user-map.php';
 require_once __DIR__ . '/includes/glpi-sql.php';
 
 add_action('wp_enqueue_scripts', function () {
-    wp_register_style('glpi-new-task', plugin_dir_url(__FILE__) . 'glpi-new-task.css', [], '1.0.0');
-    wp_enqueue_style('glpi-new-task');
-
+    // Styles for the modal are enqueued globally from gexe-copy.php
     wp_register_script('gexe-new-task-js', plugin_dir_url(__FILE__) . 'assets/js/gexe-new-task.js', [], '1.0.0', true);
     wp_enqueue_script('gexe-new-task-js');
 
