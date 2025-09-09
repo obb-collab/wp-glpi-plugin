@@ -5,6 +5,12 @@
     return;
   }
 
+  // Ставим флаг на body сразу (для CSS-блокировки старых модалок)
+  if (document.body) {
+    document.body.classList.add('gexe-newmodal-active');
+    document.body.setAttribute('data-newmodal-active', '1');
+  }
+
   const qsKey = gexeNewModal.qs || 'use_newmodal';
   const ajax = gexeNewModal.ajaxUrl;
   const { nonce } = gexeNewModal;
@@ -116,19 +122,40 @@
     return sp.get(qsKey) === '1';
   }
   function attachDelegatedOpener() {
-    if (!enabledByQS()) return;
+    // При глобальном включении — перехватываем всегда.
+    const globalEnabled = true;
+    if (!globalEnabled && !enabledByQS()) return;
+
+    // Расширенный список триггеров открытия (карточки, старые кнопки, ссылки)
+    const OPEN_SELECTORS = [
+      '[data-ticket-id]',
+      '.gexe-ticket-card',
+      '.ticket-card',
+      '.gexe-modal_open',
+      '.gexe-cmnt_open',
+      '.glpi-card-in-modal',
+      '.gexe-card',
+      '.gexe-card__link',
+      'a[data-open="ticket"]',
+    ].join(',');
+
     document.addEventListener('click', (ev) => {
-      const a = ev.target.closest('[data-ticket-id], .gexe-ticket-card, .ticket-card');
+      const a = ev.target.closest(OPEN_SELECTORS);
       if (!a) return;
       const idAttr = a.getAttribute('data-ticket-id') || (a.dataset && a.dataset.ticketId);
-      const titleAttr = a.getAttribute('data-ticket-title') || '';
+      const titleAttr = a.getAttribute('data-ticket-title') || a.getAttribute('data-title') || '';
       const id = parseInt(idAttr, 10);
       if (!id || Number.isNaN(id)) return;
+      // Гасим старые обработчики жёстко (capture + стоп)
       ev.preventDefault();
+      ev.stopImmediatePropagation();
       openModal();
       dom.title.textContent = titleAttr ? (`#${id} — ${titleAttr}`) : `#${id}`;
       loadTicket(id);
-    }, true);
+    }, true); // capture=true
+
+    // Если DOM уже готов — инициализация сразу, иначе после ready
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => {}, { once: true });
   }
   attachDelegatedOpener();
 
@@ -220,9 +247,10 @@
   }
   // Неброский маркер для отладки — виден только в API-модале
   if (dom.modal) {
+    const card = dom.modal.querySelector('.gexe-nm__card') || dom.modal;
     const badge = document.createElement('div');
     badge.className = 'gexe-nm__badge';
     badge.textContent = 'API modal';
-    dom.modal.querySelector('.gexe-nm__card').appendChild(badge);
+    card.appendChild(badge);
   }
 }());
