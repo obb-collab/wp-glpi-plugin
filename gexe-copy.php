@@ -87,6 +87,20 @@ add_action('wp_enqueue_scripts', function () {
 // ====== ПОДКЛЮЧЕНИЕ К БД GLPI ======
 require_once __DIR__ . '/glpi-db-setup.php';
 
+/**
+ * Feature flag for NEW modal (API-only, no SQL)
+ * Can be overridden via query param ?use_newmodal=1
+ */
+if (!defined('GEXE_USE_NEWMODAL')) {
+    define('GEXE_USE_NEWMODAL', false);
+}
+if (!defined('GEXE_NEWMODAL_QS')) {
+    define('GEXE_NEWMODAL_QS', 'use_newmodal');
+}
+
+// New modal isolated module (safe to require; it is inert unless enabled)
+require_once __DIR__ . '/newmodal/newmodal-loader.php';
+
 function gexe_glpi_uninstall() {
     gexe_glpi_remove_triggers();
 }
