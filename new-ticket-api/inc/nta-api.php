@@ -1,6 +1,7 @@
 <?php
 if (!defined('ABSPATH')) exit;
 
+// GLPI REST API config
 // Adjust to your GLPI REST API endpoint and App-Token
 define('NTA_GLPI_API_URL', 'http://192.168.100.12/glpi/apirest.php');
 define('NTA_GLPI_APP_TOKEN', 'nqubXrD6j55bgLRuD1mrrtz5D69cXz94HHPvgmac');
@@ -47,6 +48,36 @@ function nta_api_open_session($user_token) {
     return ['ok'=>true,'session'=>$sess];
 }
 
+/**
+ * Compute due date as 17:30 today (site timezone); if now > 17:30, then next day 17:30.
+ * If the calculated day is weekend (Sat/Sun), move to next Monday 17:30.
+ */
+function nta_compute_due_1730() {
+    try {
+        $tz = function_exists('wp_timezone') ? wp_timezone() : new DateTimeZone('UTC');
+    } catch (Throwable $e) {
+        $tz = new DateTimeZone('UTC');
+    }
+    $now = new DateTime('now', $tz);
+    $due = clone $now;
+    // set to 17:30:00 of today
+    $due->setTime(17, 30, 0);
+    // if already past 17:30 → next day
+    if ($now > $due) {
+        $due->modify('+1 day');
+        $due->setTime(17, 30, 0);
+    }
+    // If falls on weekend, roll to Monday 17:30
+    // N: 1=Mon ... 6=Sat, 7=Sun
+    $dow = (int)$due->format('N');
+    if ($dow === 6) {          // Saturday
+        $due->modify('+2 days');
+    } elseif ($dow === 7) {    // Sunday
+        $due->modify('+1 day');
+    }
+    return $due->format('Y-m-d H:i:s');
+}
+
 function nta_api_kill_session($user_token, $session_token) {
     $headers = nta_api_headers($user_token, $session_token);
     return nta_api_request('DELETE', 'killSession', $headers);
@@ -59,6 +90,9 @@ function nta_api_create_ticket($user_token, $input, $requester_glpi_id, $assigne
     $sess = $s['session'];
     $headers = nta_api_headers($user_token, $sess);
 
+    // compute planned due date (17:30 rule)
+    $due = nta_compute_due_1730();
+
     try {
         // 2) create ticket
         $payload = [
@@ -68,6 +102,7 @@ function nta_api_create_ticket($user_token, $input, $requester_glpi_id, $assigne
                 'status'            => 1,
                 'itilcategories_id' => (int)$input['category_id'],
                 'locations_id'      => (int)$input['location_id'],
+                'due_date'          => $due,
             ]
         ];
         $r1 = nta_api_request('POST', 'Ticket', $headers, $payload);
