@@ -58,10 +58,13 @@ add_action('wp_enqueue_scripts', function () {
     $js_path  = plugin_dir_path(__FILE__) . 'assets/js/gexe-filter.js';
 
     $css_ver = file_exists($css_path) ? filemtime($css_path) : null;
+    $new_task_css_ver = file_exists(plugin_dir_path(__FILE__) . 'assets/css/glpi-new-tasks.css') ? filemtime(plugin_dir_path(__FILE__) . 'assets/css/glpi-new-tasks.css') : null;
     $js_ver  = file_exists($js_path)  ? filemtime($js_path)  : null;
 
     wp_enqueue_style('gexe-gee', plugin_dir_url(__FILE__) . 'assets/css/gee.css', [], $css_ver);
     wp_enqueue_style('gexe-fa', 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css', [], '6.5.0');
+    // стили новой заявки — единый файл внутри assets
+    wp_enqueue_style('gexe-new-task', plugin_dir_url(__FILE__) . 'assets/css/glpi-new-tasks.css', [], $new_task_css_ver);
     wp_enqueue_script('gexe-filter', plugin_dir_url(__FILE__) . 'assets/js/gexe-filter.js', [], $js_ver, true);
 
     wp_localize_script('gexe-filter', 'glpiAjax', [
