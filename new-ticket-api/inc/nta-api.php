@@ -5,17 +5,23 @@ if (!defined('ABSPATH')) exit;
 define('NTA_GLPI_API_URL', 'http://192.168.100.12/glpi/apirest.php');
 define('NTA_GLPI_APP_TOKEN', 'nqubXrD6j55bgLRuD1mrrtz5D69cXz94HHPvgmac');
 
-function nta_api_headers($user_token, $session_token = '') {
+function nta_api_headers($user_token, $session_token = null) {
     $h = [
         'App-Token'    => NTA_GLPI_APP_TOKEN,
         'Content-Type' => 'application/json',
         'Accept'       => 'application/json',
         'Authorization'=> 'user_token ' . $user_token,
     ];
-    if ($session_token) $h['Session-Token'] = $session_token;
+    if ($session_token) {
+        $h['Session-Token'] = $session_token;
+    }
     return $h;
 }
 
+/**
+ * Perform request to GLPI API.
+ * `$path` may include query-string (e.g., `search/Ticket_User?...`).
+ */
 function nta_api_request($method, $path, $headers, $body = null) {
     $url = rtrim(NTA_GLPI_API_URL,'/') . '/' . ltrim($path,'/');
     $args = [
@@ -23,7 +29,9 @@ function nta_api_request($method, $path, $headers, $body = null) {
         'headers' => $headers,
         'timeout' => 15,
     ];
-    if ($body !== null) $args['body'] = is_string($body) ? $body : wp_json_encode($body);
+    if ($body !== null) {
+        $args['body'] = is_string($body) ? $body : wp_json_encode($body);
+    }
     $res = wp_remote_request($url, $args);
     if (is_wp_error($res)) {
         return ['ok'=>false, 'code'=>'network_error', 'message'=>$res->get_error_message()];
@@ -71,6 +79,37 @@ function nta_compute_due_1730() {
     return $due->format('Y-m-d H:i:s');
 }
 
+/**
+ * Очистить всех назначенных (type=2) у тикета перед установкой нашего исполнителя.
+ * Используем Search API: /search/Ticket_User?criteria[][field]=tickets_id ...
+ */
+function nta_api_clear_assignees($headers, $ticket_id) {
+    $qs = http_build_query([
+        'criteria' => [
+            ['field' => 'tickets_id', 'searchtype' => 'equals', 'value' => (int) $ticket_id],
+            ['field' => 'type',       'searchtype' => 'equals', 'value' => 2],
+        ],
+        'forcedisplay' => [2],
+    ]);
+    $list = nta_api_request('GET', 'search/Ticket_User?' . $qs, $headers);
+    if (!$list['ok']) {
+        return;
+    }
+    $data = $list['data'] ?? [];
+    $rows = isset($data['data']) && is_array($data['data']) ? $data['data'] : (is_array($data) ? $data : []);
+    foreach ($rows as $row) {
+        $rid = 0;
+        if (isset($row['id'])) {
+            $rid = (int) $row['id'];
+        } elseif (isset($row[2])) {
+            $rid = (int) $row[2];
+        }
+        if ($rid > 0) {
+            nta_api_request('DELETE', 'Ticket_User/' . $rid, $headers);
+        }
+    }
+}
+
 function nta_api_kill_session($user_token, $session_token) {
     $headers = nta_api_headers($user_token, $session_token);
     return nta_api_request('DELETE', 'killSession', $headers);
@@ -101,6 +140,10 @@ function nta_api_create_ticket($user_token, $input, $requester_glpi_id, $assigne
             return ['ok'=>false,'code'=>'api_create_failed','message'=>'GLPI: ticket create failed'];
         }
         $tid = (int)$r1['data']['id'];
+
+        // 2.1) на некоторых инсталляциях GLPI автоматически назначает текущего API-пользователя.
+        // Чистим все назначения, чтобы оставить только выбранного исполнителя.
+        nta_api_clear_assignees($headers, $tid);
 
         // 3) link requester (type=1)
         $rq = [
