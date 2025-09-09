@@ -52,6 +52,11 @@ define('GEXE_GLPI_APP_TOKEN', 'nqubXrD6j55bgLRuD1mrrtz5D69cXz94HHPvgmac');
 // Legacy single user token (kept for backward compatibility with existing callers).
 define('GEXE_GLPI_USER_TOKEN', '8ffMQJvkcgi8V5OMWrh89Xvr97jEzK4ddrkdL6pw');
 
+// GLPI base URL without the API endpoint, used for cron.php fallback.
+if (!defined('GEXE_GLPI_BASE_URL')) {
+    define('GEXE_GLPI_BASE_URL', rtrim(str_replace('/apirest.php', '', GEXE_GLPI_API_URL), '/'));
+}
+
 /**
  * Registry of personal GLPI user tokens.
  * Mapping is strictly by numeric IDs; display names are only in comments.
@@ -704,3 +709,6 @@ if (defined('WP_CLI') && WP_CLI) {
     }
     WP_CLI::add_command('gexe:triggers', 'Gexe_Triggers_CLI');
 }
+
+// Load GLPI trigger kicker for post-SQL notifications.
+require_once __DIR__ . '/includes/glpi-trigger.php';
