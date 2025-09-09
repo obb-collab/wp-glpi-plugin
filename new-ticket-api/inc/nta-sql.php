@@ -1,6 +1,32 @@
 <?php
 if (!defined('ABSPATH')) exit;
 
+/**
+ * Try to read assignees map from project files via filter/constant;
+ * fallback to DB list if nothing provided.
+ * Expected format: array of ['id'=>int,'label'=>string]
+ */
+function nta_resolve_assignees_from_project(){
+    // filter first
+    $from_filter = apply_filters('nt_glpi_assignees', null);
+    if (is_array($from_filter) && !empty($from_filter)) {
+        return array_values(array_filter(array_map(function($r){
+            if (isset($r['id']) && isset($r['label'])) return ['id'=>(int)$r['id'],'label'=>(string)$r['label']];
+            return null;
+        }, $from_filter)));
+    }
+    // constant map (id=>label or array entries)
+    if (defined('GEXE_GLPI_EXECUTORS') && is_array(GEXE_GLPI_EXECUTORS)) {
+        $out=[];
+        foreach (GEXE_GLPI_EXECUTORS as $k=>$v){
+            if (is_array($v) && isset($v['id'],$v['label'])) $out[]=['id'=>(int)$v['id'],'label'=>(string)$v['label']];
+            elseif (is_numeric($k) && is_string($v)) $out[]=['id'=>(int)$k,'label'=>$v];
+        }
+        if ($out) return $out;
+    }
+    return null;
+}
+
 function nta_sql_get_categories(){
     $db = nta_db();
     $sql = "SELECT id, name, completename FROM glpi_itilcategories WHERE is_helpdeskvisible=1 ORDER BY completename ASC LIMIT 2000";
@@ -20,6 +46,11 @@ function nta_sql_get_locations(){
 }
 
 function nta_sql_get_assignees(){
+    // try project-provided list first
+    $provided = nta_resolve_assignees_from_project();
+    if (is_array($provided) && !empty($provided)) {
+        return $provided;
+    }
     $db = nta_db();
     $sql = "SELECT id, name, realname, firstname FROM glpi_users WHERE is_active=1 ORDER BY realname, firstname LIMIT 2000";
     $rows = $db->get_results($sql, ARRAY_A) ?: [];

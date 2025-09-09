@@ -5,25 +5,39 @@
 /* Modal shell */
 .nta-wrap{display:none}
 .nta-wrap.nta-wrap--open{display:block;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.6);z-index:9990}
-.nta-wrap .nta-modal{position:relative;background:#1f1f1f;color:#fff;padding:20px;margin:40px auto;max-width:560px;border-radius:14px;box-shadow:0 10px 30px rgba(0,0,0,.5)}
+.nta-wrap .nta-modal{position:relative;background:#0f172a;color:#fff;padding:24px;margin:40px auto;max-width:760px;border-radius:16px;box-shadow:0 10px 30px rgba(0,0,0,.5)}
 .nta-wrap .nta-modal h3{margin:0 0 14px;font-size:18px}
 .nta-wrap .nta-close-modal{position:absolute;right:12px;top:12px;background:#333;border:none;color:#fff;border-radius:8px;cursor:pointer;padding:6px 10px}
 .nta-wrap .nta-close-modal:hover{background:#444}
 
 /* Inputs */
-.nta-wrap label{display:block;margin-bottom:10px}
-.nta-wrap input,.nta-wrap select,.nta-wrap textarea{width:100%;margin-top:6px;background:#111;border:1px solid #333;border-radius:8px;color:#fff;padding:8px}
+.nta-wrap label{display:block;margin-bottom:12px}
+.nta-wrap input,.nta-wrap select,.nta-wrap textarea{width:100%;margin-top:6px;background:#0b1220;border:1px solid #2b3550;border-radius:10px;color:#fff;padding:10px 12px}
 .nta-wrap textarea{min-height:100px;resize:vertical}
-.nta-inline{display:flex;gap:12px}
+.nta-inline{display:flex;gap:16px}
 .nta-inline > label{flex:1}
 
 /* States & errors */
-.nta-field--loading{opacity:.7}
-.nta-error{color:#ff6b6b;font-size:12px;margin-top:4px;white-space:pre-line;line-height:1.2}
+.nta-field--loading{opacity:.7;filter:saturate(.7)}
+.nta-error{color:#ff6b6b;font-size:12px;margin-top:6px;white-space:pre-line;line-height:1.2}
+.nta-note{color:#9aa7c7;font-size:12px;margin-top:6px}
 .nta-submit-error{color:#ff6b6b;margin-top:8px;white-space:pre-line;line-height:1.2}
 .nta-success{color:#7dd97d;margin-top:8px}
 
 /* Submit */
-.nta-submit{padding:10px 14px;background:#27a376;color:#fff;border:none;border-radius:10px;cursor:pointer}
-.nta-submit[disabled]{opacity:.6;cursor:not-allowed}
+.nta-submit{width:100%;padding:14px;background:#2563eb;color:#fff;border:none;border-radius:12px;cursor:pointer;font-weight:600}
+.nta-submit[disabled]{opacity:.5;cursor:not-allowed}
 .nta-submit:hover:not([disabled]){background:#1f865f}
+
+/* Typeahead */
+.nta-lookup-wrap{position:relative}
+.nta-lookup-input{width:100%;background:#0b1220;border:1px solid #2b3550;border-radius:10px;color:#fff;padding:10px 12px}
+.nta-lookup-list{position:absolute;left:0;right:0;top:100%;margin-top:6px;background:#111827;border:1px solid #2b3550;border-radius:10px;max-height:260px;overflow:auto;display:none;z-index:9991}
+.nta-lookup-list.nta-open{display:block}
+.nta-lookup-item{padding:10px 12px;cursor:pointer}
+.nta-lookup-item:hover{background:#1f2937}
+.nta-lookup-title{display:block;font-size:14px;color:#e5e7eb}
+.nta-lookup-sub{display:block;font-size:12px;color:#9aa7c7;margin-top:2px}
+
+/* Field highlight like main plugin */
+.nta-highlight{box-shadow:0 0 0 2px #e11d48 inset;border-color:#e11d48}
