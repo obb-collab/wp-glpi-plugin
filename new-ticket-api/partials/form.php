@@ -2,7 +2,6 @@
 <div class="nta-wrap" aria-hidden="true" role="dialog" aria-modal="true">
   <div class="nta-modal">
     <button type="button" class="nta-close-modal" aria-label="Закрыть">×</button>
-    <h3>Новая заявка (через API)</h3>
     <form class="nta-form" novalidate>
       <label>Тема
         <input type="text" name="title" required minlength="3" maxlength="255" />
