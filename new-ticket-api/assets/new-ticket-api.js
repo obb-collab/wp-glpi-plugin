@@ -98,7 +98,17 @@
   document.addEventListener('change', function(e){
     const form = e.target && e.target.closest('form.nta-form'); if(!form) return;
     if(e.target.matches('.nta-self')) toggleAssignee(form);
-    if(e.target.matches('select[name="assignee_id"]')) validateForm(form);
+    if(e.target.matches('select[name="assignee_id"]')){
+      // Если пользователь вручную выбрал исполнителя — снимаем "Я исполнитель"
+      const val = e.target.value;
+      const selfCb = form.querySelector('.nta-self');
+      if(val && selfCb && selfCb.checked){
+        selfCb.checked = false;
+        toggleAssignee(form); // обновит disabled и валидацию
+      } else {
+        validateForm(form);
+      }
+    }
   });
 
   const form = document.querySelector('.nta-wrap form.nta-form');
