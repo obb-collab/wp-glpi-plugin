@@ -201,8 +201,8 @@
       body: params.toString()
     }).then(r=>r.json()).then(function(data){
       if (data && data.success && data.data && data.data.nonce){
-        gexeAjax.nonce = data.data.nonce;
-        return gexeAjax.nonce;
+        gexeAjax.formNonce = data.data.nonce;
+        return gexeAjax.formNonce;
       }
       throw new Error('nonce_refresh_failed');
     });
@@ -567,16 +567,18 @@
     btn.classList.add('is-loading');
     const oldCursor = btn.style.cursor;
     btn.style.cursor = 'progress';
-    const params = new URLSearchParams();
-    params.append('action','glpi_create_ticket_api');
-    params.append('nonce', gexeAjax.nonce);
-    params.append('subject', v.data.subject);
-    params.append('content', v.data.content);
-    params.append('category_id', v.data.category_id);
-    params.append('location_id', v.data.location_id);
-    params.append('assignee_glpi_id', v.data.assignee_glpi_id);
-    params.append('is_self_assignee', v.data.is_self_assignee ? 1 : 0);
-    fetch(gexeAjax.url, { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body: params.toString() })
+    refreshNonce().then(function(nonce){
+      const params = new URLSearchParams();
+      params.append('action','glpi_create_ticket_api');
+      params.append('nonce', nonce);
+      params.append('subject', v.data.subject);
+      params.append('content', v.data.content);
+      params.append('category_id', v.data.category_id);
+      params.append('location_id', v.data.location_id);
+      params.append('assignee_glpi_id', v.data.assignee_glpi_id);
+      params.append('is_self_assignee', v.data.is_self_assignee ? 1 : 0);
+      return fetch(gexeAjax.url, { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body: params.toString() });
+    })
       .then(async (r) => {
         // Читаем как текст, пытаемся распарсить JSON; иначе вернём detail=сырой ответ или HTTP-код
         const status = r.status;
