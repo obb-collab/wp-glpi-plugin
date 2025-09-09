@@ -324,4 +324,5 @@ require_once __DIR__ . '/glpi-solve.php';
 require_once __DIR__ . '/glpi-icon-map.php';
 require_once __DIR__ . '/glpi-new-task.php';
 require_once __DIR__ . '/glpi-settings.php';
+require_once __DIR__ . '/new-ticket/new-ticket.php';
 
