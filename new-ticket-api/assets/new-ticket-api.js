@@ -261,7 +261,8 @@
       doFilter();
       validateForm(form);
     });
-    input.addEventListener('focus', ()=>{ if(input.value){ doFilter(); } });
+    // при фокусе всегда показываем весь список
+    input.addEventListener('focus', ()=>{ if(input.value){ doFilter(); } else { render(list); } });
     if(toggle){
       toggle.addEventListener('click', (e)=>{
         e.preventDefault();
@@ -271,7 +272,8 @@
       });
     }
     document.addEventListener('click', (e)=>{
-      if(!wrap.contains(e.target)) { dropdown.classList.remove('nta-open'); if(toggle){toggle.classList.remove('nta-open');} }
+      if(!wrap.contains(e.target)) dropdown.classList.remove('nta-open');
+      if(!wrap.contains(e.target) && toggle){ toggle.classList.remove('nta-open'); }
     });
   }
 })();

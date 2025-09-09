@@ -70,12 +70,14 @@ add_action('wp_ajax_nta_create_ticket_api', function(){
         nta_response(['ok'=>true, 'code'=>'already_exists', 'ticket_id'=>$dup]);
     }
 
-    // Если выбран конкретный исполнитель — используем его всегда.
+    // Если выбран конкретный исполнитель — используем его.
     // Иначе, если отмечено "Я исполнитель" — назначаем текущего пользователя.
-    // Фолбэк на текущего пользователя для надёжности.
-    $assignee = !empty($validated['assignee_id'])
-        ? (int)$validated['assignee_id']
-        : ($validated['self_assign'] ? (int)$uid : (int)$uid);
+    // Фолбэк — текущий пользователь.
+    $assignee = (int) (
+        !empty($validated['assignee_id'])
+            ? $validated['assignee_id']
+            : ($validated['self_assign'] ? $uid : $uid)
+    );
     $res = nta_api_create_ticket($token, $validated, $uid, $assignee);
     if(!$res['ok']){
         $msg = $res['message'] ?? 'API error';
