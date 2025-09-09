@@ -8,6 +8,31 @@ if (!defined('CHIEF_DEBUG')) {
 require_once __DIR__ . '/../glpi-db-setup.php';
 require_once __DIR__ . '/../glpi-icon-map.php';
 
+// --- Chief mode constants (do NOT touch core) ---
+if (!defined('CHIEF_WP_USER_ID')) {
+    define('CHIEF_WP_USER_ID', 1); // WP id начальника (vks_m5_local)
+}
+if (!defined('CHIEF_GLPI_USER_ID')) {
+    define('CHIEF_GLPI_USER_ID', 1); // GLPI id начальника (Куткин П.)
+}
+
+function chief_is_chief_user(): bool {
+    return (int) get_current_user_id() === (int) CHIEF_WP_USER_ID;
+}
+
+// Localize data for chief front-end (nonce, defaults)
+add_action('wp_enqueue_scripts', function () {
+    wp_localize_script('glpi-chief', 'GEXE_CHIEF', [
+        'isChief'     => chief_is_chief_user(),
+        'chiefWpId'   => (int) CHIEF_WP_USER_ID,
+        'chiefGlpiId' => (int) CHIEF_GLPI_USER_ID,
+        'nonce'       => wp_create_nonce('gexe_chief_nonce'),
+    ]);
+});
+
+// Подключаем эндпоинты ТОЛЬКО из подпапки chief
+require_once __DIR__ . '/glpi-chief-actions.php';
+
 if (!function_exists('chief_is_manager')) {
     function chief_is_manager(): bool {
         $u = wp_get_current_user();
