@@ -203,8 +203,8 @@
       body: params.toString()
     }).then(r=>r.json()).then(function(data){
       if (data && data.success && data.data && data.data.nonce){
-        gexeAjax.formNonce = data.data.nonce;
-        return gexeAjax.formNonce;
+        gexeAjax.nonce = data.data.nonce;
+        return gexeAjax.nonce;
       }
       throw new Error('nonce_refresh_failed');
     });
