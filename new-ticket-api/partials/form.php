@@ -12,20 +12,30 @@
       </label>
       <div class="nta-inline">
         <label data-nta-field="category">Категория
-          <select name="category_id"></select>
+          <div class="nta-lookup-wrap" data-nta-lookup="category">
+            <input type="text" class="nta-lookup-input" placeholder="Начните вводить..." />
+            <div class="nta-lookup-list"></div>
+          </div>
+          <input type="hidden" name="category_id" />
+          <div class="nta-note" data-nta-note="category" hidden></div>
           <div class="nta-error" data-nta-error="category" hidden></div>
         </label>
         <label data-nta-field="location">Местоположение
-          <select name="location_id"></select>
+          <div class="nta-lookup-wrap" data-nta-lookup="location">
+            <input type="text" class="nta-lookup-input" placeholder="Начните вводить..." />
+            <div class="nta-lookup-list"></div>
+          </div>
+          <input type="hidden" name="location_id" />
+          <div class="nta-note" data-nta-note="location" hidden></div>
           <div class="nta-error" data-nta-error="location" hidden></div>
         </label>
       </div>
-      <label><input type="checkbox" name="self_assign" class="nta-self" /> Назначить меня</label>
+      <label><input type="checkbox" name="self_assign" class="nta-self" checked /> Я исполнитель</label>
       <label data-nta-field="assignee">Исполнитель
         <select name="assignee_id"></select>
         <div class="nta-error" data-nta-error="assignee" hidden></div>
       </label>
-      <button type="submit" class="nta-submit">Создать (API)</button>
+      <button type="submit" class="nta-submit" disabled>Создать заявку</button>
       <div class="nta-submit-error"></div>
       <div class="nta-success nta-submit-success"></div>
     </form>
