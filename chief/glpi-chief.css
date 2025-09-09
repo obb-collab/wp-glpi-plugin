@@ -1,22 +1,5 @@
-/* Chief styles */
-
-.gexe-accept-btn.is-accepted {
-  opacity: .9;
-  cursor: default;
-  background: linear-gradient(180deg, rgba(52,152,219,.22), rgba(52,152,219,.06));
-  border: 1px solid rgba(52,152,219,.45);
-  box-shadow: 0 0 0 1px rgba(52,152,219,.15) inset;
-}
-.gexe-accept-btn.is-accepted:hover {
-  box-shadow: none;
-  transform: none;
-}
-
-/* dark toast (if used by theme) */
-.gexe-toast {
-  background: rgba(20,24,30,.96);
-  color: #e6eef8;
-  border: 1px solid rgba(255,255,255,.08);
-  border-radius: 8px;
-  padding: 8px 10px;
+.chief-executors {
+  margin-left: 8px;
+  padding: 2px 4px;
+  font-size: 14px;
 }
