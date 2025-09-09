@@ -20,12 +20,16 @@ require_once __DIR__ . '/newmodal-template.php';
  * Determine whether new modal is enabled for current request
  */
 function gexe_newmodal_is_enabled(): bool {
-    $enabled = defined('GEXE_USE_NEWMODAL') && GEXE_USE_NEWMODAL;
-    $qs_key  = defined('GEXE_NEWMODAL_QS') ? GEXE_NEWMODAL_QS : 'use_newmodal';
-    if (isset($_GET[$qs_key])) {
-        $enabled = (string)$_GET[$qs_key] === '1';
+    // Глобальное включение через define — приоритетнее всего
+    if (defined('GEXE_USE_NEWMODAL') && GEXE_USE_NEWMODAL) {
+        return true;
     }
-    return $enabled;
+    // Опционально — включение через query string
+    $qs_key = defined('GEXE_NEWMODAL_QS') ? GEXE_NEWMODAL_QS : 'use_newmodal';
+    if (isset($_GET[$qs_key])) {
+        return ((string) $_GET[$qs_key]) === '1';
+    }
+    return false;
 }
 
 /**
@@ -33,19 +37,21 @@ function gexe_newmodal_is_enabled(): bool {
  */
 add_action('wp_enqueue_scripts', function () {
     if (!gexe_newmodal_is_enabled()) return;
-    $ver = defined('GEXE_TRIGGERS_VERSION') ? GEXE_TRIGGERS_VERSION : '1.0.0';
-    wp_register_style('gexe-newmodal', plugins_url('newmodal/newmodal.css', dirname(__FILE__)), [], $ver);
+    $ver  = defined('GEXE_TRIGGERS_VERSION') ? GEXE_TRIGGERS_VERSION : '1.0.0';
+    $base = plugin_dir_url(__FILE__); // корректная база URL для подпапки newmodal/
+
+    wp_register_style('gexe-newmodal', $base . 'newmodal.css', [], $ver);
     wp_enqueue_style('gexe-newmodal');
 
-    wp_register_script('gexe-newmodal', plugins_url('newmodal/newmodal.js', dirname(__FILE__)), ['jquery'], $ver, true);
+    wp_register_script('gexe-newmodal', $base . 'newmodal.js', ['jquery'], $ver, true);
     wp_enqueue_script('gexe-newmodal');
 
-    // Nonce + flags
+    // Nonce + flags (enabled=true, т.к. до сюда дошли только при включённом модуле)
     wp_localize_script('gexe-newmodal', 'gexeNewModal', [
-        'ajaxUrl'   => admin_url('admin-ajax.php'),
-        'nonce'     => wp_create_nonce('gexe_newmodal_nonce'),
-        'enabled'   => true,
-        'qs'        => defined('GEXE_NEWMODAL_QS') ? GEXE_NEWMODAL_QS : 'use_newmodal'
+        'ajaxUrl' => admin_url('admin-ajax.php'),
+        'nonce'   => wp_create_nonce('gexe_newmodal_nonce'),
+        'enabled' => true,
+        'qs'      => defined('GEXE_NEWMODAL_QS') ? GEXE_NEWMODAL_QS : 'use_newmodal',
     ]);
 });
 
