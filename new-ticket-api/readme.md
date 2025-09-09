@@ -9,7 +9,13 @@ Isolated module under `/new-ticket-api`. UI mirrors the SQL module but creates t
 require_once __DIR__ . '/new-ticket-api/new-ticket-api.php';
 ```
 2. Place shortcode `[glpi_new_ticket_api]` on a page.
-3. Each WP user must have `glpi_user_id` and `glpi_user_token` in their usermeta.
+3. User credentials:
+   - Each WP user must have `glpi_user_id` in usermeta.
+   - GLPI user token is resolved automatically from (first match wins):
+     - usermeta `glpi_user_token`
+     - `nt_glpi_user_token` filter
+     - helper functions `glpi_get_user_token()` or `gexe_get_glpi_user_token()` if available
+     - `GEXE_GLPI_USER_TOKENS` constant/array keyed by login, email, `wp:id` or `glpi:id`
 
 ## Notes
 - Dictionaries (categories, locations, assignees) are loaded from GLPI DB for performance.
