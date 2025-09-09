@@ -13,8 +13,7 @@ require_once __DIR__ . '/inc/user-map.php';
 require_once __DIR__ . '/includes/glpi-sql.php';
 
 add_action('wp_enqueue_scripts', function () {
-    // Styles are enqueued globally from main plugin; here only JS is ensured.
-    wp_register_style('glpi-new-task', plugin_dir_url(__FILE__) . 'glpi-new-task.css', [], '1.0.0');
+    // Styles for the modal are enqueued globally from gexe-copy.php
     wp_register_script('gexe-new-task-js', plugin_dir_url(__FILE__) . 'assets/js/gexe-new-task.js', [], '1.0.0', true);
     wp_enqueue_script('gexe-new-task-js');
 
@@ -43,67 +42,18 @@ function glpi_nt_verify_nonce() {
 }
 
 // -------- Dictionaries --------
-// === Legacy endpoints used by gexe-filter.js: separate dictionaries ===
+/* legacy loader (rollback)
 add_action('wp_ajax_glpi_get_categories', 'glpi_ajax_get_categories');
-function glpi_ajax_get_categories() {
-    glpi_nt_verify_nonce();
-    if (!is_user_logged_in()) {
-        wp_send_json_error(['type' => 'SECURITY', 'scope' => 'all', 'message' => 'Пользователь не авторизован']);
-    }
-    try {
-        $pdo = glpi_get_pdo();
-        $rows = $pdo->query("SELECT c.id, c.name, c.completename
-                              FROM glpi_itilcategories AS c
-                              WHERE c.is_helpdeskvisible = 1
-                              ORDER BY c.completename ASC")->fetchAll(PDO::FETCH_ASSOC);
-        wp_send_json_success(['list' => array_values($rows)]);
-    } catch (Throwable $e) {
-        error_log('[wp-glpi:new-task:dicts:categories] ' . $e->getMessage());
-        wp_send_json_error(['type' => 'SQL', 'scope' => 'categories', 'message' => 'Ошибка загрузки категорий', 'details' => $e->getMessage()]);
-    }
-}
+function glpi_ajax_get_categories() { old implementation }
 
 add_action('wp_ajax_glpi_get_locations', 'glpi_ajax_get_locations');
-function glpi_ajax_get_locations() {
-    glpi_nt_verify_nonce();
-    if (!is_user_logged_in()) {
-        wp_send_json_error(['type' => 'SECURITY', 'scope' => 'all', 'message' => 'Пользователь не авторизован']);
-    }
-    try {
-        $pdo = glpi_get_pdo();
-        $rows = $pdo->query("SELECT l.id, l.name, l.completename
-                              FROM glpi_locations AS l
-                              ORDER BY l.completename ASC")->fetchAll(PDO::FETCH_ASSOC);
-        wp_send_json_success(['list' => array_values($rows)]);
-    } catch (Throwable $e) {
-        error_log('[wp-glpi:new-task:dicts:locations] ' . $e->getMessage());
-        wp_send_json_error(['type' => 'SQL', 'scope' => 'locations', 'message' => 'Ошибка загрузки местоположений', 'details' => $e->getMessage()]);
-    }
-}
+function glpi_ajax_get_locations() { old implementation }
 
 add_action('wp_ajax_glpi_get_executors', 'glpi_ajax_get_executors');
-function glpi_ajax_get_executors() {
-    glpi_nt_verify_nonce();
-    if (!is_user_logged_in()) {
-        wp_send_json_error(['type' => 'SECURITY', 'scope' => 'all', 'message' => 'Пользователь не авторизован']);
-    }
-    try {
-        // Берём списки исполнителей из существующей мапы WP→GLPI.
-        $list = glpi_get_wp_executors(); // возвращает [{'user_id','display_name','glpi_user_id'}...]
-        $out = [];
-        foreach ($list as $u) {
-            $out[] = [
-                'id'           => (int)$u['glpi_user_id'],
-                'name'         => (string)$u['display_name'],
-                'completename' => (string)$u['display_name'],
-            ];
-        }
-        wp_send_json_success(['list' => $out]);
-    } catch (Throwable $e) {
-        error_log('[wp-glpi:new-task:dicts:executors] ' . $e->getMessage());
-        wp_send_json_error(['type' => 'SQL', 'scope' => 'executors', 'message' => 'Ошибка загрузки исполнителей', 'details' => $e->getMessage()]);
-    }
-}
+function glpi_ajax_get_executors() { old implementation }
+
+function glpi_db_get_executors() { old implementation }
+*/
 
 add_action('wp_ajax_glpi_load_dicts', 'glpi_ajax_load_dicts');
 
