@@ -69,6 +69,7 @@ function nta_sql_get_assignees(){
     return array_map(function($r){
         $label = trim(($r['realname'] ?? '').' '.($r['firstname'] ?? ''));
         if($label===''){ $label = $r['name'] ?? ''; }
+        if (($r['name'] ?? '') === 'vks_m5_local') { $label = 'Павел Куткин'; }
         return ['id'=>(int)$r['id'],'label'=>$label];
     }, $rows);
 }
