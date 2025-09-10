@@ -3,14 +3,13 @@
  * BAGE (изолированная страница карточек под новую модалку).
  * - Полный клон: свой шаблон, свой JS, свой CSS.
  * - Никаких подключений старых шорткодов/скриптов.
- * - Данные читаем через API (где уместно), изменения — через SQL, затем пингуем API триггеры.
+ * - Данные читаем через SQL (видимость: только «свои» заявки), изменения — через SQL, затем пингуем API триггеры.
  */
 if (!defined('ABSPATH')) exit;
 
 require_once __DIR__ . '/../common/helpers.php';
 require_once __DIR__ . '/../common/db.php';
 require_once __DIR__ . '/../common/notify-api.php';
-require_once __DIR__ . '/../newmodal-api.php';
 require_once __DIR__ . '/../modal/ticket-modal.php';
 
 // Шорткод [glpi_cards_new]
@@ -21,7 +20,8 @@ function gexe_new_bage_shortcode($atts = []) {
     }
     ob_start();
     require __DIR__ . '/bage-template.php';
-    // Контейнер модалки выводится через footer-хук в newmodal-loader
+    // Контейнер модалки рендерится скрытым (изолированная версия)
+    echo gexe_nm_render_modal_container();
     return ob_get_clean();
 }
 add_shortcode('glpi_cards_new', 'gexe_new_bage_shortcode');
@@ -30,16 +30,14 @@ add_shortcode('glpi_cards_new', 'gexe_new_bage_shortcode');
 function gexe_new_bage_maybe_enqueue_assets() {
     if (!gexe_nm_is_shortcode_present('glpi_cards_new')) return;
     // CSS
-    wp_enqueue_style('gexe-bage-css', plugins_url('newmodal/bage/bage.css', dirname(__FILE__, 2)), [], '1.0.0');
-    wp_enqueue_style('gexe-newmodal-css', plugins_url('newmodal/newmodal.css', dirname(__FILE__, 2)), [], '1.0.0');
-    wp_enqueue_style('gexe-newmodal-modal-css', plugins_url('newmodal/modal/modal.css', dirname(__FILE__, 2)), [], '1.0.0');
-    wp_enqueue_style('gexe-new-ticket-css', plugins_url('newmodal/new-ticket/assets/new-ticket.css', dirname(__FILE__, 2)), [], '1.0.0');
+    wp_enqueue_style('gexe-bage-css', plugins_url('bage.css', __FILE__), [], '1.0.1');
+    wp_enqueue_style('gexe-newmodal-css', plugins_url('../newmodal.css', __FILE__), [], '1.0.1');
+    wp_enqueue_style('gexe-newmodal-modal-css', plugins_url('../modal/modal.css', __FILE__), [], '1.0.1');
 
     // JS
-    wp_enqueue_script('gexe-bage-js', plugins_url('newmodal/bage/bage.js', dirname(__FILE__, 2)), ['jquery'], '1.0.0', true);
-    wp_enqueue_script('gexe-newmodal-js', plugins_url('newmodal/newmodal.js', dirname(__FILE__, 2)), ['jquery'], '1.0.0', true);
-    wp_enqueue_script('gexe-newmodal-modal-js', plugins_url('newmodal/modal/modal.js', dirname(__FILE__, 2)), ['jquery'], '1.0.0', true);
-    wp_enqueue_script('gexe-new-ticket-js', plugins_url('newmodal/new-ticket/assets/new-ticket.js', dirname(__FILE__, 2)), ['jquery'], '1.0.0', true);
+    wp_enqueue_script('gexe-bage-js', plugins_url('bage.js', __FILE__), ['jquery'], '1.0.1', true);
+    wp_enqueue_script('gexe-newmodal-js', plugins_url('../newmodal.js', __FILE__), ['jquery'], '1.0.1', true);
+    wp_enqueue_script('gexe-newmodal-modal-js', plugins_url('../modal/modal.js', __FILE__), ['jquery'], '1.0.1', true);
 
     // Рантайм-параметры и nonce
     wp_localize_script('gexe-bage-js', 'gexeNewBage', [
@@ -150,19 +148,17 @@ function gexe_nm_ajax_create_ticket() {
 }
 add_action('wp_ajax_gexe_nm_create_ticket', 'gexe_nm_ajax_create_ticket');
 
-// Чтение списка карточек (для примера — может опираться на API)
+// Чтение списка карточек (SQL, только «свои» заявки текущего исполнителя)
 function gexe_nm_ajax_list_tickets() {
     try {
         gexe_nm_check_nonce();
-        $page  = isset($_GET['page']) ? max(1, (int) $_GET['page']) : 1;
-        $query = isset($_GET['q']) ? wp_unslash((string)$_GET['q']) : '';
-        // Здесь можно использовать API для поиска, чтобы не дублировать складную логику выборок
-        $data = gexe_newmodal_api_call('GET', '/Ticket', [
-            'criteria' => [],
-            'range'    => [($page-1)*25, 25],
-            'searchText' => $query,
-        ]);
-        return wp_send_json(['ok' => true, 'items' => $data['data'] ?? [], 'code' => 'ok', 'message' => '']);
+        $page   = isset($_REQUEST['page']) ? max(1, (int) $_REQUEST['page']) : 1;
+        $query  = isset($_REQUEST['q']) ? wp_unslash((string)$_REQUEST['q']) : '';
+        $limit  = 25;
+        $offset = ($page - 1) * $limit;
+
+        $items = nm_sql_list_tickets_for_current($limit, $offset, $query);
+        return wp_send_json(['ok' => true, 'items' => $items, 'code' => 'ok', 'message' => '']);
     } catch (Throwable $e) {
         return wp_send_json(['ok' => false, 'code' => 'exception', 'message' => $e->getMessage()]);
     }

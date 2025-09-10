@@ -69,6 +69,48 @@ function nm_sql_assign_user(int $ticket_id, int $assignee_glpi_id): array {
 }
 
 /**
+ * Список заявок для текущего исполнителя.
+ * Возвращает массив упрощённых карточек:
+ *  - id, name, status, date, date_mod
+ * Фильтрация по тексту ($q) — по id (#123), по части name/content.
+ */
+function nm_sql_list_tickets_for_current(int $limit = 25, int $offset = 0, string $q = ''): array {
+    $assignee = nm_current_glpi_user_id();
+    $pdo = glpi_get_pdo();
+
+    $where = 'tu.users_id = :uid AND tu.type = 2';
+    $params = [':uid' => $assignee];
+
+    // поиск по "#id" или тексту
+    if ($q !== '') {
+        if (preg_match('~^\s*#?(\d+)\s*$~u', $q, $m)) {
+            $where .= ' AND t.id = :id';
+            $params[':id'] = (int)$m[1];
+        } else {
+            $where .= ' AND (t.name LIKE :q OR t.content LIKE :q)';
+            $params[':q'] = '%'.$q.'%';
+        }
+    }
+
+    $sql = "
+        SELECT t.id, t.name, t.status, t.date, t.date_mod
+        FROM glpi_tickets t
+        INNER JOIN glpi_tickets_users tu ON tu.tickets_id = t.id
+        WHERE $where
+        ORDER BY t.date_mod DESC
+        LIMIT :lim OFFSET :off
+    ";
+    $stmt = $pdo->prepare($sql);
+    foreach ($params as $k => $v) {
+        $stmt->bindValue($k, $v);
+    }
+    $stmt->bindValue(':lim', $limit, PDO::PARAM_INT);
+    $stmt->bindValue(':off', $offset, PDO::PARAM_INT);
+    $stmt->execute();
+    return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+}
+
+/**
  * Создать новую заявку через SQL, с назначением и сроком.
  * $payload: name, content, category, location, due (Y-m-d H:i:s), assignee
  */
