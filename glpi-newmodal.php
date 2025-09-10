@@ -16,6 +16,14 @@ define('NM_BASE_URL', plugin_dir_url(__FILE__) . 'newmodal/');
 // === Load common layer ===
 require_once NM_BASE_DIR . 'config.php';
 require_once NM_BASE_DIR . 'helpers.php';
+// Подключаем SQL-хелперы раньше всего, чтобы сработал перехват "голого" SQL.
+// Это защитит от падения из-за "SELECT ... FROM glpi_itilstatuses" без имени БД.
+if (file_exists(NM_BASE_DIR . 'common/sql.php')) {
+    require_once NM_BASE_DIR . 'common/sql.php';
+    if (function_exists('nm_sql_enable_rewrite')) {
+        nm_sql_enable_rewrite();
+    }
+}
 require_once NM_BASE_DIR . 'common/api.php';
 require_once NM_BASE_DIR . 'common/ping.php';
 

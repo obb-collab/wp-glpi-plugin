@@ -7,6 +7,147 @@
 if (!defined('ABSPATH')) { exit; }
 
 /**
+ * ВКЛ перехвата "голого" SQL к таблицам GLPI.
+ * Когда где-то остался прямой запрос вроде "FROM glpi_itilstatuses",
+ * мы автоматически дописываем имя БД: `dbname`.`glpi_itilstatuses`.
+ */
+if (!defined('NM_SQL_REWRITE_ENABLE')) define('NM_SQL_REWRITE_ENABLE', true);
+
+/**
+ * Имя БД GLPI.
+ *
+ * Приоритет:
+ * 1. Константа NM_GLPI_DBNAME
+ * 2. Опция 'nm_glpi_dbname'
+ * 3. 'glpi' по умолчанию
+ */
+function nm_glpi_dbname() {
+    static $db = null;
+    if ($db !== null) return $db;
+    if (defined('NM_GLPI_DBNAME') && NM_GLPI_DBNAME) {
+        $db = NM_GLPI_DBNAME;
+    } else {
+        $db = get_option('nm_glpi_dbname', 'glpi');
+    }
+    return $db;
+}
+
+/**
+ * Безопасно обрамить идентификатор обратными кавычками.
+ */
+function nm_sql_ident($ident) {
+    $ident = str_replace('`', '``', (string)$ident);
+    return '`' . $ident . '`';
+}
+
+/**
+ * Получить fully-qualified имя таблицы в БД GLPI.
+ */
+function nm_glpi_table($table) {
+    return nm_sql_ident(nm_glpi_dbname()) . '.' . nm_sql_ident($table);
+}
+
+/**
+ * Переписать куски SQL, где встречается "FROM glpi_itilstatuses" или "JOIN glpi_itilstatuses"
+ * без имени БД — подставляем fully-qualified имя `dbname`.`glpi_itilstatuses`.
+ *
+ * Работает только на чтение (SELECT). Остальные запросы не затрагиваем.
+ *
+ * @param string $query
+ * @return string
+ */
+function nm_sql_rewrite_glpi_tables($query) {
+    // Быстрые проверки
+    if (!is_string($query) || $query === '') return $query;
+    $q_l = strtolower($query);
+    if (strpos($q_l, 'glpi_itilstatuses') === false) return $query;
+    if (strpos($q_l, 'select') === false) return $query; // только SELECT
+
+    $qualified = nm_glpi_table('glpi_itilstatuses'); // `db`.`glpi_itilstatuses`
+
+    // Шаблоны: FROM glpi_itilstatuses / JOIN glpi_itilstatuses
+    // с любым количеством пробелов и возможными переносами.
+    $patterns = [
+        // FROM glpi_itilstatuses
+        '~(\bfrom\s+)(?:`?glpi_itilstatuses`?\b)~i',
+        // JOIN glpi_itilstatuses
+        '~(\bjoin\s+)(?:`?glpi_itilstatuses`?\b)~i',
+        // LEFT/RIGHT/INNER JOIN glpi_itilstatuses
+        '~(\b(inner|left|right)\s+join\s+)(?:`?glpi_itilstatuses`?\b)~i',
+    ];
+    $replaced = $query;
+    foreach ($patterns as $re) {
+        $replaced = preg_replace($re, '$1' . $qualified, $replaced);
+    }
+    return $replaced ?: $query;
+}
+
+/**
+ * Включить перехват запросов WPDB для автоподстановки имени БД
+ * у таблицы glpi_itilstatuses. Вызывать как можно раньше (в аддоне).
+ */
+function nm_sql_enable_rewrite() {
+    static $done = false;
+    if ($done || !NM_SQL_REWRITE_ENABLE) return;
+    $done = true;
+    // Фильтр wpdb "query" существует во всех поддерживаемых версиях WP.
+    add_filter('query', 'nm_sql_rewrite_glpi_tables', 10, 1);
+}
+
+/**
+ * Проверка существования таблицы.
+ */
+function nm_glpi_table_exists($tableRaw) {
+    global $wpdb;
+    $table = nm_glpi_table($tableRaw);
+    $sql = "SHOW TABLES LIKE %s";
+    $like = $wpdb->esc_like(str_replace('`', '', $table));
+    $res = $wpdb->get_var($wpdb->prepare($sql, $like));
+    return (bool) $res;
+}
+
+/**
+ * Простой SELECT из таблицы GLPI с автоматической подстановкой имени БД.
+ *
+ * @param string $tableRaw
+ * @param string $columns
+ * @param string $where
+ * @param array  $params
+ * @param string $output
+ * @return array|WP_Error
+ */
+function nm_glpi_select($tableRaw, $columns = '*', $where = '', array $params = [], $output = ARRAY_A) {
+    global $wpdb;
+    $table = nm_glpi_table($tableRaw);
+    $sql = "SELECT $columns FROM $table";
+    if ($where !== '') {
+        $sql .= " WHERE $where";
+    }
+    $sql = $params ? $wpdb->prepare($sql, $params) : $sql;
+    $rows = $wpdb->get_results($sql, $output);
+    if ($wpdb->last_error) {
+        return new WP_Error('db_query', $wpdb->last_error);
+    }
+    return $rows;
+}
+
+/**
+ * Получить список статусов (id, name) из GLPI.
+ *
+ * @return array|WP_Error
+ */
+function nm_sql_get_statuses() {
+    return nm_glpi_select('glpi_itilstatuses', 'id,name');
+}
+
+// Автовключение перехвата при прямом подключении файла (на случай,
+// если аддон по какой-то причине не вызвал nm_sql_enable_rewrite()).
+if (NM_SQL_REWRITE_ENABLE && !has_filter('query', 'nm_sql_rewrite_glpi_tables')) {
+    // Стартуем чуть позже загрузки плагинов, но до построения страниц.
+    add_action('plugins_loaded', 'nm_sql_enable_rewrite', 1);
+}
+
+/**
  * Возвращает singleton PDO для подключения к GLPI.
  * Данные подключения заданы из ТЗ (см. чат), при необходимости можно вынести в опции.
  */
