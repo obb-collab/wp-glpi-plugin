@@ -1,0 +1,12 @@
+/* BAGE scope – minimal safety styles to avoid any visual drift while removing legacy modal triggers */
+.gexe-bage-scope .gexe-card,
+.gexe-bage-scope .ticket-card{
+  /* no-op: keep original styles; this file is intentionally minimal */
+}
+
+/* Ensure clickable cursor even if legacy classes removed */
+.gexe-bage-scope [data-ticket-id]{
+  cursor: pointer;
+}
+
+/* Do NOT style modal here; modal styles live in newmodal/newmodal.css */
