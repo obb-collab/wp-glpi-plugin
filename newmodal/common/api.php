@@ -19,6 +19,9 @@ if (defined('NM_COMMON_API_LOADED')) {
 }
 define('NM_COMMON_API_LOADED', true);
 
+// Load token helpers.
+require_once __DIR__ . '/tokens.php';
+
 /**
  * Returns standardized JSON to AJAX caller and exits.
  *
@@ -134,6 +137,54 @@ function nm_req_str($key, $default = '') {
  */
 function nm_api_ping() {
     nm_api_ok(['pong' => true, 'time' => time()]);
+}
+
+/**
+ * Perform GLPI REST API request.
+ *
+ * @param string            $method HTTP method.
+ * @param string            $path   API path, e.g. "/ticket".
+ * @param array|string|null $body   Optional JSON body.
+ * @param string            $user_token Personal GLPI token.
+ * @return array{0:bool,1:mixed} [ok, data]
+ */
+function nm_glpi_request($method, $path, $body = null, $user_token = '') {
+    $base = defined('GEXE_GLPI_API_URL') ? rtrim(GEXE_GLPI_API_URL, '/') : '';
+    $url  = $base . '/' . ltrim($path, '/');
+    $args = [
+        'method'  => strtoupper($method),
+        'timeout' => 15,
+        'headers' => nm_glpi_api_headers($user_token ?: null),
+    ];
+    if ($body !== null) {
+        $args['body'] = is_array($body) ? wp_json_encode($body) : (string)$body;
+    }
+    $resp = wp_remote_request($url, $args);
+    if (is_wp_error($resp)) {
+        return [false, $resp->get_error_message()];
+    }
+    $code = (int) wp_remote_retrieve_response_code($resp);
+    $raw  = wp_remote_retrieve_body($resp);
+    $data = json_decode($raw, true);
+    if ($code >= 200 && $code < 300) {
+        return [true, $data];
+    }
+    $err = $data ? $data : ['code' => $code, 'body' => $raw];
+    return [false, $err];
+}
+
+/**
+ * Execute GLPI request on behalf of a mapped responsible executor.
+ *
+ * @param string            $method
+ * @param string            $path
+ * @param array|string|null $body
+ * @param int|null          $wp_user_id null -> current user
+ * @return array [ok,data]
+ */
+function nm_glpi_request_as_user($method, $path, $body = null, ?int $wp_user_id = null) {
+    $token = function_exists('nm_glpi_token_for_wp_user') ? nm_glpi_token_for_wp_user($wp_user_id) : '';
+    return nm_glpi_request($method, $path, $body, $token);
 }
 
 // End of file.
