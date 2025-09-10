@@ -1,12 +1,25 @@
-/* BAGE scope – minimal safety styles to avoid any visual drift while removing legacy modal triggers */
-.gexe-bage-scope .gexe-card,
-.gexe-bage-scope .ticket-card{
-  /* no-op: keep original styles; this file is intentionally minimal */
-}
+/* Изолированная тёмная тема карточек (минимум — не конфликтует со старым CSS) */
+.gexe-bage{ padding:24px; color:#e8eef7; background:transparent; }
+.gexe-bage__toolbar{ display:flex; gap:10px; align-items:center; margin-bottom:16px; }
+.gexe-bage__btn{ background:#1d2230; color:#fff; border:1px solid rgba(255,255,255,.1); border-radius:10px; padding:8px 12px; cursor:pointer; }
+.gexe-bage__btn:hover{ background:#26304a; }
+.gexe-bage__btn--primary{ background:#2a3a63; border-color:#3a56a1; }
+.gexe-bage__btn--primary:hover{ background:#33477a; }
+.gexe-bage__search{ flex:1; min-width:220px; background:#0d111a; color:#fff; border:1px solid rgba(255,255,255,.1); border-radius:10px; padding:8px 12px; }
+.gexe-bage__filters{ display:flex; gap:10px; margin-bottom:16px; flex-wrap:wrap; }
+.gexe-bage__pill{ display:flex; align-items:center; gap:8px; background:#141925; color:#cdd7ee; border:1px solid rgba(255,255,255,.08); border-radius:14px; padding:10px 14px; cursor:pointer; }
+.gexe-bage__pill.is-active{ background:#1e2b4e; color:#fff; border-color:#3a56a1; }
+.gexe-bage__num{ display:inline-block; min-width:18px; text-align:center; font-weight:700; }
+.gexe-bage__grid{ display:grid; grid-template-columns: repeat(auto-fill,minmax(320px,1fr)); gap:12px; }
+.gexe-bage__card{ background:#0e111a; border:1px solid rgba(255,255,255,.08); border-radius:14px; padding:12px; display:flex; flex-direction:column; gap:8px; cursor:pointer; }
+.gexe-bage__card:hover{ background:#121726; }
+.gexe-bage__title{ font-weight:700; font-size:16px; line-height:1.25; }
+.gexe-bage__meta{ display:flex; gap:12px; color:#9aa4b2; font-size:12px; }
+.gexe-bage__footer{ display:flex; justify-content:space-between; align-items:center; color:#9aa4b2; font-size:12px; }
+.gexe-bage__pager{ display:flex; gap:10px; justify-content:center; align-items:center; margin-top:16px; }
+.gexe-bage__error{ margin-top:12px; color:#ff8a8a; font-size:12px; }
+.gexe-bage__empty{ text-align:center; color:#9aa4b2; padding:24px; }
 
-/* Ensure clickable cursor even if legacy classes removed */
-.gexe-bage-scope [data-ticket-id]{
-  cursor: pointer;
-}
+/* Совместимость с новой модалкой: никаких старых классов */
+.gexe-bage [data-ticket-id]{ pointer-events:auto; }
 
-/* Do NOT style modal here; modal styles live in newmodal/newmodal.css */

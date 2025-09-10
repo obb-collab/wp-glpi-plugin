@@ -6,10 +6,6 @@ if (!defined('ABSPATH')) {
 if (!defined('GEXE_USE_NEWMODAL')) {
     define('GEXE_USE_NEWMODAL', true);
 }
-if (!defined('GEXE_CARDS_TEMPLATE')) {
-    define('GEXE_CARDS_TEMPLATE', __DIR__ . '/glpi_cards_test_template.php');
-}
-
 // Basic shortcode API implementation
 $GLOBALS['shortcodes'] = [];
 function add_shortcode($tag, $func) {
@@ -35,6 +31,15 @@ function add_action($hook, $func, $prio = null) {
     }
 }
 
+// Stubs for WP functions used in shortcode
+function plugin_dir_url($file) { return 'http://example.com/'; }
+function wp_enqueue_style() {}
+function wp_enqueue_script() {}
+function wp_localize_script($handle, $name, $data) {}
+function wp_create_nonce($action = '') { return 'nonce'; }
+function admin_url($path = '') { return '/ajax'; }
+function get_option($name, $default = false) { return $default; }
+
 // Escaping helpers
 function esc_attr($s) { return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
 function esc_html($s) { return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
@@ -51,8 +56,8 @@ if (strpos($output, 'data-open="comment"') !== false) {
     fwrite(STDERR, "unsanitized attribute still present\n");
     exit(1);
 }
-if (strpos($output, 'gexe-bage-scope') === false) {
-    fwrite(STDERR, "scope wrapper missing\n");
+if (strpos($output, 'gexe-bage') === false) {
+    fwrite(STDERR, "bage markup missing\n");
     exit(1);
 }
 

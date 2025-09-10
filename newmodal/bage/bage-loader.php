@@ -1,120 +1,143 @@
 <?php
 /**
- * BAGE (cards page) – isolated loader for cards grid, conflict-free with new modal.
- * - Reuses existing template via output buffering, then strips old modal triggers.
- * - Preserves look & features; only removes classes/attributes that launch old modals.
- * - Registers/overrides shortcode so only the cleaned version is used.
- *
- * No SQL/API logic is changed here; listing stays as is. Only HTML is sanitized.
+ * BAGE (изолированная страница карточек под новую модалку).
+ * - Полный клон: свой шаблон, свой JS, свой CSS.
+ * - Никаких подключений старых шорткодов/шаблонов/скриптов.
+ * - Данные и действия — только через GLPI REST API.
  */
 if (!defined('ABSPATH')) exit;
 
-// Handle to original template (expected location)
-if (!defined('GEXE_CARDS_TEMPLATE')) {
-    define('GEXE_CARDS_TEMPLATE', __DIR__ . '/../../templates/glpi-cards-template.php');
-}
+require_once __DIR__ . '/../newmodal-api.php'; // используем общий API-обёртку (без SQL)
 
 /**
- * Render cleaned cards page.
- * This function includes the original template into a buffer,
- * then removes old-modal trigger classes and conflicting attributes.
+ * Шорткод [glpi_cards_new]
+ * Рендерит чистый контейнер и подключает ассеты только для этой страницы.
  */
-function gexe_bage_render_cards($atts = []) {
-    // Fallback if template not found — clear error to UI per project policy (no logging)
-    if (!file_exists(GEXE_CARDS_TEMPLATE)) {
-        return '<div class="gexe-error">Шаблон карточек не найден: ' . esc_html(GEXE_CARDS_TEMPLATE) . '</div>';
-    }
-    // Collect output from original template
+add_shortcode('glpi_cards_new', function ($atts = []) {
+    // ассеты
+    $ver  = defined('GEXE_TRIGGERS_VERSION') ? GEXE_TRIGGERS_VERSION : '1.0.0';
+    $base = plugin_dir_url(__FILE__);
+    wp_enqueue_style('gexe-bage', $base . 'bage.css', [], $ver);
+    wp_enqueue_script('gexe-bage', $base . 'bage.js', [], $ver, true);
+    wp_localize_script('gexe-bage', 'gexeBage', [
+        'ajaxUrl'      => admin_url('admin-ajax.php'),
+        'nonce'        => wp_create_nonce('gexe_bage_nonce'),
+        'solvedStatus' => (int) get_option('glpi_solved_status', 6),
+        'statuses'     => [
+            ['id' => 0, 'name' => 'Все задачи'],
+            ['id' => 2, 'name' => 'В работе'],
+            ['id' => 3, 'name' => 'В плане'],
+            ['id' => 4, 'name' => 'В стопе'],
+            ['id' => 1, 'name' => 'Новые'],
+            ['id' => (int) get_option('glpi_overdue_status', 0), 'name' => 'Просрочены'],
+        ],
+        'perPage'      => 20,
+    ]);
+    // HTML-шаблон
     ob_start();
-    // Make sure helper functions/vars used by the original template are available in scope.
-    // We deliberately do not modify their logic.
-    include GEXE_CARDS_TEMPLATE;
-    $html = (string) ob_get_clean();
-
-    if ($html === '') {
-        return '<div class="gexe-error">Пустой вывод шаблона карточек.</div>';
-    }
-
-    // Strip old modal triggers: classes and data-attrs which bind legacy JS
-    //  - .gexe-modal_open, .gexe-cmnt_open, .glpi-card-in-modal
-    //  - data-open="comment|ticket" (legacy)
-    $replacements = [
-        '/\bgexe-modal_open\b/'        => '',
-        '/\bgexe-cmnt_open\b/'         => '',
-        '/\bglpi-card-in-modal\b/'     => '',
-        '/\sdata-open="(?:comment|ticket)"/' => '',
-    ];
-    $clean = $html;
-    foreach ($replacements as $rx => $to) {
-        $clean = preg_replace($rx, $to, $clean);
-    }
-
-    // Ensure cards have a selector that new modal listens to:
-    // if there's a root card element missing data-ticket-id but having data-id, duplicate it.
-    // This is conservative: we don't change existing attributes, only add when helpful.
-    $clean = preg_replace_callback(
-        '/(<[^>]+class="[^"]*(?:\bgexe-card\b|\bticket-card\b)[^"]*"[^>]*)(>)/i',
-        function ($m) {
-            $tag = $m[1];
-            // do not touch if data-ticket-id already present
-            if (strpos($tag, 'data-ticket-id=') !== false) return $m[0];
-            // try to reuse existing data-id or data-ticket
-            if (preg_match('/\sdata-id="(\d+)"/i', $tag, $mm)) {
-                return str_replace($m[1], $m[1] . ' data-ticket-id="' . esc_attr($mm[1]) . '"', $m[0]);
-            }
-            if (preg_match('/\sdata-ticket="(\d+)"/i', $tag, $mm)) {
-                return str_replace($m[1], $m[1] . ' data-ticket-id="' . esc_attr($mm[1]) . '"', $m[0]);
-            }
-            return $m[0];
-        },
-        $clean
-    );
-
-    // Namespacing hook: mark container so our tiny CSS can scope fixes without touching global CSS.
-    // Wrap the whole block into a scoped div if not already wrapped.
-    if (strpos($clean, 'gexe-bage-scope') === false) {
-        $clean = '<div class="gexe-bage-scope">' . $clean . '</div>';
-    }
-    return $clean;
-}
+    include __DIR__ . '/bage-template.php';
+    return (string) ob_get_clean();
+});
 
 /**
- * Register/override cards shortcode with conflict-free renderer.
- * We try to replace the same shortcode id the project uses for cards.
- * If the shortcode name differs in your build, update $shortcode_names accordingly.
+ * AJAX: список заявок (фильтры/поиск/пагинация).
+ * Вход: page, per_page, status, category, q
  */
-add_action('init', function () {
-    if (!defined('GEXE_USE_NEWMODAL') || !GEXE_USE_NEWMODAL) {
-        return; // keep legacy behavior when new modal is disabled
+add_action('wp_ajax_gexe_bage_list_tickets', function () {
+    if (!wp_verify_nonce($_POST['nonce'] ?? '', 'gexe_bage_nonce')) {
+        wp_send_json_error(['message' => 'Security check failed: invalid nonce.']);
     }
-    $shortcode_names = [
-        'glpi_cards',       // common
-        'gexe_glpi_cards',  // alt
-    ];
-    foreach ($shortcode_names as $tag) {
-        if (shortcode_exists($tag)) {
-            remove_shortcode($tag);
-        }
-        add_shortcode($tag, 'gexe_bage_render_cards');
-    }
+    $page     = max(1, (int)($_POST['page'] ?? 1));
+    $per_page = min(100, max(5, (int)($_POST['per_page'] ?? 20)));
+    $status   = (int)($_POST['status'] ?? 0);
+    $cat      = (int)($_POST['category'] ?? 0);
+    $q        = trim((string)($_POST['q'] ?? ''));
 
-    // Дополнительно регистрируем новый явный шорткод для тестов
-    // Он не конфликтует со старым и всегда выводит очищенную версию
-    if (!shortcode_exists('glpi_cards_new')) {
-        add_shortcode('glpi_cards_new', function($atts = []) {
-            return gexe_bage_render_cards($atts);
-        });
+    try {
+        $offset = ($page - 1) * $per_page;
+        $query  = [
+            'range' => $offset . '-' . ($offset + $per_page - 1),
+        ];
+        // Поиск через /search/Ticket
+        $criteria = [];
+        // Текущий исполнитель
+        $ctx = gexe_newmodal_current_glpi_context();
+        // Ticket_User.type=2 (назначенный техник)
+        $criteria[] = ['field' => 'assign', 'searchtype' => 'equals', 'value' => $ctx['glpi_user_id']];
+        // Статус (если задан)
+        if ($status > 0) {
+            $criteria[] = ['field' => 12, 'searchtype' => 'equals', 'value' => $status]; // 12 = status
+        }
+        // Категория (если задана)
+        if ($cat > 0) {
+            $criteria[] = ['field' => 7, 'searchtype' => 'equals', 'value' => $cat]; // 7 = itilcategories_id
+        }
+        // Текстовый поиск
+        if ($q !== '') {
+            $criteria[] = ['field' => 1, 'searchtype' => 'contains', 'value' => $q]; // 1 = name
+        }
+        $payload = [
+            'criteria' => $criteria,
+            'forcedisplay' => [2, 1, 12, 7, 30, 15, 16], // id, name, status, category, date_mod, sla, location
+            'order' => 'DESC',
+            'sort'  => 30 // date_mod
+        ];
+        $data = gexe_newmodal_api_call('POST', 'search/Ticket', $payload, $query);
+        // Приводим в удобный фронту формат
+        $rows = isset($data['data']) && is_array($data['data']) ? $data['data'] : [];
+        $totalcount = isset($data['totalcount']) ? (int)$data['totalcount'] : count($rows);
+        $tickets = [];
+        foreach ($rows as $row) {
+            $map = [];
+            foreach ($row as $cell) {
+                $map[$cell['name']] = $cell['value'];
+            }
+            $tickets[] = [
+                'id'        => (int)($map['id'] ?? 0),
+                'name'      => (string)($map['name'] ?? ''),
+                'status'    => (int)($map['status'] ?? 0),
+                'category'  => (string)($map['itilcategories_id'] ?? ''),
+                'date_mod'  => (string)($map['date_mod'] ?? ''),
+                'location'  => (string)($map['locations_id'] ?? ''),
+            ];
+        }
+        wp_send_json_success([
+            'page'   => $page,
+            'per'    => $per_page,
+            'total'  => $totalcount,
+            'items'  => $tickets
+        ]);
+    } catch (Exception $e) {
+        wp_send_json_error(['message' => 'Ошибка загрузки списка: ' . $e->getMessage()]);
     }
 });
 
 /**
- * Enqueue tiny CSS/JS shim for cards page (namespaced; no conflicts).
- * We keep it minimal: only helpers that cannot be expressed via sanitizing HTML.
+ * AJAX: счётчики по статусам (для бейджей).
  */
-add_action('wp_enqueue_scripts', function () {
-    if (!defined('GEXE_USE_NEWMODAL') || !GEXE_USE_NEWMODAL) return;
-    $ver = defined('GEXE_TRIGGERS_VERSION') ? GEXE_TRIGGERS_VERSION : '1.0.0';
-    $base = plugin_dir_url(__FILE__);
-    wp_enqueue_style('gexe-bage', $base . 'bage.css', [], $ver);
-    wp_enqueue_script('gexe-bage', $base . 'bage.js', [], $ver, true);
-}, 11);
+add_action('wp_ajax_gexe_bage_counters', function () {
+    if (!wp_verify_nonce($_POST['nonce'] ?? '', 'gexe_bage_nonce')) {
+        wp_send_json_error(['message' => 'Security check failed: invalid nonce.']);
+    }
+    try {
+        $ctx = gexe_newmodal_current_glpi_context();
+        $counts = [];
+        $statuses = [1,2,3,4,6]; // 6 — «решено/закрыто» по брифу
+        foreach ($statuses as $st) {
+            $payload = [
+                'criteria' => [
+                    ['field' => 'assign', 'searchtype' => 'equals', 'value' => $ctx['glpi_user_id']],
+                    ['field' => 12, 'searchtype' => 'equals', 'value' => $st],
+                ],
+            ];
+            $res = gexe_newmodal_api_call('POST', 'search/Ticket', $payload, ['range' => '0-0']);
+            $counts[$st] = isset($res['totalcount']) ? (int)$res['totalcount'] : 0;
+        }
+        // «Все» — сумма открытых (без 6)
+        $counts[0] = ($counts[1] ?? 0) + ($counts[2] ?? 0) + ($counts[3] ?? 0) + ($counts[4] ?? 0);
+        wp_send_json_success(['counts' => $counts]);
+    } catch (Exception $e) {
+        wp_send_json_error(['message' => 'Ошибка подсчёта: ' . $e->getMessage()]);
+    }
+});
+
