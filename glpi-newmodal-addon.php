@@ -2,7 +2,7 @@
 /**
  * Plugin Name: WP GLPI Newmodal Addon
  * Description: Isolated clone (newmodal/bage): GLPI cards & modal UI, независимые ассеты и AJAX. Шорткод: [glpi_cards_new].
- * Version: 1.1.1
+ * Version: 1.1.2
  * Author: obb-collab
  */
 
@@ -43,12 +43,11 @@ add_action('init', function () {
     }
     if ( ! defined('NM_VER') ) {
         // Меняем версию при правках ассетов, чтобы сбрасывать кэш
-        define('NM_VER', '1.1.1');
+        define('NM_VER', '1.1.2');
     }
 
     // Обязательные файлы — проверяем наличие, не падаем фатально
     $requires = [
-        'glpi-db-setup.php',           // подключение к БД GLPI и маппинги
         'newmodal/config.php',         // конфиг newmodal
         'newmodal/helpers.php',        // утилиты newmodal
         'newmodal/bage/shortcode.php', // шорткоды/рендер карточек
@@ -69,6 +68,44 @@ add_action('init', function () {
         }
     }
 });
+
+/**
+ * Ленивое подключение GLPI DB bootstrap. Никаких вызовов в админке, чтобы не
+ * вызывать автодеактивацию плагина при неверных кредах.
+ *
+ * @return bool true если БД инициализирована, false если нет.
+ */
+function nm_maybe_boot_db() {
+    // Уже загружено
+    if ( function_exists('glpi_db') || class_exists('PDO', false) && defined('NM_GLPI_DB_HOST') ) {
+        return true;
+    }
+    // Не трогаем админку и сканер плагинов
+    if ( is_admin() && ! defined('DOING_AJAX') ) {
+        return false;
+    }
+    $path = NM_PLUGIN_DIR . 'glpi-db-setup.php';
+    if ( file_exists($path) ) {
+        // Подключаем и позволяем внутреннему коду вернуть WP_Error без фатала
+        try {
+            require_once $path;
+            return function_exists('glpi_db');
+        } catch (Throwable $e) {
+            // Сообщим админу на фронте в виде notice в шапке, не фаталим
+            add_action('wp_footer', function () use ($e) {
+                echo '<div style="display:none" class="nm-db-error" data-msg="' . esc_attr($e->getMessage()) . '"></div>';
+            });
+            return false;
+        }
+    }
+    // Нет файла — только админ-уведомление
+    if ( current_user_can('activate_plugins') ) {
+        add_action('admin_notices', function () {
+            echo '<div class="notice notice-error"><p><strong>WP GLPI Newmodal Addon:</strong> не найден <code>glpi-db-setup.php</code>. БД GLPI не будет доступна до исправления.</p></div>';
+        });
+    }
+    return false;
+}
 
 /**
  * Регистрация и подключение ассетов только на страницах с шорткодом.
@@ -114,6 +151,8 @@ add_filter('the_posts', function ($posts) {
             // Скрипты
             wp_enqueue_script('nm-bage');
             wp_enqueue_script('nm-new-ticket');
+            // Здесь и только здесь пробуем поднять подключение к GLPI
+            nm_maybe_boot_db();
             break;
         }
     }
@@ -130,26 +169,47 @@ add_action('init', function () {
 
     // Список карточек, счётчики, загрузка одной карточки
     if ( function_exists('nm_ajax_get_cards') ) {
-        add_action('wp_ajax_nm_get_cards',   'nm_ajax_get_cards');
+        add_action('wp_ajax_nm_get_cards', function () {
+            nm_maybe_boot_db();
+            nm_ajax_get_cards();
+        });
     }
     if ( function_exists('nm_ajax_get_counts') ) {
-        add_action('wp_ajax_nm_get_counts',  'nm_ajax_get_counts');
+        add_action('wp_ajax_nm_get_counts', function () {
+            nm_maybe_boot_db();
+            nm_ajax_get_counts();
+        });
     }
     if ( function_exists('nm_ajax_get_card') ) {
-        add_action('wp_ajax_nm_get_card',    'nm_ajax_get_card');
+        add_action('wp_ajax_nm_get_card', function () {
+            nm_maybe_boot_db();
+            nm_ajax_get_card();
+        });
     }
     // Создание/принятие/закрытие заявки и добавление комментария
     if ( function_exists('nm_ajax_new_ticket') ) {
-        add_action('wp_ajax_nm_new_ticket',  'nm_ajax_new_ticket');
+        add_action('wp_ajax_nm_new_ticket', function () {
+            nm_maybe_boot_db();
+            nm_ajax_new_ticket();
+        });
     }
     if ( function_exists('nm_ajax_ticket_accept_sql') ) {
-        add_action('wp_ajax_nm_ticket_accept_sql', 'nm_ajax_ticket_accept_sql');
+        add_action('wp_ajax_nm_ticket_accept_sql', function () {
+            nm_maybe_boot_db();
+            nm_ajax_ticket_accept_sql();
+        });
     }
     if ( function_exists('nm_ajax_ticket_close_sql') ) {
-        add_action('wp_ajax_nm_ticket_close_sql',  'nm_ajax_ticket_close_sql');
+        add_action('wp_ajax_nm_ticket_close_sql', function () {
+            nm_maybe_boot_db();
+            nm_ajax_ticket_close_sql();
+        });
     }
     if ( function_exists('nm_ajax_ticket_comment_sql') ) {
-        add_action('wp_ajax_nm_ticket_comment_sql','nm_ajax_ticket_comment_sql');
+        add_action('wp_ajax_nm_ticket_comment_sql', function () {
+            nm_maybe_boot_db();
+            nm_ajax_ticket_comment_sql();
+        });
     }
 }, 20);
 
