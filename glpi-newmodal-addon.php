@@ -60,6 +60,31 @@ register_deactivation_hook(__FILE__, function () {
 });
 
 // -----------------------------------------------------------------------------
+// Helpers
+// -----------------------------------------------------------------------------
+if (!function_exists('frglpi_nm_has_merge_conflict')) {
+    /**
+     * Быстрая проверка файла на маркеры незавершённого git-мержа.
+     * Возвращает true, если внутри есть <<<<<<<, =======, >>>>>>>.
+     */
+    function frglpi_nm_has_merge_conflict($path) {
+        $c = @file_get_contents($path);
+        if ($c === false) {
+            return false;
+        }
+        return (strpos($c, '<<<<<<<') !== false)
+            || (strpos($c, '=======') !== false)
+            || (strpos($c, '>>>>>>>') !== false);
+    }
+}
+
+if (!function_exists('frglpi_nm_relpath')) {
+    function frglpi_nm_relpath($abs) {
+        return str_replace(ABSPATH, '', $abs);
+    }
+}
+
+// -----------------------------------------------------------------------------
 // Bootstrap loader
 // -----------------------------------------------------------------------------
 add_action('plugins_loaded', function () {
@@ -96,28 +121,46 @@ add_action('plugins_loaded', function () {
         FRGLPI_NEWMODAL_DIR . '/new-ticket/catalogs.php',
     ];
 
-    $missing = [];
+    $missing   = [];
+    $conflicts = [];
     foreach ($required_files as $file) {
-        if (file_exists($file)) {
-            require_once $file;
-        } else {
+        if (!file_exists($file)) {
             $missing[] = $file;
+            continue;
         }
+        // Не подключаем файлы с маркерами конфликта, чтобы не положить сайт
+        if (frglpi_nm_has_merge_conflict($file)) {
+            $conflicts[] = $file;
+            continue;
+        }
+        require_once $file;
     }
 
-    if (!empty($missing)) {
+    if (!empty($missing) || !empty($conflicts)) {
         // Defer notice to admin UI to avoid white screen for non-admins.
-        add_action('admin_notices', function () use ($missing) {
+        add_action('admin_notices', function () use ($missing, $conflicts) {
             if (!current_user_can('activate_plugins')) {
                 return;
             }
             echo '<div class="notice notice-error"><p><strong>_FrGLPI Isolated Clone:</strong> ';
-            echo esc_html__('Some required files are missing. The add-on loaded partially.', 'frglpi');
-            echo '</p><ul style="margin-left:1.5em;">';
-            foreach ($missing as $m) {
-                echo '<li><code>' . esc_html(str_replace(ABSPATH, '', $m)) . '</code></li>';
+            if (!empty($missing)) {
+                echo esc_html__('Some required files are missing. The add-on loaded partially.', 'frglpi');
+                echo '</p><ul style="margin-left:1.5em">';
+                foreach ($missing as $m) {
+                    echo '<li><code>' . esc_html(frglpi_nm_relpath($m)) . '</code></li>';
+                }
+                echo '</ul><p>';
             }
-            echo '</ul></div>';
+            if (!empty($conflicts)) {
+                echo esc_html__('Some files contain unresolved merge conflicts and were skipped:', 'frglpi');
+                echo '</p><ul style="margin-left:1.5em">';
+                foreach ($conflicts as $c) {
+                    echo '<li><code>' . esc_html(frglpi_nm_relpath($c)) . '</code> ' .
+                         esc_html__('(fix <<<<<<< / ======= / >>>>>>> and try again)', 'frglpi') . '</li>';
+                }
+                echo '</ul><p>';
+            }
+            echo '</p></div>';
         });
     }
 });
