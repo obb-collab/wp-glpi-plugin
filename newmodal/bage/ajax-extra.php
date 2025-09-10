@@ -90,24 +90,25 @@ function nm_suggest_users(){
     }
 }
 
-add_action('wp_ajax_nm_get_card', 'nm_get_card');
-function nm_get_card(){
+/**
+ * Данные карточки для модалки — строго из GLPI.
+ */
+add_action('wp_ajax_nm_get_card_extra', 'nm_get_card_extra');
+function nm_get_card_extra(){
     nm_require_nonce();
-    global $wpdb;
-    $id = intval($_POST['id'] ?? 0);
-    if ($id <= 0) nm_json_error('Некорректный ID');
-
-    $prefix = NM_DB_PREFIX;
+    $db = nm_glpi_db();
+    if (is_wp_error($db)) { nm_json_error('DB error: '.$db->get_error_message()); }
+    $id = (int)($_REQUEST['id'] ?? 0);
+    if ($id<=0) nm_json_error('Некорректный ID');
     $gid = nm_glpi_user_id_from_wp();
-    $can = nm_is_manager() ? 1 : (int)$wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM {$prefix}tickets_users tu WHERE tu.tickets_id=%d AND tu.type=2 AND tu.users_id=%d", $id, $gid));
+    $can = nm_is_manager()
+        ? 1
+        : (int)$db->get_var($db->prepare("SELECT 1 FROM glpi_tickets_users tu WHERE tu.tickets_id=%d AND tu.type=2 AND tu.users_id=%d", $id, $gid));
     if (!$can) nm_json_error('Нет доступа к заявке');
-
-    $ticket = $wpdb->get_row($wpdb->prepare("SELECT id, name, content, status, date, date_mod, due_date, itilcategories_id, locations_id FROM {$prefix}tickets WHERE id=%d", $id), ARRAY_A);
+    $ticket = $db->get_row($db->prepare("SELECT id, name, content, status, priority, date, time_to_resolve, solvedate, locations_id FROM glpi_tickets WHERE id=%d", $id), ARRAY_A);
     if (!$ticket) nm_json_error(__('Заявка не найдена', 'wp-glpi-plugin'));
-
-    $assignee = $wpdb->get_row($wpdb->prepare("SELECT u.id, u.name FROM {$prefix}tickets_users tu JOIN {$prefix}users u ON u.id=tu.users_id WHERE tu.tickets_id=%d AND tu.type=2 ORDER BY tu.id DESC LIMIT 1", $id), ARRAY_A);
-    $fups = $wpdb->get_results($wpdb->prepare("SELECT f.id, f.content, f.date, u.name AS author FROM {$prefix}itilfollowups f LEFT JOIN {$prefix}users u ON u.id=f.users_id WHERE f.items_id=%d AND f.itemtype='Ticket' ORDER BY f.date DESC", $id), ARRAY_A);
+    $assignee = $db->get_row($db->prepare("SELECT u.id, u.name, u.realname, u.firstname FROM glpi_tickets_users tu JOIN glpi_users u ON u.id=tu.users_id WHERE tu.tickets_id=%d AND tu.type=2 ORDER BY tu.id DESC LIMIT 1", $id), ARRAY_A);
+    $fups = $db->get_results($db->prepare("SELECT f.id, f.content, f.date, f.users_id FROM glpi_itilfollowups f WHERE f.items_id=%d AND f.itemtype='Ticket' ORDER BY f.date DESC", $id), ARRAY_A);
     if (!is_array($fups)) $fups = [];
-
     nm_json_ok(['ticket'=>$ticket, 'assignee'=>$assignee, 'followups'=>$fups]);
 }
