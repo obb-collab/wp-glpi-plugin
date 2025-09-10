@@ -2,87 +2,67 @@
 // newmodal/new-ticket/ajax.php
 if (!defined('ABSPATH')) { exit; }
 
-require_once NM_BASE_DIR . 'common/helpers.php';
-require_once NM_BASE_DIR . 'common/db.php';
-require_once NM_BASE_DIR . 'common/notify-api.php';
-
-add_action('wp_ajax_nm_catalog_categories', 'nm_ajax_catalog_categories');
-add_action('wp_ajax_nm_catalog_locations', 'nm_ajax_catalog_locations');
-add_action('wp_ajax_nm_catalog_assignees', 'nm_ajax_catalog_assignees');
+add_action('wp_ajax_nm_new_ticket_form', 'nm_ajax_new_ticket_form');
 add_action('wp_ajax_nm_create_ticket', 'nm_ajax_create_ticket');
 
-function nm_ajax_catalog_categories() {
+function nm_ajax_new_ticket_form() {
     nm_require_logged_in();
     nm_check_nonce_or_fail();
-    $q = isset($_GET['q']) ? sanitize_text_field($_GET['q']) : '';
-    $page = max(1, (int)($_GET['page'] ?? 1));
-    $per = 20; $offset = ($page-1)*$per;
-    $params = [];
-    $where = '';
-    if ($q !== '') {
-        $where = " WHERE name LIKE %s ";
-        $params[] = '%'.$q.'%';
-    }
-    $sql = "SELECT id, name FROM ".nm_tbl('itilcategories')." $where ORDER BY name ASC LIMIT %d OFFSET %d";
-    $params[] = $per; $params[] = $offset;
-    try {
-        $items = nm_db_get_results($sql, $params);
-        nm_json_ok(['items' => $items, 'page' => $page, 'total' => count($items)]);
-    } catch (Exception $e) {
-        nm_json_error('db_error', __('Failed to load categories', 'nm'));
-    }
-}
-
-function nm_ajax_catalog_locations() {
-    nm_require_logged_in();
-    nm_check_nonce_or_fail();
-    $q = isset($_GET['q']) ? sanitize_text_field($_GET['q']) : '';
-    $page = max(1, (int)($_GET['page'] ?? 1));
-    $per = 20; $offset = ($page-1)*$per;
-    $params = [];
-    $where = '';
-    if ($q !== '') {
-        $where = " WHERE name LIKE %s ";
-        $params[] = '%'.$q.'%';
-    }
-    $sql = "SELECT id, name FROM ".nm_tbl('locations')." $where ORDER BY name ASC LIMIT %d OFFSET %d";
-    $params[] = $per; $params[] = $offset;
-    try {
-        $items = nm_db_get_results($sql, $params);
-        nm_json_ok(['items' => $items, 'page' => $page, 'total' => count($items)]);
-    } catch (Exception $e) {
-        nm_json_error('db_error', __('Failed to load locations', 'nm'));
-    }
-}
-
-function nm_ajax_catalog_assignees() {
-    nm_require_logged_in();
-    nm_check_nonce_or_fail();
-    $q = isset($_GET['q']) ? sanitize_text_field($_GET['q']) : '';
-    $page = max(1, (int)($_GET['page'] ?? 1));
-    $per = 20; $offset = ($page-1)*$per;
-    $params = [];
-    $where = " WHERE is_active = 1 ";
-    if ($q !== '') {
-        $where .= " AND ( name LIKE %s OR realname LIKE %s OR firstname LIKE %s ) ";
-        $params[] = '%'.$q.'%';
-        $params[] = '%'.$q.'%';
-        $params[] = '%'.$q.'%';
-    }
-    $sql = "SELECT id, name, realname, firstname FROM ".nm_tbl('users')." $where ORDER BY realname ASC LIMIT %d OFFSET %d";
-    $params[] = $per; $params[] = $offset;
-    try {
-        $rows = nm_db_get_results($sql, $params);
-        $items = [];
-        foreach ($rows as $r) {
-            $label = trim(($r['realname'] ?? '').' '.($r['firstname'] ?? ''));
-            if (!$label) $label = $r['name'];
-            $items[] = ['id' => (int)$r['id'], 'name' => $label];
-        }
-        nm_json_ok(['items' => $items, 'page' => $page, 'total' => count($items)]);
-    } catch (Exception $e) {
-        nm_json_error('db_error', __('Failed to load assignees', 'nm'));
-    }
+    ob_start();
+    ?>
+    <div class="nm-modal">
+      <div class="nm-modal-header">
+        <div class="nm-modal-title"><?php esc_html_e('New ticket', 'nm'); ?></div>
+        <button class="nm-modal-close" onclick="NM_API.closeAllModals()">&times;</button>
+      </div>
+      <div class="nm-modal-body">
+        <form id="nm-new-ticket-form">
+          <div class="nm-field">
+            <label for="nm-nt-subject"><?php esc_html_e('Subject', 'nm'); ?></label>
+            <input type="text" id="nm-nt-subject" name="subject" required>
+          </div>
+          <div class="nm-field">
+            <label for="nm-nt-content"><?php esc_html_e('Description', 'nm'); ?></label>
+            <textarea id="nm-nt-content" name="content" required></textarea>
+          </div>
+          <div class="nm-row">
+            <div class="nm-field">
+              <label><?php esc_html_e('Category', 'nm'); ?></label>
+              <input type="hidden" id="nm-nt-category" name="category_id">
+              <input type="text" id="nm-nt-category-input" placeholder="<?php esc_attr_e('Choose category…', 'nm'); ?>">
+            </div>
+            <div class="nm-field">
+              <label><?php esc_html_e('Location', 'nm'); ?></label>
+              <input type="hidden" id="nm-nt-location" name="location_id">
+              <input type="text" id="nm-nt-location-input" placeholder="<?php esc_attr_e('Choose location…', 'nm'); ?>">
+            </div>
+          </div>
+          <div class="nm-row">
+            <div class="nm-field">
+              <label class="nm-inline">
+                <input type="checkbox" id="nm-nt-iamexec" name="i_am_executor" checked>
+                <span><?php esc_html_e('I am the executor', 'nm'); ?></span>
+              </label>
+              <div class="nm-help"><?php esc_html_e('Due date: today 18:00 (local) or next day if past', 'nm'); ?></div>
+            </div>
+            <div class="nm-field">
+              <label><?php esc_html_e('Assign executor', 'nm'); ?></label>
+              <input type="hidden" id="nm-nt-assignee" name="assignee_id">
+              <input type="text" id="nm-nt-assignee-input" placeholder="<?php esc_attr_e('Choose executor…', 'nm'); ?>" disabled>
+            </div>
+          </div>
+          <div class="nm-actions">
+            <button type="submit" id="nm-nt-submit" class="nm-btn"><?php esc_html_e('Create ticket', 'nm'); ?></button>
+            <button type="button" id="nm-nt-cancel" class="nm-btn" style="background:#374151;">
+              <?php esc_html_e('Cancel', 'nm'); ?>
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+    <?php
+    echo ob_get_clean();
+    wp_die();
 }
 
 function nm_ajax_create_ticket() {
@@ -111,21 +91,24 @@ function nm_ajax_create_ticket() {
 
     try {
         nm_db_begin();
-        // Insert ticket
         nm_db_query("\
-            INSERT INTO ".nm_tbl('tickets')." \n            (name, content, status, priority, date, closedate, due_date, itilcategories_id, locations_id)\n            VALUES (%s, %s, %d, %d, %s, NULL, %s, %d, %d)\n        ", [
+            INSERT INTO ".nm_tbl('tickets')." \
+            (name, content, status, priority, date, closedate, due_date, itilcategories_id, locations_id)\
+            VALUES (%s, %s, %d, %d, %s, NULL, %s, %d, %d)\
+        ", [
             $subject, $content, 1, 3, current_time('mysql'), $due_date, (int)$category_id, (int)$location_id
         ]);
         $ticket_id = nm_db_insert_id();
-        // requester
         nm_db_query("\
-            INSERT INTO ".nm_tbl('tickets_users')." (tickets_id, users_id, type) VALUES (%d, %d, 1)\n        ", [$ticket_id, $glpi_requester_id]);
-        // technician
+            INSERT INTO ".nm_tbl('tickets_users')." (tickets_id, users_id, type) VALUES (%d, %d, 1)\
+        ", [$ticket_id, $glpi_requester_id]);
         nm_db_query("\
-            INSERT INTO ".nm_tbl('tickets_users')." (tickets_id, users_id, type) VALUES (%d, %d, 2)\n        ", [$ticket_id, $assignee_id]);
-        // optional auto-followup
+            INSERT INTO ".nm_tbl('tickets_users')." (tickets_id, users_id, type) VALUES (%d, %d, 2)\
+        ", [$ticket_id, $assignee_id]);
         nm_db_query("\
-            INSERT INTO ".nm_tbl('itilfollowups')." (items_id, itemtype, users_id, content, date)\n            VALUES (%d, 'Ticket', %d, %s, %s)\n        ", [$ticket_id, $assignee_id, __('Created from WordPress', 'nm'), current_time('mysql')]);
+            INSERT INTO ".nm_tbl('itilfollowups')." (items_id, itemtype, users_id, content, date)\
+            VALUES (%d, 'Ticket', %d, %s, %s)\
+        ", [$ticket_id, $assignee_id, __('Created from WordPress', 'nm'), current_time('mysql')]);
         nm_db_commit();
         nm_notify_after_write($ticket_id, 'create', $assignee_id);
         nm_json_ok(['ticket_id' => $ticket_id]);

@@ -117,7 +117,6 @@ require_once __DIR__ . '/glpi-db-setup.php';
 // New modal isolated module (safe to require; it is inert unless enabled)
 gexe_require_optional('/glpi-newmodal.php');
 // Полностью изолированная страница карточек под новую модалку
-gexe_require_optional('/newmodal/bage/render.php');
 require_once __DIR__ . '/newmodal/bage/shortcode.php';
 
 function gexe_glpi_uninstall() {

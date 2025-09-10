@@ -1,5 +1,5 @@
 <?php
-// newmodal/common/notify-api.php
+// newmodal/common/ping.php
 if (!defined('ABSPATH')) { exit; }
 
 /**

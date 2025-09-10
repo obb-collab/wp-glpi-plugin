@@ -13,20 +13,21 @@ if (!defined('ABSPATH')) { exit; }
 define('NM_BASE_DIR', plugin_dir_path(__FILE__) . 'newmodal/');
 define('NM_BASE_URL', plugin_dir_url(__FILE__) . 'newmodal/');
 
-// === Load common layer (no old requires) ===
-require_once NM_BASE_DIR . 'common/helpers.php';
-require_once NM_BASE_DIR . 'common/db.php';
-require_once NM_BASE_DIR . 'common/notify-api.php';
+// === Load common layer ===
+require_once NM_BASE_DIR . 'config.php';
+require_once NM_BASE_DIR . 'helpers.php';
+require_once NM_BASE_DIR . 'common/api.php';
+require_once NM_BASE_DIR . 'common/ping.php';
 
 // === Load submodules ===
 require_once NM_BASE_DIR . 'bage/shortcode.php';
-require_once NM_BASE_DIR . 'bage/render.php';
 require_once NM_BASE_DIR . 'bage/ajax.php';
+require_once NM_BASE_DIR . 'bage/ajax-extra.php';
 
-require_once NM_BASE_DIR . 'modal/ticket-modal.php';
+require_once NM_BASE_DIR . 'modal/ajax.php';
 
-require_once NM_BASE_DIR . 'new-ticket/controller.php';
 require_once NM_BASE_DIR . 'new-ticket/ajax.php';
+require_once NM_BASE_DIR . 'new-ticket/catalogs.php';
 
 /**
  * Enqueue assets only when shortcode is present.
@@ -35,35 +36,37 @@ function nm_maybe_enqueue_assets() {
     if (!nm_is_shortcode_present('glpi_cards_new')) { return; }
 
     // Styles
-    wp_register_style('nm-bage-css', NM_BASE_URL . 'bage/assets/bage.css', [], '1.0.0');
-    wp_register_style('nm-modal-css', NM_BASE_URL . 'modal/assets/modal.css', [], '1.0.0');
-    wp_register_style('nm-new-ticket-css', NM_BASE_URL . 'new-ticket/assets/new-ticket.css', [], '1.0.0');
+    wp_register_style('nm-bage-css', NM_BASE_URL . 'assets/css/bage.css', [], '1.0.0');
+    wp_register_style('nm-modal-css', NM_BASE_URL . 'assets/css/modal.css', [], '1.0.0');
+    wp_register_style('nm-modal-extra-css', NM_BASE_URL . 'assets/css/modal-extra.css', [], '1.0.0');
+    wp_register_style('nm-newticket-css', NM_BASE_URL . 'assets/css/newticket.css', [], '1.0.0');
     wp_enqueue_style('nm-bage-css');
     wp_enqueue_style('nm-modal-css');
-    wp_enqueue_style('nm-new-ticket-css');
+    wp_enqueue_style('nm-modal-extra-css');
+    wp_enqueue_style('nm-newticket-css');
 
     // Scripts
-    wp_register_script('nm-bage-js', NM_BASE_URL . 'bage/assets/bage.js', ['jquery'], '1.0.0', true);
-    wp_register_script('nm-modal-js', NM_BASE_URL . 'modal/assets/modal.js', ['jquery'], '1.0.0', true);
-    wp_register_script('nm-new-ticket-js', NM_BASE_URL . 'new-ticket/assets/new-ticket.js', ['jquery'], '1.0.0', true);
+    wp_register_script('nm-common-js', NM_BASE_URL . 'assets/js/common.js', ['jquery'], '1.0.0', true);
+    wp_register_script('nm-bage-js', NM_BASE_URL . 'assets/js/bage.js', ['jquery','nm-common-js'], '1.0.0', true);
+    wp_register_script('nm-modal-js', NM_BASE_URL . 'assets/js/modal.js', ['jquery','nm-common-js'], '1.0.0', true);
+    wp_register_script('nm-newticket-js', NM_BASE_URL . 'assets/js/newticket.js', ['jquery','nm-common-js'], '1.0.0', true);
 
     $local = [
-        'ajaxUrl'      => admin_url('admin-ajax.php'),
-        'nonce'        => wp_create_nonce('nm_nonce'),
-        'statuses'     => nm_default_status_map(),
-        'glpiPrefix'   => nm_glpi_prefix(),
-        'i18n'         => [
+        'ajaxUrl'    => admin_url('admin-ajax.php'),
+        'nonce'      => wp_create_nonce('nm_nonce'),
+        'statuses'   => nm_default_status_map(),
+        'glpiPrefix' => nm_glpi_prefix(),
+        'i18n'       => [
             'error' => __('Error', 'nm'),
             'retry' => __('Retry', 'nm'),
         ],
     ];
-    wp_localize_script('nm-bage-js', 'NM', $local);
-    wp_localize_script('nm-modal-js', 'NM', $local);
-    wp_localize_script('nm-new-ticket-js', 'NM', $local);
+    wp_localize_script('nm-common-js', 'NM', $local);
 
+    wp_enqueue_script('nm-common-js');
     wp_enqueue_script('nm-bage-js');
     wp_enqueue_script('nm-modal-js');
-    wp_enqueue_script('nm-new-ticket-js');
+    wp_enqueue_script('nm-newticket-js');
 }
 add_action('wp_enqueue_scripts', 'nm_maybe_enqueue_assets');
 
@@ -99,22 +102,6 @@ function nm_activate() {
     // Nothing persistent created; rely on transient TTLs.
 }
 register_activation_hook(__FILE__, 'nm_activate');
-
-/**
- * Settings defaults (optional): GLPI base URL, app token, DB prefix.
- * Admin can set these in existing plugin settings; we read via get_option().
- */
-function nm_default_status_map() {
-    // GLPI default statuses mapping (adjust to actual values if needed)
-    return [
-        '1' => 'New',
-        '2' => 'Processing (assigned)',
-        '3' => 'Processing (planned)',
-        '4' => 'Pending',
-        '5' => 'Solved',
-        '6' => 'Closed',
-    ];
-}
 
 /**
  * Expose a healthcheck endpoint for admins (optional).
