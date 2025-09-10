@@ -33,6 +33,8 @@ function add_action($hook, $func, $prio = null) {
 
 // Stubs for WP functions used in shortcode
 function plugin_dir_url($file) { return 'http://example.com/'; }
+function plugin_dir_path($file) { return dirname($file) . '/'; }
+function trailingslashit($path) { return rtrim($path, '/\\') . '/'; }
 function wp_enqueue_style() {}
 function wp_enqueue_script() {}
 function wp_localize_script($handle, $name, $data) {}
