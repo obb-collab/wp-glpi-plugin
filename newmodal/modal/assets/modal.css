@@ -1,0 +1,18 @@
+/* newmodal/modal/assets/modal.css */
+.nm-modal { background:#151a20; color:#e5eef5; width:min(900px, 92vw); border-radius:12px; border:1px solid #2b3138; box-shadow:0 20px 60px rgba(0,0,0,.5); }
+.nm-modal-header { display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid #2b3138; padding:12px 16px;}
+.nm-modal-title { font-weight:700; font-size:16px; }
+.nm-modal-close { background:transparent; border:none; color:#9aa4ad; font-size:22px; cursor:pointer;}
+.nm-modal-body { padding:16px; }
+.nm-ticket-meta { display:flex; gap:8px; margin-bottom:10px;}
+.nm-ticket-content { background:#0f1317; border:1px solid #2b3138; border-radius:8px; padding:12px; margin-bottom:14px; white-space:pre-wrap;}
+.nm-followups-title { font-weight:600; margin-bottom:8px;}
+.nm-followup { border-top:1px dashed #2b3138; padding:10px 0;}
+.nm-followup:first-child { border-top: none; }
+.nm-followup-head { color:#9aa4ad; font-size:12px; margin-bottom:6px;}
+.nm-followup-body { white-space:pre-wrap; }
+.nm-actions { display:flex; gap:8px; margin-top:10px;}
+.nm-actions .nm-btn { background:#3b82f6; color:#fff; border:none; padding:8px 12px; border-radius:8px; cursor:pointer;}
+.nm-actions .nm-btn:disabled { opacity:.6; cursor:not-allowed;}
+.nm-modal textarea { width:100%; min-height:90px; background:#0f1317; color:#e5eef5; border:1px solid #2b3138; border-radius:8px; padding:8px;}
+.nm-modal .nm-tag { font-size:11px; border:1px solid #2b3138; border-radius:8px; padding:2px 6px; color:#9aa4ad;}

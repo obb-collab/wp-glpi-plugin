@@ -1,10 +1,20 @@
-.nm-new{background:#0b1220;color:#fff;border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:14px}
-.nm-new__row{display:flex;gap:12px;margin-bottom:10px;flex-wrap:wrap}
-.nm-new__col{flex:1 1 260px}
-.nm-label{display:block;font-size:12px;color:#cbd5e1;margin-bottom:6px}
-.nm-input,.nm-select,.nm-textarea{width:100%;background:#0b1220;border:1px solid rgba(255,255,255,.12);border-radius:10px;color:#fff;padding:8px}
-.nm-textarea{min-height:90px}
-.nm-actions{display:flex;gap:8px;justify-content:flex-end}
-.nm-btn{background:#1f2937;border-radius:10px;border:1px solid rgba(255,255,255,.08);padding:8px 12px;color:#fff;cursor:pointer}
-.nm-btn--primary{background:#2563eb;border-color:#2563eb}
-.nm-error{margin-top:8px;color:#fecaca;white-space:pre-line}
+/* newmodal/new-ticket/assets/new-ticket.css */
+.nm-modal { background:#151a20; color:#e5eef5; width:min(700px, 92vw); border-radius:12px; border:1px solid #2b3138; box-shadow:0 20px 60px rgba(0,0,0,.5); }
+.nm-modal-header { display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid #2b3138; padding:12px 16px;}
+.nm-modal-title { font-weight:700; font-size:16px; }
+.nm-modal-close { background:transparent; border:none; color:#9aa4ad; font-size:22px; cursor:pointer;}
+.nm-modal-body { padding:16px; }
+.nm-field { margin-bottom:12px; }
+.nm-field label { display:block; margin-bottom:6px; color:#9aa4ad; font-size:12px; }
+.nm-field input[type="text"],
+.nm-field textarea,
+.nm-field select { width:100%; background:#0f1317; color:#e5eef5; border:1px solid #2b3138; border-radius:8px; padding:8px; }
+.nm-row { display:flex; gap:10px; }
+.nm-row .nm-field { flex:1; }
+.nm-inline { display:flex; align-items:center; gap:8px; }
+.nm-inline input[type="checkbox"] { width:16px; height:16px; }
+.nm-help { color:#9aa4ad; font-size:12px; }
+.nm-actions { display:flex; gap:8px; margin-top:12px; }
+.nm-actions .nm-btn { background:#3b82f6; color:#fff; border:none; padding:8px 12px; border-radius:8px; cursor:pointer;}
+.nm-actions .nm-btn:disabled { opacity:.6; cursor:not-allowed;}
+.nm-error { color:#f87171; font-size:12px; margin-top:4px; }

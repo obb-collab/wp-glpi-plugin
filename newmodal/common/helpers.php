@@ -1,38 +1,137 @@
 <?php
-if (!defined('ABSPATH')) exit;
+// newmodal/common/helpers.php
+if (!defined('ABSPATH')) { exit; }
 
 /**
- * Проверка nonce для AJAX.
+ * Common helpers: auth, mapping WP ↔ GLPI, validation, idempotency, JSON responses.
  */
-function gexe_nm_check_nonce(): void {
-    $nonce = isset($_REQUEST['_ajax_nonce']) ? (string) $_REQUEST['_ajax_nonce'] : '';
-    if (!wp_verify_nonce($nonce, 'gexe_nm')) {
-        wp_send_json(['ok'=>false,'code'=>'forbidden','message'=>'Bad nonce']);
-        exit;
+
+function nm_current_wp_user_id() {
+    return get_current_user_id();
+}
+
+function nm_glpi_user_id_from_wp($wp_user_id = null) {
+    $wp_user_id = $wp_user_id ?: nm_current_wp_user_id();
+    if (!$wp_user_id) { return 0; }
+    $id = get_user_meta($wp_user_id, 'glpi_user_id', true);
+    return (int)$id;
+}
+
+function nm_glpi_user_token_from_wp($wp_user_id = null) {
+    $wp_user_id = $wp_user_id ?: nm_current_wp_user_id();
+    if (!$wp_user_id) { return ''; }
+    $token = get_user_meta($wp_user_id, 'glpi_user_token', true);
+    return (string)$token;
+}
+
+function nm_is_manager() {
+    // Policy: admins are managers; or custom meta 'is_manager' == 1
+    if (current_user_can('manage_options')) { return true; }
+    $flag = get_user_meta(nm_current_wp_user_id(), 'glpi_is_manager', true);
+    return (bool)$flag;
+}
+
+function nm_require_logged_in() {
+    if (!is_user_logged_in()) {
+        nm_json_error('auth_required', __('Authentication required', 'nm'), 401);
+    }
+}
+
+function nm_check_nonce_or_fail($action = 'nm_nonce', $field = 'nonce') {
+    $nonce = isset($_REQUEST['_ajax_nonce']) ? $_REQUEST['_ajax_nonce'] : ( $_REQUEST['nonce'] ?? '' );
+    if (!wp_verify_nonce($nonce, 'nm_nonce')) {
+        nm_json_error('forbidden', __('Invalid security token', 'nm'), 403);
+    }
+}
+
+function nm_json_ok($payload = []) {
+    $payload['ok'] = true;
+    wp_send_json($payload);
+}
+
+function nm_json_error($code, $message, $http = 200, $extra = []) {
+    $resp = array_merge(['ok' => false, 'code' => $code, 'message' => $message], $extra);
+    wp_send_json($resp, $http);
+}
+
+/**
+ * Idempotency key guard based on transients.
+ */
+function nm_idempotency_check_and_set($request_id, $ttl = 300) {
+    if (!$request_id) { return; } // allow non-idempotent calls
+    $key = 'nm_req_' . preg_replace('~[^a-zA-Z0-9_\-]~', '', $request_id);
+    $existing = get_transient($key);
+    if ($existing) {
+        nm_json_error('duplicate', __('Duplicate request', 'nm'), 200);
+    }
+    set_transient($key, 1, $ttl);
+}
+
+/**
+ * Validation helpers
+ */
+function nm_expect_int($value, $field) {
+    if (!is_numeric($value)) {
+        nm_json_error('validation_error', sprintf(__('%s must be numeric', 'nm'), $field));
+    }
+    return (int)$value;
+}
+
+function nm_expect_non_empty($value, $field) {
+    if (!isset($value) || trim((string)$value) === '') {
+        nm_json_error('validation_error', sprintf(__('%s is required', 'nm'), $field), 200, ['field' => $field]);
+    }
+    return trim((string)$value);
+}
+
+/**
+ * Due date calculation: today 18:00 local; if past, next day 18:00.
+ */
+function nm_calc_due_date_dt() {
+    $tz = wp_timezone();
+    $now = new DateTime('now', $tz);
+    $due = new DateTime('today 18:00', $tz);
+    if ($now > $due) {
+        $due->modify('+1 day');
+    }
+    return $due;
+}
+
+function nm_calc_due_date_sql() {
+    $due = nm_calc_due_date_dt();
+    // convert to MySQL datetime in WP timezone; assume GLPI stores local time or convert if needed
+    return $due->format('Y-m-d H:i:s');
+}
+
+/**
+ * ACL checks
+ */
+function nm_can_view_ticket($ticket_id, $glpi_user_id) {
+    if (nm_is_manager()) { return true; }
+    // Non-manager: must be assigned technician
+    require_once __DIR__ . '/db.php';
+    $row = nm_db_get_row("
+        SELECT 1 FROM ".nm_tbl('tickets_users')." 
+        WHERE tickets_id = %d AND type = 2 AND users_id = %d LIMIT 1
+    ", [(int)$ticket_id, (int)$glpi_user_id]);
+    return (bool)$row;
+}
+
+function nm_require_can_view_ticket($ticket_id, $glpi_user_id) {
+    if (!nm_can_view_ticket($ticket_id, $glpi_user_id)) {
+        nm_json_error('forbidden', __('You are not allowed to view this ticket', 'nm'), 403);
+    }
+}
+
+function nm_require_can_assign($assignee_id) {
+    // Only managers can assign others; self-assign allowed
+    $me = nm_glpi_user_id_from_wp();
+    if ($assignee_id != $me && !nm_is_manager()) {
+        nm_json_error('forbidden', __('Insufficient rights to assign other users', 'nm'), 403);
     }
 }
 
 /**
- * Базовый JSON-ответ.
+ * Small helpers
  */
-function gexe_nm_json(bool $ok, string $code, string $message, array $extra) {
-    return wp_send_json(array_merge(['ok'=>$ok,'code'=>$code,'message'=>$message], $extra));
-}
-
-/**
- * Проверка наличия шорткода на странице.
- */
-function gexe_nm_is_shortcode_present(string $tag): bool {
-    global $post;
-    if (!$post) return false;
-    if (has_shortcode($post->post_content, $tag)) return true;
-    return false;
-}
-
-/**
- * Удобный фильтр статуса "решено"
- */
-function gexe_nm_is_resolved_status(int $status): bool {
-    return $status === 6;
-}
-
+function nm_s($v) { return esc_html($v); }
