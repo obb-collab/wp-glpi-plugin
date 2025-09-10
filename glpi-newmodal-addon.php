@@ -59,6 +59,19 @@ register_deactivation_hook(__FILE__, function () {
     // Nothing to clean up; add-on is stateless.
 });
 
+// Пробный пинг соединения к GLPI БД (ранний, только для админов)
+add_action('init', function () {
+    if (!current_user_can('manage_options')) {
+        return;
+    }
+    if (function_exists('nm_glpi_db')) {
+        $dbi = nm_glpi_db();
+        if (is_wp_error($dbi)) {
+            // Сообщение выводится через admin_notices в sql.php
+        }
+    }
+}, 1);
+
 // -----------------------------------------------------------------------------
 // Helpers
 // -----------------------------------------------------------------------------
