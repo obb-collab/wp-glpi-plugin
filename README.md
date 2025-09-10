@@ -2,6 +2,10 @@
 
 This plugin integrates WordPress with a GLPI helpdesk.
 
+## Shortcodes
+
+- `[glpi_cards_new]` – renders ticket cards with sanitized HTML.
+
 ## Database triggers
 
 The plugin maintains `glpi.glpi_tickets.last_followup_at` using two triggers on `glpi.glpi_itilfollowups`.
