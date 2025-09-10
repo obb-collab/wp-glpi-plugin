@@ -1,190 +1,128 @@
 <?php
-// newmodal/helpers.php
 if (!defined('ABSPATH')) { exit; }
 
 /**
- * Common helpers: auth, mapping WP ↔ GLPI, validation, idempotency, JSON responses.
+ * Ensure current WP user is mapped to GLPI user (per project rules)
  */
-
-function nm_current_wp_user_id() {
-    return get_current_user_id();
-}
-
-function nm_glpi_user_id_from_wp($wp_user_id = null) {
-    $wp_user_id = $wp_user_id ?: nm_current_wp_user_id();
-    if (!$wp_user_id) { return 0; }
-    $id = get_user_meta($wp_user_id, 'glpi_user_id', true);
-    return (int)$id;
-}
-
-function nm_glpi_user_token_from_wp($wp_user_id = null) {
-    $wp_user_id = $wp_user_id ?: nm_current_wp_user_id();
-    if (!$wp_user_id) { return ''; }
-    $token = get_user_meta($wp_user_id, 'glpi_user_token', true);
-    return (string)$token;
-}
-
-function nm_is_manager() {
-    // Policy: admins are managers; or custom meta 'is_manager' == 1
-    if (current_user_can('manage_options')) { return true; }
-    $flag = get_user_meta(nm_current_wp_user_id(), 'glpi_is_manager', true);
-    return (bool)$flag;
-}
-
-function nm_require_logged_in() {
-    if (!is_user_logged_in()) {
-        nm_json_error('auth_required', __('Authentication required', 'nm'), 401);
+function nm_assert_user_mapping(): int {
+    if (!function_exists('glpi_get_current_glpi_user_id')) {
+        throw new RuntimeException('GLPI mapping helpers not loaded.');
     }
-}
-
-function nm_check_nonce_or_fail($action = 'nm_nonce', $field = 'nonce') {
-    $nonce = isset($_REQUEST['_ajax_nonce']) ? $_REQUEST['_ajax_nonce'] : ( $_REQUEST['nonce'] ?? '' );
-    if (!wp_verify_nonce($nonce, 'nm_nonce')) {
-        nm_json_error('forbidden', __('Invalid security token', 'nm'), 403);
+    $gid = glpi_get_current_glpi_user_id();
+    if ($gid <= 0) {
+        throw new RuntimeException('No GLPI mapping for current WP user.');
     }
-}
-
-function nm_json_ok($payload = []) {
-    $payload['ok'] = true;
-    wp_send_json($payload);
-}
-
-function nm_json_error($code, $message, $http = 200, $extra = []) {
-    $resp = array_merge(['ok' => false, 'code' => $code, 'message' => $message], $extra);
-    wp_send_json($resp, $http);
+    return $gid;
 }
 
 /**
- * Idempotency key guard based on transients.
+ * Get GLPI REST tokens for current user.
+ * Uses WP usermeta:
+ *  - glpi_app_token (application token)
+ *  - glpi_api_token (user token)
  */
-function nm_idempotency_check_and_set($request_id, $ttl = 300) {
-    if (!$request_id) { return; } // allow non-idempotent calls
-    $key = 'nm_req_' . preg_replace('~[^a-zA-Z0-9_\-]~', '', $request_id);
-    $existing = get_transient($key);
-    if ($existing) {
-        nm_json_error('duplicate', __('Duplicate request', 'nm'), 200);
-    }
-    set_transient($key, 1, $ttl);
+function nm_get_glpi_tokens(): array {
+    $uid = get_current_user_id();
+    if (!$uid) return ['', ''];
+    $app = get_user_meta($uid, 'glpi_app_token', true);
+    $usr = get_user_meta($uid, 'glpi_api_token', true);
+    return [is_string($app) ? trim($app) : '', is_string($usr) ? trim($usr) : ''];
 }
 
 /**
- * Validation helpers
+ * Minimal GLPI REST client:
+ *  - Opens a session per request (App-Token + Authorization: user_token)
+ *  - Sends JSON
+ *  - Closes session
  */
-function nm_expect_int($value, $field) {
-    if (!is_numeric($value)) {
-        nm_json_error('validation_error', sprintf(__('%s must be numeric', 'nm'), $field));
+function nm_glpi_api(string $method, string $endpoint, array $payload = []): array {
+    if (!NM_WRITES_VIA_API) {
+        throw new RuntimeException('API writes are disabled.');
     }
-    return (int)$value;
-}
-
-function nm_expect_non_empty($value, $field) {
-    if (!isset($value) || trim((string)$value) === '') {
-        nm_json_error('validation_error', sprintf(__('%s is required', 'nm'), $field), 200, ['field' => $field]);
+    [$appToken, $userToken] = nm_get_glpi_tokens();
+    if (!$appToken || !$userToken) {
+        throw new RuntimeException('Missing GLPI API tokens in usermeta.');
     }
-    return trim((string)$value);
-}
+    $base = rtrim(NM_GLPI_API_BASE, '/');
+    $url  = $base . '/' . ltrim($endpoint, '/');
 
-/**
- * Due date calculation: today 18:00 local; if past, next day 18:00.
- */
-function nm_calc_due_date_dt() {
-    $tz = wp_timezone();
-    $now = new DateTime('now', $tz);
-    $due = new DateTime('today 18:00', $tz);
-    if ($now > $due) {
-        $due->modify('+1 day');
+    // Open session
+    $ch = curl_init();
+    curl_setopt_array($ch, [
+        CURLOPT_URL            => $base . '/initSession',
+        CURLOPT_POST           => true,
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_HTTPHEADER     => [
+            'Content-Type: application/json',
+            'App-Token: ' . $appToken,
+            'Authorization: user_token ' . $userToken,
+        ],
+    ]);
+    $sessionResp = curl_exec($ch);
+    if ($sessionResp === false) {
+        throw new RuntimeException('GLPI API: initSession failed');
     }
-    return $due;
-}
-
-function nm_calc_due_date_sql() {
-    $due = nm_calc_due_date_dt();
-    // convert to MySQL datetime in WP timezone; assume GLPI stores local time or convert if needed
-    return $due->format('Y-m-d H:i:s');
-}
-
-/**
- * ACL checks
- */
-function nm_can_view_ticket($ticket_id, $glpi_user_id) {
-    if (nm_is_manager()) { return true; }
-    // Non-manager: must be assigned technician
-    require_once __DIR__ . '/db.php';
-    $row = nm_db_get_row("
-        SELECT 1 FROM ".nm_tbl('tickets_users')." 
-        WHERE tickets_id = %d AND type = 2 AND users_id = %d LIMIT 1
-    ", [(int)$ticket_id, (int)$glpi_user_id]);
-    return (bool)$row;
-}
-
-function nm_require_can_view_ticket($ticket_id, $glpi_user_id) {
-    if (!nm_can_view_ticket($ticket_id, $glpi_user_id)) {
-        nm_json_error('forbidden', __('You are not allowed to view this ticket', 'nm'), 403);
+    $session = json_decode($sessionResp, true);
+    $sessionToken = $session['session_token'] ?? '';
+    if (!$sessionToken) {
+        throw new RuntimeException('GLPI API: no session token returned');
     }
-}
+    curl_close($ch);
 
-function nm_require_can_assign($assignee_id) {
-    // Only managers can assign others; self-assign allowed
-    $me = nm_glpi_user_id_from_wp();
-    if ($assignee_id != $me && !nm_is_manager()) {
-        nm_json_error('forbidden', __('Insufficient rights to assign other users', 'nm'), 403);
-    }
-}
-
-/**
- * Small helpers
- */
-function nm_s($v) { return esc_html($v); }
-
-function nm_get_app_token(){
-    $tok = get_option(NM_META_APP_TOKEN);
-    return is_string($tok) ? trim($tok) : '';
-}
-
-function nm_get_current_glpi_user_token(){
-    $tok = get_user_meta(get_current_user_id(), NM_META_USER_TOKEN, true);
-    return is_string($tok) ? trim($tok) : '';
-}
-
-function nm_require_nonce() {
-    if (strtoupper($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
-        nm_json_error('bad_method', __('Неверный метод запроса.', 'nm'));
-    }
-    if (!isset($_POST['nm_nonce']) || !wp_verify_nonce($_POST['nm_nonce'], 'nm_ajax')) {
-        nm_json_error('forbidden', __('Сессия устарела. Обновите страницу.', 'nm'));
-    }
-}
-
-function nm_humanize_api_error($data){
-    $msg = is_array($data) && isset($data['message']) ? $data['message'] : '';
-    if (stripos($msg,'App-Token') !== false) $msg .= ' · Проверьте App-Token в настройках WP.';
-    if (stripos($msg,'user_token') !== false) $msg .= ' · Проверьте токен пользователя в его профиле.';
-    if (stripos($msg,'not found') !== false) $msg .= ' · Проверьте ID заявки.';
-    $map = [
-        'ERROR_APP_TOKEN_PARAMETERS_MISSING' => 'Не указан App-Token. Укажите его в настройках.',
-        'ERROR_NOT_ALLOWED_IP' => 'IP адрес не разрешён для API GLPI.',
-        'ERROR_LOGIN_PARAMETERS_MISSING' => 'Не указан user_token.',
-        'ERROR_ITEM_NOT_FOUND' => 'Объект не найден.',
-        'ERROR_RIGHT_MISSING' => 'Недостаточно прав.',
+    // Main request
+    $ch = curl_init();
+    $headers = [
+        'Content-Type: application/json',
+        'App-Token: ' . $appToken,
+        'Session-Token: ' . $sessionToken,
     ];
-    foreach($map as $k=>$hint){ if (stripos($msg,$k)!==false){ $msg .= ' · '.$hint; break; } }
-    return $msg ?: 'Неизвестная ошибка GLPI API';
-}
-
-function nm_idempotent_check_and_set($rid){
-    if (!$rid) return false;
-    $key='nm_rid_'.preg_replace('~[^a-zA-Z0-9_-]~','',$rid);
-    if (get_transient($key)) return true;
-    set_transient($key,1,60);
-    return false;
-}
-
-function nm_fmt_dt($mysql){
-    if (!$mysql) return '';
-    try {
-        $ts = strtotime($mysql);
-        return date_i18n('d.m.Y H:i', $ts);
-    } catch (Exception $e){
-        return $mysql;
+    $opts = [
+        CURLOPT_URL            => $url,
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_HTTPHEADER     => $headers,
+        CURLOPT_CUSTOMREQUEST  => strtoupper($method),
+    ];
+    if (!empty($payload)) {
+        $opts[CURLOPT_POSTFIELDS] = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     }
+    curl_setopt_array($ch, $opts);
+    $resp = curl_exec($ch);
+    if ($resp === false) {
+        $err = curl_error($ch);
+        curl_close($ch);
+        throw new RuntimeException('GLPI API error: ' . $err);
+    }
+    $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    if ($code < 200 || $code >= 300) {
+        throw new RuntimeException('GLPI API HTTP ' . $code . ': ' . $resp);
+    }
+    $data = json_decode($resp, true);
+
+    // Close session (best effort)
+    $ch = curl_init();
+    curl_setopt_array($ch, [
+        CURLOPT_URL            => $base . '/killSession',
+        CURLOPT_POST           => true,
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_HTTPHEADER     => [
+            'Content-Type: application/json',
+            'App-Token: ' . $appToken,
+            'Session-Token: ' . $sessionToken,
+        ],
+    ]);
+    curl_exec($ch);
+    curl_close($ch);
+
+    return is_array($data) ? $data : [];
+}
+
+/**
+ * Helper: safe JSON response
+ */
+function nm_send_json($ok, $payload = [], $http = 200) {
+    wp_send_json([
+        'ok'   => (bool)$ok,
+        'data' => $payload,
+    ], $http);
 }
