@@ -99,9 +99,16 @@ function nm_glpi_select($tableRaw, $columns = '*', $where = '', array $params = 
  * Список статусов (id, name) из GLPI. Без фатала.
  */
 function nm_sql_get_statuses() {
-    $res = nm_glpi_select('glpi_itilstatuses', 'id,name');
-    if (is_wp_error($res) || !is_array($res)) return [];
-    return $res;
+    // В GLPI 9.5.x статусы — константы ядра, таблицы glpi_itilstatuses нет.
+    // Возвращаем статический набор, используемый интерфейсом.
+    return [
+        ['id' => 1, 'name' => 'New'],
+        ['id' => 2, 'name' => 'In progress'],
+        ['id' => 4, 'name' => 'Pending'],
+        ['id' => 5, 'name' => 'Solved (to validate)'],
+        ['id' => 6, 'name' => 'Solved'],
+        ['id' => 7, 'name' => 'Closed'],
+    ];
 }
 
 // Админ-подсказка, если соединение к GLPI не настроено/падает

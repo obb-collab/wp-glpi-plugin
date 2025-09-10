@@ -1,6 +1,7 @@
 <?php
 if (!defined('ABSPATH')) exit;
 require_once __DIR__ . '/../helpers.php';
+require_once __DIR__ . '/../common/sql.php';
 
 function nm_rate_limit($key){
     $k='nm_rl_'.md5($key.'|'.get_current_user_id());
@@ -12,54 +13,98 @@ function nm_rate_limit($key){
 
 add_action('wp_ajax_nm_catalog_categories', 'nm_catalog_categories');
 function nm_catalog_categories(){
-    nm_rate_limit('nm_catalog_categories');
-    nm_require_nonce();
-    global $wpdb;
-    $q = sanitize_text_field($_POST['q'] ?? '');
-    if (mb_strlen($q) > 64) $q = mb_substr($q, 0, 64);
-    $limit = 20;
-    $prefix = NM_DB_PREFIX;
-    $like = '%' . $wpdb->esc_like($q) . '%';
-    $sql = "SELECT id, name, completename FROM {$prefix}itilcategories WHERE is_helpdeskvisible=1 AND (name LIKE %s OR completename LIKE %s) ORDER BY name ASC LIMIT %d";
-    $rows = $wpdb->get_results($wpdb->prepare($sql, $like, $like, $limit), ARRAY_A);
-    if (!is_array($rows)) $rows = [];
-    nm_json_ok(['items'=>$rows]);
+    try {
+        nm_rate_limit('nm_catalog_categories');
+        nm_require_nonce();
+        $db = nm_glpi_db();
+        if (is_wp_error($db)) throw new RuntimeException($db->get_error_message());
+        $q = isset($_REQUEST['q']) ? trim((string)wp_unslash($_REQUEST['q'])) : '';
+        $limit = 100;
+        if ($q === '') {
+            $rows = $db->get_results(
+                "SELECT id, name
+                 FROM glpi_itilcategories
+                 ORDER BY name ASC
+                 LIMIT {$limit}", ARRAY_A
+            );
+        } else {
+            $like = '%' . $db->esc_like($q) . '%';
+            $rows = $db->get_results(
+                $db->prepare(
+                    "SELECT id, name
+                     FROM glpi_itilcategories
+                     WHERE name LIKE %s
+                     ORDER BY name ASC
+                     LIMIT {$limit}", $like
+                ), ARRAY_A
+            );
+        }
+        if (!is_array($rows)) $rows = [];
+        nm_json_ok(['items'=>$rows]);
+    } catch (Throwable $e) {
+        nm_json_error('server_error', null, ['error'=>$e->getMessage()]);
+    }
 }
 
 add_action('wp_ajax_nm_catalog_locations', 'nm_catalog_locations');
 function nm_catalog_locations(){
-    nm_rate_limit('nm_catalog_locations');
-    nm_require_nonce();
-    global $wpdb;
-    $q = sanitize_text_field($_POST['q'] ?? '');
-    if (mb_strlen($q) > 64) $q = mb_substr($q, 0, 64);
-    $limit = 20;
-    $prefix = NM_DB_PREFIX;
-    $like = '%' . $wpdb->esc_like($q) . '%';
-    $sql = "SELECT id, name, completename FROM {$prefix}locations WHERE (name LIKE %s OR completename LIKE %s) ORDER BY name ASC LIMIT %d";
-    $rows = $wpdb->get_results($wpdb->prepare($sql, $like, $like, $limit), ARRAY_A);
-    if (!is_array($rows)) $rows = [];
-    nm_json_ok(['items'=>$rows]);
-}
-
-add_action('wp_ajax_nm_catalog_assignees', 'nm_catalog_assignees');
-function nm_catalog_assignees(){
-    nm_rate_limit('nm_catalog_assignees');
-    nm_require_nonce();
-    global $wpdb;
-    $q = sanitize_text_field($_POST['q'] ?? '');
-    if (mb_strlen($q) > 64) $q = mb_substr($q, 0, 64);
-    $limit = 30;
-    $prefix = NM_DB_PREFIX;
-    $like = '%' . $wpdb->esc_like($q) . '%';
-    $sql = "SELECT id, name, realname, firstname FROM {$prefix}users WHERE is_active=1 AND (name LIKE %s OR realname LIKE %s OR firstname LIKE %s) ORDER BY realname ASC LIMIT %d";
-    $rows = $wpdb->get_results($wpdb->prepare($sql, $like, $like, $like, $limit), ARRAY_A);
-    if (!is_array($rows)) $rows = [];
-    foreach ($rows as &$r){
-        $r['label'] = trim(($r['realname'] ?? '') . ' ' . ($r['firstname'] ?? ''));
-        if (!$r['label']) $r['label'] = $r['name'];
+    try {
+        nm_rate_limit('nm_catalog_locations');
+        nm_require_nonce();
+        $db = nm_glpi_db();
+        if (is_wp_error($db)) throw new RuntimeException($db->get_error_message());
+        $q = isset($_REQUEST['q']) ? trim((string)wp_unslash($_REQUEST['q'])) : '';
+        $limit = 100;
+        if ($q === '') {
+            $rows = $db->get_results(
+                "SELECT id, name
+                 FROM glpi_locations
+                 ORDER BY name ASC
+                 LIMIT {$limit}", ARRAY_A
+            );
+        } else {
+            $like = '%' . $db->esc_like($q) . '%';
+            $rows = $db->get_results(
+                $db->prepare(
+                    "SELECT id, name
+                     FROM glpi_locations
+                     WHERE name LIKE %s
+                     ORDER BY name ASC
+                     LIMIT {$limit}", $like
+                ), ARRAY_A
+            );
+        }
+        if (!is_array($rows)) $rows = [];
+        nm_json_ok(['items'=>$rows]);
+    } catch (Throwable $e) {
+        nm_json_error('server_error', null, ['error'=>$e->getMessage()]);
     }
-    nm_json_ok(['items'=>$rows]);
 }
 
-
+add_action('wp_ajax_nm_catalog_users', 'nm_catalog_users');
+function nm_catalog_users(){
+    try {
+        nm_rate_limit('nm_catalog_users');
+        nm_require_nonce();
+        $db = nm_glpi_db();
+        if (is_wp_error($db)) throw new RuntimeException($db->get_error_message());
+        $q = isset($_REQUEST['q']) ? trim((string)wp_unslash($_REQUEST['q'])) : '';
+        $like = '%' . $db->esc_like($q) . '%';
+        $limit = 30;
+        $sql = "SELECT id, name, realname, firstname
+                FROM glpi_users
+                WHERE is_active = 1
+                  AND (name LIKE %s OR realname LIKE %s OR firstname LIKE %s)
+                ORDER BY realname ASC
+                LIMIT %d";
+        $rows = $db->get_results($db->prepare($sql, $like, $like, $like, $limit), ARRAY_A);
+        if (!is_array($rows)) $rows = [];
+        foreach ($rows as &$r){
+            $label = trim(($r['realname'] ?? '') . ' ' . ($r['firstname'] ?? ''));
+            $r['label'] = $label !== '' ? $label : ($r['name'] ?? '');
+        }
+        nm_json_ok(['items'=>$rows]);
+    } catch (Throwable $e) {
+        nm_json_error('server_error', null, ['error'=>$e->getMessage()]);
+    }
+}

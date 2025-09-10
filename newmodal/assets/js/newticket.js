@@ -35,9 +35,9 @@
              .on('input', '#nm-nt-location-input', function(){ dropdown($(this), 'nm_catalog_locations'); });
   $(document).on('focus', '#nm-nt-assignee-input', function(){
                 if ($(this).prop('disabled')) return;
-                dropdown($(this), 'nm_catalog_assignees');
+                dropdown($(this), 'nm_catalog_users');
               })
-             .on('input', '#nm-nt-assignee-input', function(){ if (!$(this).prop('disabled')) dropdown($(this), 'nm_catalog_assignees'); });
+             .on('input', '#nm-nt-assignee-input', function(){ if (!$(this).prop('disabled')) dropdown($(this), 'nm_catalog_users'); });
 
   $(document).on('click', '.nm-dd-item', function(){
     var id = $(this).data('id');

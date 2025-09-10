@@ -1,34 +1,93 @@
 <?php
 if (!defined('ABSPATH')) exit;
 require_once __DIR__ . '/../helpers.php';
+require_once __DIR__ . '/../common/sql.php';
+
+/**
+ * ВНИМАНИЕ:
+ * Ранее файл использовал $wpdb (БД WordPress) и абстракцию {NM_DB_PREFIX},
+ * из-за чего запросы уходили не в GLPI. Ниже — строгое использование nm_glpi_db().
+ */
 
 add_action('wp_ajax_nm_get_counts', 'nm_get_counts');
 function nm_get_counts(){
-    nm_require_nonce();
-    global $wpdb;
-    $prefix = NM_DB_PREFIX;
-    $gid = nm_glpi_user_id_from_wp();
-    $where = nm_is_manager() ? "1=1" : $wpdb->prepare("EXISTS (SELECT 1 FROM {$prefix}tickets_users tu WHERE tu.tickets_id=t.id AND tu.type=2 AND tu.users_id=%d)", $gid);
-    $now = current_time('mysql');
+    try {
+        nm_require_nonce();
+        $db   = nm_glpi_db();               // wpdb к БД GLPI
+        if (is_wp_error($db)) throw new RuntimeException($db->get_error_message());
+        $gid  = nm_glpi_user_id_from_wp();  // текущий GLPI user id
+        $now  = current_time('mysql');
+        $is_mgr = nm_is_manager();
 
-    $sql = "SELECT COUNT(*) FROM {$prefix}tickets t WHERE {$where}";
-    $total = (int)$wpdb->get_var($sql);
+        // Подсчёт по статусам
+        if ($is_mgr) {
+            $sql = "SELECT t.status, COUNT(*) AS cnt\n                    FROM glpi_tickets t\n                    GROUP BY t.status";
+            $rows = $db->get_results($sql, ARRAY_A);
+        } else {
+            $sql = "SELECT t.status, COUNT(*) AS cnt\n                    FROM glpi_tickets t\n                    JOIN glpi_tickets_users tu\n                      ON tu.tickets_id = t.id AND tu.type = 2 AND tu.users_id = %d\n                    GROUP BY t.status";
+            $rows = $db->get_results($db->prepare($sql, $gid), ARRAY_A);
+        }
+        $by = [];
+        foreach ((array)$rows as $r) {
+            $by[(int)$r['status']] = (int)$r['cnt'];
+        }
 
-    $count_by_status = function($status) use ($wpdb,$prefix,$where){
-        $sql = "SELECT COUNT(*) FROM {$prefix}tickets t WHERE {$where} AND t.status=%d";
-        return (int)$wpdb->get_var($wpdb->prepare($sql, $status));
-    };
+        // Просроченные (в работе/ожидании с time_to_resolve < now)
+        if ($is_mgr) {
+            $overdue = (int)$db->get_var(
+                $db->prepare(
+                    "SELECT COUNT(*) FROM glpi_tickets t\n                     WHERE t.status NOT IN (6,7) AND t.time_to_resolve IS NOT NULL AND t.time_to_resolve < %s",
+                    $now
+                )
+            );
+        } else {
+            $overdue = (int)$db->get_var(
+                $db->prepare(
+                    "SELECT COUNT(*) FROM glpi_tickets t\n                     JOIN glpi_tickets_users tu\n                       ON tu.tickets_id = t.id AND tu.type = 2 AND tu.users_id = %d\n                     WHERE t.status NOT IN (6,7) AND t.time_to_resolve IS NOT NULL AND t.time_to_resolve < %s",
+                    $gid, $now
+                )
+            );
+        }
 
-    $work = $count_by_status(2);
-    $plan = $count_by_status(3);
-    $stop = $count_by_status(4);
-    $new  = $count_by_status(1);
-    $sql_over = "SELECT COUNT(*) FROM {$prefix}tickets t WHERE {$where} AND t.status <> 6 AND t.due_date IS NOT NULL AND t.due_date < %s";
-    $overdue = (int)$wpdb->get_var($wpdb->prepare($sql_over, $now));
+        $total = array_sum($by);
+        $out = [
+            'all'     => $total,
+            'new'     => $by[1] ?? 0,
+            'work'    => $by[2] ?? 0,
+            'stop'    => $by[4] ?? 0,
+            'solved'  => $by[6] ?? 0,
+            'closed'  => $by[7] ?? 0,
+            'overdue' => $overdue,
+        ];
+        nm_json_ok($out);
+    } catch (Throwable $e) {
+        nm_json_error('server_error', null, ['error' => $e->getMessage()]);
+    }
+}
 
-    nm_json_ok([
-        'total'=>$total,'work'=>$work,'plan'=>$plan,'stop'=>$stop,'new'=>$new,'overdue'=>$overdue
-    ]);
+/**
+ * Подсказка по пользователям (для назначения)
+ */
+add_action('wp_ajax_nm_suggest_users', 'nm_suggest_users');
+function nm_suggest_users(){
+    try {
+        nm_require_nonce();
+        $db = nm_glpi_db();
+        if (is_wp_error($db)) throw new RuntimeException($db->get_error_message());
+        $q  = isset($_REQUEST['q']) ? trim((string)wp_unslash($_REQUEST['q'])) : '';
+        $like = '%' . $db->esc_like($q) . '%';
+        $limit = 30;
+        $sql = "SELECT id, name, realname, firstname\n                FROM glpi_users\n                WHERE is_active = 1\n                  AND (name LIKE %s OR realname LIKE %s OR firstname LIKE %s)\n                ORDER BY realname ASC\n                LIMIT %d";
+        $rows = $db->get_results($db->prepare($sql, $like, $like, $like, $limit), ARRAY_A);
+        if (!is_array($rows)) $rows = [];
+        foreach ($rows as &$r) {
+            $label = trim(($r['realname'] ?? '') . ' ' . ($r['firstname'] ?? ''));
+            $r['label'] = $label !== '' ? $label : ($r['name'] ?? '');
+        }
+        nm_json_ok(['items' => $rows]);
+    } catch (Throwable $e) {
+        nm_json_error('server_error', null, ['error' => $e->getMessage()]);
+    }
 }
 
 add_action('wp_ajax_nm_get_card', 'nm_get_card');
