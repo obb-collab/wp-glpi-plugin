@@ -49,7 +49,7 @@ if (!function_exists('nm_bage_enqueue_assets')){
 }
 
 function nm_shortcode_glpi_cards_new($atts = [], $content = '') {
-    $statuses = nm_default_status_map();
+    $statuses = function_exists('nm_get_status_map') ? nm_get_status_map() : (function_exists('nm_default_status_map') ? nm_default_status_map() : []);
     ob_start();
     ?>
     <div id="nm-root" class="nm-root">
