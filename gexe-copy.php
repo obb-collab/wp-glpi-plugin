@@ -11,6 +11,17 @@ Update URI: https://github.com/obb-collab/wp-glpi-plugin
 
 if (!defined('ABSPATH')) exit;
 
+/**
+ * Включаем новый модальный слой (API-only) глобально.
+ * Старая логика остаётся в коде, но не активируется.
+ */
+if (!defined('GEXE_USE_NEWMODAL')) {
+    define('GEXE_USE_NEWMODAL', true);
+}
+if (!defined('GEXE_NEWMODAL_QS')) {
+    define('GEXE_NEWMODAL_QS', 'use_newmodal');
+}
+
 require_once __DIR__ . '/glpi-utils.php';
 require_once __DIR__ . '/includes/glpi-profile-fields.php';
 require_once __DIR__ . '/chief/glpi-chief.php';
@@ -86,18 +97,7 @@ add_action('wp_enqueue_scripts', function () {
 
 // ====== ПОДКЛЮЧЕНИЕ К БД GLPI ======
 require_once __DIR__ . '/glpi-db-setup.php';
-
-/**
- * Feature flag for NEW modal (API-only, no SQL)
- * Can be overridden via query param ?use_newmodal=1
- */
-if (!defined('GEXE_USE_NEWMODAL')) {
-    define('GEXE_USE_NEWMODAL', false);
-}
-if (!defined('GEXE_NEWMODAL_QS')) {
-    define('GEXE_NEWMODAL_QS', 'use_newmodal');
-}
-
+ 
 // New modal isolated module (safe to require; it is inert unless enabled)
 require_once __DIR__ . '/newmodal/newmodal-loader.php';
 
