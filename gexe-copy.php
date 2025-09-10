@@ -11,20 +11,16 @@ Update URI: https://github.com/obb-collab/wp-glpi-plugin
 
 if (!defined('ABSPATH')) exit;
 
-/**
- * Включаем новый модальный слой (API-only) глобально.
- * Старая логика остаётся в коде, но не активируется.
- */
+require_once __DIR__ . '/glpi-utils.php';
+require_once __DIR__ . '/includes/glpi-profile-fields.php';
+require_once __DIR__ . '/chief/glpi-chief.php';
+// Глобально включаем новую модалку (API-only). Старые файлы не используются.
 if (!defined('GEXE_USE_NEWMODAL')) {
     define('GEXE_USE_NEWMODAL', true);
 }
 if (!defined('GEXE_NEWMODAL_QS')) {
     define('GEXE_NEWMODAL_QS', 'use_newmodal');
 }
-
-require_once __DIR__ . '/glpi-utils.php';
-require_once __DIR__ . '/includes/glpi-profile-fields.php';
-require_once __DIR__ . '/chief/glpi-chief.php';
 
 // [manager-switcher] local helper to detect manager account
 function gexe_is_manager_local() {
@@ -100,8 +96,7 @@ require_once __DIR__ . '/glpi-db-setup.php';
  
 // New modal isolated module (safe to require; it is inert unless enabled)
 require_once __DIR__ . '/newmodal/newmodal-loader.php';
-// Изолированная страница карточек (badge) — очищенная от конфликтов со старой модалкой
-// Переопределяет шорткод карточек и гарантирует работу новой модалки.
+// Полностью изолированная страница карточек под новую модалку
 require_once __DIR__ . '/newmodal/bage/bage-loader.php';
 
 function gexe_glpi_uninstall() {
