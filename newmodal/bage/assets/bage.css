@@ -1,0 +1,49 @@
+/* newmodal/bage/assets/bage.css - dark theme list & filters */
+:root {
+  --nm-bg: #111418;
+  --nm-card: #1b1f24;
+  --nm-muted: #9aa4ad;
+  --nm-border: #2b3138;
+  --nm-text: #e8eef3;
+  --nm-primary: #3b82f6;
+  --nm-danger: #ef4444;
+  --nm-success: #10b981;
+  --nm-warning: #f59e0b;
+}
+
+.nm-root { background: var(--nm-bg); color: var(--nm-text); }
+.nm-toolbar { display:flex; gap:12px; align-items:center; justify-content:space-between; padding:12px; border-bottom:1px solid var(--nm-border);}
+.nm-badges { display:flex; gap:8px; flex-wrap:wrap; }
+.nm-badge { background: var(--nm-card); border:1px solid var(--nm-border); padding:6px 10px; border-radius:12px; font-size:12px; color:var(--nm-muted); cursor:pointer; user-select:none; }
+.nm-badge:hover { color: var(--nm-text); border-color: var(--nm-text); }
+.nm-badge.active { background: var(--nm-primary); color:#fff; border-color:var(--nm-primary); }
+
+.nm-search { display:flex; gap:8px; align-items:center;}
+.nm-search input { background: var(--nm-card); color:var(--nm-text); border:1px solid var(--nm-border); padding:8px 10px; border-radius:8px; min-width:220px;}
+.nm-btn { background: var(--nm-primary); color:#fff; border:none; padding:8px 12px; border-radius:8px; cursor:pointer;}
+.nm-btn:disabled{ opacity:.6; cursor:not-allowed;}
+
+.nm-cards { padding:12px; display:grid; gap:10px; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); }
+.nm-card { background: var(--nm-card); border:1px solid var(--nm-border); border-radius:12px; padding:12px; display:flex; flex-direction:column; gap:8px;}
+.nm-card .nm-title { font-weight:600; font-size:14px; color:#fff; cursor:pointer;}
+.nm-card .nm-meta { display:flex; justify-content:space-between; font-size:12px; color:var(--nm-muted);}
+.nm-card .nm-tags { display:flex; gap:6px; flex-wrap:wrap; }
+.nm-tag { font-size:11px; border:1px solid var(--nm-border); border-radius:8px; padding:2px 6px; color:var(--nm-muted);}
+.nm-tag.status-1{ background:#374151; color:#e5e7eb;}
+.nm-tag.status-2{ background:#1d4ed8; color:#dbeafe;}
+.nm-tag.status-3{ background:#065f46; color:#d1fae5;}
+.nm-tag.status-4{ background:#78350f; color:#fef3c7;}
+.nm-tag.status-5{ background:#064e3b; color:#d1fae5;}
+.nm-tag.status-6{ background:#111827; color:#9ca3af;}
+
+.nm-empty { color:var(--nm-muted); padding:24px; text-align:center; }
+
+.nm-overlay { position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:9997;}
+.nm-modal-root { position:fixed; inset:0; z-index:9998; display:flex; align-items:center; justify-content:center;}
+
+.nm-assignee-filter { background: var(--nm-card); color:var(--nm-text); border:1px solid var(--nm-border); padding:6px 8px; border-radius:8px;}
+
+@media (max-width: 600px) {
+  .nm-toolbar { flex-direction:column; align-items:flex-start; gap:10px;}
+  .nm-search input { min-width:140px;}
+}
