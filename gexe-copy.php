@@ -11,6 +11,26 @@ Update URI: https://github.com/obb-collab/wp-glpi-plugin
 
 if (!defined('ABSPATH')) exit;
 
+// Safe include to prevent fatal errors if a file is missing.
+// Shows an admin notice for administrators.
+if (!function_exists('gexe_require_optional')) {
+    function gexe_require_optional(string $rel, bool $fatal = false): bool {
+        $path = __DIR__ . $rel;
+        if (file_exists($path)) {
+            require_once $path;
+            return true;
+        }
+        if (is_admin()) {
+            add_action('admin_notices', function() use ($rel) {
+                echo '<div class="notice notice-error"><p>WP GLPI Plugin: required file missing: <code>' . esc_html($rel) . '</code></p></div>';
+            });
+        }
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log('[wp-glpi] Missing include: ' . $rel);
+        }
+        return false;
+    }
+}
 require_once __DIR__ . '/glpi-utils.php';
 require_once __DIR__ . '/includes/glpi-profile-fields.php';
 require_once __DIR__ . '/chief/glpi-chief.php';
@@ -93,11 +113,12 @@ add_action('wp_enqueue_scripts', function () {
 
 // ====== ПОДКЛЮЧЕНИЕ К БД GLPI ======
 require_once __DIR__ . '/glpi-db-setup.php';
- 
+
 // New modal isolated module (safe to require; it is inert unless enabled)
-require_once __DIR__ . '/newmodal/newmodal-loader.php';
+gexe_require_optional('/glpi-newmodal.php');
 // Полностью изолированная страница карточек под новую модалку
-require_once __DIR__ . '/newmodal/bage/bage-loader.php';
+gexe_require_optional('/newmodal/bage/render.php');
+require_once __DIR__ . '/newmodal/bage/shortcode.php';
 
 function gexe_glpi_uninstall() {
     gexe_glpi_remove_triggers();
