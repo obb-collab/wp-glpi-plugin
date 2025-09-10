@@ -1,5 +1,5 @@
 <?php
-// newmodal/common/helpers.php
+// newmodal/helpers.php
 if (!defined('ABSPATH')) { exit; }
 
 /**

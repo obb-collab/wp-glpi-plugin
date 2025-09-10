@@ -43,8 +43,12 @@ function get_option($name, $default = false) { return $default; }
 // Escaping helpers
 function esc_attr($s) { return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
 function esc_html($s) { return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
+function esc_attr_e($s,$d=null){ echo esc_attr($s); }
+function esc_html_e($s,$d=null){ echo esc_html($s); }
 
-require __DIR__ . '/../newmodal/bage/bage-loader.php';
+require __DIR__ . '/../newmodal/config.php';
+require __DIR__ . '/../newmodal/helpers.php';
+require __DIR__ . '/../newmodal/bage/shortcode.php';
 
 $output = do_shortcode('[glpi_cards_new]');
 
@@ -56,7 +60,7 @@ if (strpos($output, 'data-open="comment"') !== false) {
     fwrite(STDERR, "unsanitized attribute still present\n");
     exit(1);
 }
-if (strpos($output, 'gexe-bage') === false) {
+if (strpos($output, 'nm-root') === false) {
     fwrite(STDERR, "bage markup missing\n");
     exit(1);
 }

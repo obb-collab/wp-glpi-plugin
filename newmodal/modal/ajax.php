@@ -1,14 +1,11 @@
 <?php
-// newmodal/modal/ticket-modal.php
+// newmodal/modal/ajax.php
 if (!defined('ABSPATH')) { exit; }
 
-require_once NM_BASE_DIR . 'common/helpers.php';
-require_once NM_BASE_DIR . 'common/db.php';
-require_once NM_BASE_DIR . 'common/notify-api.php';
+add_action('wp_ajax_nm_add_comment', 'nm_ajax_add_comment');
+add_action('wp_ajax_nm_change_status', 'nm_ajax_change_status');
+add_action('wp_ajax_nm_assign_user', 'nm_ajax_assign_user');
 
-/**
- * AJAX: add comment
- */
 function nm_ajax_add_comment() {
     nm_require_logged_in();
     nm_check_nonce_or_fail();
@@ -22,9 +19,9 @@ function nm_ajax_add_comment() {
 
     try {
         nm_db_begin();
-        nm_db_query("
-            INSERT INTO ".nm_tbl('itilfollowups')." (items_id, itemtype, users_id, content, date)
-            VALUES (%d, 'Ticket', %d, %s, %s)
+        nm_db_query("\
+            INSERT INTO ".nm_tbl('itilfollowups')." (items_id, itemtype, users_id, content, date)\
+            VALUES (%d, 'Ticket', %d, %s, %s)\
         ", [$ticket_id, $glpi_uid, $body, current_time('mysql')]);
         $fid = nm_db_insert_id();
         nm_db_commit();
@@ -35,11 +32,7 @@ function nm_ajax_add_comment() {
         nm_json_error('db_error', __('Failed to add comment', 'nm'));
     }
 }
-add_action('wp_ajax_nm_add_comment', 'nm_ajax_add_comment');
 
-/**
- * AJAX: change status
- */
 function nm_ajax_change_status() {
     nm_require_logged_in();
     nm_check_nonce_or_fail();
@@ -62,11 +55,7 @@ function nm_ajax_change_status() {
         nm_json_error('db_error', __('Failed to change status', 'nm'));
     }
 }
-add_action('wp_ajax_nm_change_status', 'nm_ajax_change_status');
 
-/**
- * AJAX: assign user
- */
 function nm_ajax_assign_user() {
     nm_require_logged_in();
     nm_check_nonce_or_fail();
@@ -77,11 +66,10 @@ function nm_ajax_assign_user() {
 
     nm_require_can_assign($assignee_id);
     $glpi_uid = nm_glpi_user_id_from_wp();
-    nm_require_can_view_ticket($ticket_id, $glpi_uid); // must see ticket to reassign
+    nm_require_can_view_ticket($ticket_id, $glpi_uid);
 
     try {
         nm_db_begin();
-        // remove previous technicians and add new one (idempotent replace)
         nm_db_query("DELETE FROM ".nm_tbl('tickets_users')." WHERE tickets_id = %d AND type = 2", [$ticket_id]);
         nm_db_query("INSERT INTO ".nm_tbl('tickets_users')." (tickets_id, users_id, type) VALUES (%d, %d, 2)", [$ticket_id, $assignee_id]);
         nm_db_commit();
@@ -92,4 +80,3 @@ function nm_ajax_assign_user() {
         nm_json_error('db_error', __('Failed to assign user', 'nm'));
     }
 }
-add_action('wp_ajax_nm_assign_user', 'nm_ajax_assign_user');
