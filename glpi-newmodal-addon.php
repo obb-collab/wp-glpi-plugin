@@ -23,15 +23,16 @@ if (!defined('ABSPATH')) { exit; }
 if (!defined('FRGLPI_NEWMODAL_ADDON_VER')) {
     define('FRGLPI_NEWMODAL_ADDON_VER', '2.0.0');
 }
+// Единая версия ассетов newmodal (используется и внутри compat)
+if (!defined('FRGLPI_NEWMODAL_VER')) {
+    define('FRGLPI_NEWMODAL_VER', '2.0.0');
+}
 if (!defined('FRGLPI_NEWMODAL_DIR')) {
     define('FRGLPI_NEWMODAL_DIR', __DIR__ . '/newmodal');
 }
 if (!defined('FRGLPI_NEWMODAL_URL')) {
-    // Best-effort URL resolver for assets if needed inside newmodal/*
-    $plugin_basename = plugin_basename(__FILE__);
-    $plugin_url      = plugin_dir_url(__FILE__);
-    define('FRGLPI_NEWMODAL_URL', rtrim($plugin_url, '/'));
-    unset($plugin_basename, $plugin_url);
+    // Точный URL каталога /newmodal (оканчивается слэшем)
+    define('FRGLPI_NEWMODAL_URL', trailingslashit( plugins_url('newmodal', __FILE__) ));
 }
 
 // Prevent double bootstrap if included from elsewhere.
@@ -72,16 +73,27 @@ add_action('plugins_loaded', function () {
     // Minimal required files from /newmodal. We keep includes guarded and
     // fail gracefully with informative admin_notice instead of fatal.
     $required_files = [
+        // Compat layer — объявляет NM_* константы/ключи (должен идти первым)
+        FRGLPI_NEWMODAL_DIR . '/common/compat.php',
+
+        // Core
         FRGLPI_NEWMODAL_DIR . '/config.php',
         FRGLPI_NEWMODAL_DIR . '/helpers.php',
-        FRGLPI_NEWMODAL_DIR . '/common/auth.php',
-        FRGLPI_NEWMODAL_DIR . '/common/sql.php',
         FRGLPI_NEWMODAL_DIR . '/common/api.php',
-        FRGLPI_NEWMODAL_DIR . '/shortcode.php', // registers [glpi_cards_new]
-        // UI modules (safe to include; they typically register AJAX/shortcodes/assets)
-        FRGLPI_NEWMODAL_DIR . '/bage/index.php',
-        FRGLPI_NEWMODAL_DIR . '/modal/index.php',
-        FRGLPI_NEWMODAL_DIR . '/new-ticket/index.php',
+        FRGLPI_NEWMODAL_DIR . '/common/sql.php',
+        FRGLPI_NEWMODAL_DIR . '/common/ping.php',
+
+        // Bage (cards list + shortcode)
+        FRGLPI_NEWMODAL_DIR . '/bage/shortcode.php',   // registers [glpi_cards_new]
+        FRGLPI_NEWMODAL_DIR . '/bage/ajax.php',
+        FRGLPI_NEWMODAL_DIR . '/bage/ajax-extra.php',
+
+        // Modal (ticket actions)
+        FRGLPI_NEWMODAL_DIR . '/modal/ajax.php',
+
+        // New Ticket (creation + catalogs)
+        FRGLPI_NEWMODAL_DIR . '/new-ticket/ajax.php',
+        FRGLPI_NEWMODAL_DIR . '/new-ticket/catalogs.php',
     ];
 
     $missing = [];
@@ -128,7 +140,7 @@ if (!function_exists('frglpi_newmodal_enqueue_assets')) {
                 'frglpi-newmodal',
                 plugins_url('newmodal/assets/css/newmodal.css', __FILE__),
                 [],
-                FRGLPI_NEWMODAL_ADDON_VER
+                FRGLPI_NEWMODAL_VER
             );
         }
         if (file_exists($js)) {
@@ -136,7 +148,7 @@ if (!function_exists('frglpi_newmodal_enqueue_assets')) {
                 'frglpi-newmodal',
                 plugins_url('newmodal/assets/js/newmodal.js', __FILE__),
                 ['jquery'],
-                FRGLPI_NEWMODAL_ADDON_VER,
+                FRGLPI_NEWMODAL_VER,
                 true
             );
         }
@@ -176,5 +188,3 @@ add_filter('plugin_row_meta', function ($links, $file) {
 // -----------------------------------------------------------------------------
 // That’s all. The actual business logic lives under /newmodal/*
 // -----------------------------------------------------------------------------
-
-

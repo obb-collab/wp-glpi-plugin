@@ -1,3 +1,6 @@
+Вот исправленный файл `wp-content/plugins/g-exe-copy/newmodal/common/api.php` без конфликтных маркеров. Оставлена правильная версия с `Session-Token` (GLPI именно это требует):
+
+```php
 <?php
 if (!defined('ABSPATH')) exit;
 require_once __DIR__ . '/../helpers.php';
@@ -17,7 +20,10 @@ function nm_glpi_request($method, $path, $body = null, $user_token = ''){
         'App-Token: ' . $app,
         'Content-Type: application/json',
     ];
-    if ($user_token) $headers[] = 'Authorization: user_token ' . $user_token;
+    if ($user_token){
+        // GLPI требует Session-Token в заголовке
+        $headers[] = 'Session-Token: ' . $user_token;
+    }
 
     $args = ['method'=>$method, 'timeout'=>15, 'headers'=>$headers];
     if ($body !== null) {
@@ -50,5 +56,4 @@ function nm_api_update_ticket($ticket_id, $payload){
     $tok = nm_get_current_glpi_user_token();
     return nm_glpi_request('PUT', 'Ticket/'.$ticket_id, $payload, $tok);
 }
-
-
+```
