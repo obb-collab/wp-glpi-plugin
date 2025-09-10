@@ -1,12 +1,8 @@
-/* При активном newmodal жёстко скрываем старые контейнеры модалок */
-body[data-newmodal-active="1"] .gexe-modal,
-body[data-newmodal-active="1"] .gexe-modal_backdrop,
-body[data-newmodal-active="1"] .gexe-cmnt,
-body[data-newmodal-active="1"] .gexe-cmnt_backdrop,
-body.gexe-newmodal-active .gexe-modal,
-body.gexe-newmodal-active .gexe-modal_backdrop,
-body.gexe-newmodal-active .gexe-cmnt,
-body.gexe-newmodal-active .gexe-cmnt_backdrop {
+/* Скрываем СТАРЫЙ модал только когда новый действительно открыт */
+body[data-newmodal-open="1"] .gexe-modal,
+body[data-newmodal-open="1"] .gexe-modal_backdrop,
+body[data-newmodal-open="1"] .gexe-cmnt,
+body[data-newmodal-open="1"] .gexe-cmnt_backdrop {
   display: none !important;
   visibility: hidden !important;
   pointer-events: none !important;
