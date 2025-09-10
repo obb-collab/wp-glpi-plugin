@@ -1,59 +1,139 @@
-Вот исправленный файл `wp-content/plugins/g-exe-copy/newmodal/common/api.php` без конфликтных маркеров. Оставлена правильная версия с `Session-Token` (GLPI именно это требует):
-
-```php
 <?php
-if (!defined('ABSPATH')) exit;
-require_once __DIR__ . '/../helpers.php';
+/**
+ * Newmodal common API helpers (safe baseline).
+ *
+ * This file intentionally contains only defensive helpers and constants,
+ * without any backticks or ambiguous syntax that could break PHP parsing.
+ * Keep dependencies minimal: pure PHP + WordPress core functions.
+ *
+ * @package wp-glpi-plugin/newmodal
+ */
 
-function nm_glpi_baseurl(){
-    $opt = get_option(NM_OPT_BASE_URL);
-    $url = is_string($opt) && $opt ? $opt : 'http://192.168.100.12/glpi/apirest.php';
-    return apply_filters('nm_glpi_baseurl', rtrim($url,'/'));
+if (!defined('ABSPATH')) {
+    exit;
 }
 
-function nm_glpi_request($method, $path, $body = null, $user_token = ''){
-    $base = nm_glpi_baseurl();
-    $app  = nm_get_app_token();
-    if (!$app) return [false, ['message'=>'Не настроен App-Token']];
+// Prevent double inclusion.
+if (defined('NM_COMMON_API_LOADED')) {
+    return;
+}
+define('NM_COMMON_API_LOADED', true);
 
-    $headers = [
-        'App-Token: ' . $app,
-        'Content-Type: application/json',
-    ];
-    if ($user_token){
-        // GLPI требует Session-Token в заголовке
-        $headers[] = 'Session-Token: ' . $user_token;
+/**
+ * Returns standardized JSON to AJAX caller and exits.
+ *
+ * @param array $payload
+ * @param int   $code
+ */
+function nm_api_send_json(array $payload, $code = 200) {
+    // Do not echo notices/warnings to screen.
+    if (!headers_sent()) {
+        status_header((int)$code);
+        header('Content-Type: application/json; charset=' . get_option('blog_charset'));
+        // Disable caching for AJAX.
+        header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+        header('Pragma: no-cache');
     }
+    echo wp_json_encode($payload);
+    // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+    wp_die();
+}
 
-    $args = ['method'=>$method, 'timeout'=>15, 'headers'=>$headers];
-    if ($body !== null) {
-        $args['body'] = json_encode($body, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+/**
+ * Success wrapper.
+ *
+ * @param mixed $data
+ * @param array $extra
+ */
+function nm_api_ok($data = null, array $extra = []) {
+    $resp = array_merge(
+        [
+            'ok'   => true,
+            'data' => $data,
+        ],
+        $extra
+    );
+    nm_api_send_json($resp, 200);
+}
+
+/**
+ * Error wrapper.
+ *
+ * @param string $message
+ * @param int    $code
+ * @param array  $extra
+ */
+function nm_api_error($message = 'Unexpected error', $code = 400, array $extra = []) {
+    $resp = array_merge(
+        [
+            'ok'      => false,
+            'message' => (string)$message,
+            'code'    => (int)$code,
+        ],
+        $extra
+    );
+    nm_api_send_json($resp, $code);
+}
+
+/**
+ * Validate WP nonce from request. Returns void on success (continues execution),
+ * otherwise sends error JSON and exits.
+ *
+ * @param string $action
+ * @param string $field
+ */
+function nm_api_require_nonce($action, $field = 'nonce') {
+    $nonce = isset($_REQUEST[$field]) ? sanitize_text_field(wp_unslash($_REQUEST[$field])) : '';
+    if (!$nonce || !wp_verify_nonce($nonce, $action)) {
+        nm_api_error('Invalid or missing nonce', 403, ['where' => 'nonce']);
     }
-
-    $url = rtrim($base,'/') . '/' . ltrim($path,'/');
-    $res = wp_remote_request($url, $args);
-    if (is_wp_error($res)) return [false, ['message'=>$res->get_error_message()]];
-    $code = wp_remote_retrieve_response_code($res);
-    $data = json_decode(wp_remote_retrieve_body($res), true);
-    if ($code >= 200 && $code < 300) return [true, $data ?: []];
-    return [false, is_array($data) ? $data : ['message'=>'HTTP '.$code]];
 }
 
-// High-level ops
-function nm_api_create_ticket($payload){
-    $tok = nm_get_current_glpi_user_token();
-    return nm_glpi_request('POST', 'Ticket', $payload, $tok);
+/**
+ * Ensure current user is logged in and (optionally) has capability.
+ * On failure returns error JSON and exits.
+ *
+ * @param string|null $cap
+ */
+function nm_api_require_auth($cap = null) {
+    if (!is_user_logged_in()) {
+        nm_api_error('Auth required', 401);
+    }
+    if ($cap && !current_user_can($cap)) {
+        nm_api_error('Insufficient privileges', 403, ['cap' => $cap]);
+    }
 }
-function nm_api_add_followup($ticket_id, $payload){
-    $tok = nm_get_current_glpi_user_token();
-    return nm_glpi_request('POST', 'Ticket/'.$ticket_id.'/Followup', $payload, $tok);
+
+/**
+ * Read integer from request safely.
+ *
+ * @param string $key
+ * @param int    $default
+ * @return int
+ */
+function nm_req_int($key, $default = 0) {
+    return isset($_REQUEST[$key]) ? (int) $_REQUEST[$key] : (int) $default;
 }
-function nm_api_assign_user($ticket_id, $users_id){
-    $tok = nm_get_current_glpi_user_token();
-    return nm_glpi_request('POST', 'Ticket/'.$ticket_id.'/Ticket_User', ['users_id'=>$users_id,'type'=>2], $tok);
+
+/**
+ * Read trimmed string from request safely.
+ *
+ * @param string $key
+ * @param string $default
+ * @return string
+ */
+function nm_req_str($key, $default = '') {
+    if (!isset($_REQUEST[$key])) {
+        return (string)$default;
+    }
+    return sanitize_text_field(wp_unslash((string)$_REQUEST[$key]));
 }
-function nm_api_update_ticket($ticket_id, $payload){
-    $tok = nm_get_current_glpi_user_token();
-    return nm_glpi_request('PUT', 'Ticket/'.$ticket_id, $payload, $tok);
+
+/**
+ * Simple guard ping (debug).
+ */
+function nm_api_ping() {
+    nm_api_ok(['pong' => true, 'time' => time()]);
 }
-```
+
+// End of file.
