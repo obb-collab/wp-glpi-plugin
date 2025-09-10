@@ -54,22 +54,14 @@ add_action('wp_enqueue_scripts', function () {
         'enabled' => true,
         'qs'      => defined('GEXE_NEWMODAL_QS') ? GEXE_NEWMODAL_QS : 'use_newmodal',
     ]);
-}, 1); // priority=1 — грузим раньше прочих скриптов
+}, 1); // грузим раньше прочих скриптов
 
 add_action('wp_footer', function () {
     if (!gexe_newmodal_is_enabled()) return;
     // Inject hidden modal container (HTML markup kept minimal; visual parity in CSS)
     echo gexe_newmodal_render_container();
 }, 100);
-
-/**
- * Добавляем класс в body для надёжного скрытия старых модалок CSS-ом,
- * даже если JS ещё не успел инициализироваться.
- */
-add_filter('body_class', function(array $classes){
-    if (gexe_newmodal_is_enabled()) $classes[] = 'gexe-newmodal-active';
-    return $classes;
-});
+// Никаких классов в body на сервере — блокировку старых модалок включает JS только при открытии нового.
 
 /**
  * AJAX: Fetch ticket with followups (comments) via API

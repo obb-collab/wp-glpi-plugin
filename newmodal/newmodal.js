@@ -5,11 +5,6 @@
     return;
   }
 
-  // Ставим флаг на body сразу (для CSS-блокировки старых модалок)
-  if (document.body) {
-    document.body.classList.add('gexe-newmodal-active');
-    document.body.setAttribute('data-newmodal-active', '1');
-  }
 
   const qsKey = gexeNewModal.qs || 'use_newmodal';
   const ajax = gexeNewModal.ajaxUrl;
@@ -39,6 +34,10 @@
   }
 
   function openModal() {
+    // Включаем блокировку старых модалок только на время, когда открыт новый
+    if (document.body) {
+      document.body.setAttribute('data-newmodal-open', '1');
+    }
     dom.backdrop.hidden = false;
     dom.modal.hidden = false;
   }
@@ -50,6 +49,9 @@
     dom.meta.innerHTML = '';
     dom.textarea.value = '';
     showError('');
+    if (document.body) {
+      document.body.removeAttribute('data-newmodal-open');
+    }
   }
 
   if (dom.backdrop) {
@@ -142,11 +144,16 @@
     document.addEventListener('click', (ev) => {
       const a = ev.target.closest(OPEN_SELECTORS);
       if (!a) return;
-      const idAttr = a.getAttribute('data-ticket-id') || (a.dataset && a.dataset.ticketId);
+      const idAttr = a.getAttribute('data-ticket-id') || (a.dataset ? a.dataset.ticketId : null);
       const titleAttr = a.getAttribute('data-ticket-title') || a.getAttribute('data-title') || '';
       const id = parseInt(idAttr, 10);
       if (!id || Number.isNaN(id)) return;
-      // Гасим старые обработчики жёстко (capture + стоп)
+      // Открываем новый модал только если его контейнер реально есть на странице.
+      if (!dom.modal || !dom.backdrop) {
+        // Нет контейнера — даём старой логике отработать.
+        return;
+      }
+      // Контейнер есть — перехватываем полностью.
       ev.preventDefault();
       ev.stopImmediatePropagation();
       openModal();
