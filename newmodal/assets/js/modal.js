@@ -1,64 +1,44 @@
-/* newmodal/modal/assets/modal.js */
-(function($){
-  'use strict';
+(function(){
+  const root = document.getElementById('nm-root');
+  if (!root) return;
+  root.addEventListener('click', e => {
+    const card = e.target.closest('.nm-card');
+    if (!card) return;
+    const id = card.getAttribute('data-id') || card.querySelector('.nm-card__meta')?.textContent?.replace('#','') || '';
+    if (!id) return;
+    openCommentModal(id);
+  });
 
-  function disableBtn($btn, on){
-    if (!$btn || !$btn.length) return;
-    $btn.prop('disabled', !!on);
+  function openCommentModal(id){
+    const wrap = document.createElement('div');
+    wrap.className = 'nm-modal';
+    wrap.innerHTML = `
+      <div class="nm-modal__box">
+        <div class="nm-modal__title">Комментарий к #${id}</div>
+        <textarea class="nm-modal__textarea" maxlength="4000" placeholder="Ваш комментарий..."></textarea>
+        <div class="nm-modal__actions">
+          <button class="nm-btn nm-btn--primary">Отправить</button>
+          <button class="nm-btn nm-btn--ghost">Закрыть</button>
+        </div>
+        <div class="nm-modal__error" hidden></div>
+      </div>`;
+    document.body.appendChild(wrap);
+    const ta = wrap.querySelector('textarea');
+    const btnSend = wrap.querySelector('.nm-btn--primary');
+    const btnClose = wrap.querySelector('.nm-btn--ghost');
+    btnClose.onclick = ()=> wrap.remove();
+    btnSend.onclick = async ()=>{
+      const body = new URLSearchParams(); const rid=(crypto&&crypto.randomUUID)?crypto.randomUUID():String(Date.now()); body.append('rid', rid);
+      body.append('action','nm_add_comment');
+      body.append('nm_nonce', nmAjax.nonce);
+      body.append('id', id);
+      body.append('text', ta.value || '');
+      const r = await fetch(nmAjax.url, {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body});
+      const data = await r.json().catch(()=>({ok:false,message:'Ошибка сети'}));
+      const err = wrap.querySelector('.nm-modal__error');
+      if (!data.ok){ err.hidden=false; err.textContent = data.message || 'Ошибка'; if(data.extra && data.extra.api){ const d=document.createElement('details'); d.className='nm-error-details'; const s=document.createElement('summary'); s.textContent='Показать детали'; d.appendChild(s); const pre=document.createElement('pre'); pre.textContent=JSON.stringify(data.extra.api,null,2); d.appendChild(pre); err.appendChild(d);} return; }
+      wrap.remove();
+      if (window.refreshListAfterAction) window.refreshListAfterAction();
+    };
   }
-
-  $(document).on('submit', '#nm-followup-form', function(e){
-    e.preventDefault();
-    var $btn = $('#nm-send-comment');
-    disableBtn($btn, true);
-    var ticketId = $('#nm-modal-root').data('ticket');
-    var body = $(this).find('textarea[name="body"]').val();
-    var reqId = (NM_API && NM_API.uuidv4)? NM_API.uuidv4(): (Date.now()+'');
-    NM_API.apiPost('nm_add_comment', { ticket_id: ticketId, body: body, request_id: reqId }).then(function(resp){
-      if (!resp.ok){
-        alert(resp.message||'Ошибка');
-        disableBtn($btn, false);
-        return;
-      }
-      // Reload card
-      NM_API.apiGet('nm_get_card', {ticket_id: ticketId}).done(function(r){
-        if (r && r.ok){
-          // re-render followups portion
-          var f = r.followups||[], html='';
-          f.forEach(function(x){
-            html += '<div class="nm-followup"><div class="nm-followup-head">'+ (x.user_name||'') +' — '+ (x.date||'') +'</div><div class="nm-followup-body">'+$('<div/>').text(x.content||'').html()+'</div></div>';
-          });
-          $('.nm-followups-list').html(html);
-          $('#nm-followup-form textarea').val('');
-          $(document).trigger('nm:modal:updated', {type:'comment'});
-        }
-        disableBtn($btn, false);
-      });
-    }).catch(function(){
-      alert('Network error');
-      disableBtn($btn, false);
-    });
-  });
-
-  $(document).on('click', '#nm-take-in-work', function(){
-    var ticketId = $('#nm-modal-root').data('ticket');
-    var status = $(this).data('status') || 2;
-    var reqId = (NM_API && NM_API.uuidv4)? NM_API.uuidv4(): (Date.now()+'');
-    var $btn = $(this);
-    $btn.prop('disabled', true);
-    NM_API.apiPost('nm_change_status', { ticket_id: ticketId, status: status, request_id: reqId }).then(function(resp){
-      if (!resp.ok){ alert(resp.message||'Ошибка'); $btn.prop('disabled', false); return; }
-      // refresh counts & list
-      NM_API.loadCards();
-      // refresh modal label
-      NM_API.apiGet('nm_get_card', {ticket_id: ticketId}).done(function(r){
-        if (r && r.ok){
-          var t = r.ticket;
-          $('.nm-ticket-meta .nm-tag').first().text(NM.statuses[String(t.status)] || ('Status '+t.status)).attr('class','nm-tag status-'+t.status);
-        }
-        $btn.prop('disabled', false);
-      });
-    }).catch(function(){ alert('Network error'); $btn.prop('disabled', false); });
-  });
-
-})(jQuery);
+})();
