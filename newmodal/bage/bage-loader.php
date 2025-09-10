@@ -97,6 +97,14 @@ add_action('init', function () {
         }
         add_shortcode($tag, 'gexe_bage_render_cards');
     }
+
+    // Дополнительно регистрируем новый явный шорткод для тестов
+    // Он не конфликтует со старым и всегда выводит очищенную версию
+    if (!shortcode_exists('glpi_cards_new')) {
+        add_shortcode('glpi_cards_new', function($atts = []) {
+            return gexe_bage_render_cards($atts);
+        });
+    }
 });
 
 /**
