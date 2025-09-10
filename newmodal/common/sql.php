@@ -1,27 +1,16 @@
 <?php
 /**
- * Newmodal SQL helpers (STRICT, no $wpdb)
- * Всегда работаем ТОЛЬКО с отдельным подключением к БД GLPI.
- * Никаких запросов к базе WordPress. Возвращаем WP_Error вместо фатала.
+ * Newmodal SQL helpers (STRICT, no WordPress DB)
+ * Всегда работаем только с отдельным подключением к БД GLPI на 192.168.100.12.
  */
 if (!defined('ABSPATH')) { exit; }
 
 // Кэш отдельного подключения к GLPI
 global $nm_glpi_wpdb; // wpdb|WP_Error
 
-/**
- * Имя БД GLPI.
- * Приоритет: NM_GLPI_DB / NM_GLPI_DB_NAME -> опция 'nm_glpi_dbname' -> 'glpi'
- */
+/** Имя БД GLPI (константа уже определена в config.php). */
 function nm_glpi_dbname() {
-    if (defined('NM_GLPI_DB') && NM_GLPI_DB !== '') {
-        return NM_GLPI_DB;
-    }
-    if (defined('NM_GLPI_DB_NAME') && NM_GLPI_DB_NAME !== '') {
-        return NM_GLPI_DB_NAME;
-    }
-    $opt = get_option('nm_glpi_dbname');
-    return (is_string($opt) && $opt !== '') ? $opt : 'glpi';
+    return defined('NM_GLPI_DB_NAME') ? NM_GLPI_DB_NAME : (defined('NM_GLPI_DB') ? NM_GLPI_DB : 'glpi');
 }
 
 /**
@@ -41,9 +30,10 @@ function nm_glpi_table($table) {
 }
 
 /**
- * Получить отдельное wpdb-подключение к GLPI.
- * Ожидаются константы: NM_GLPI_DB_HOST, NM_GLPI_DB_USER, NM_GLPI_DB_PASS, NM_GLPI_DB_NAME.
- * Если не заданы — вернём WP_Error.
+ * Получить отдельное wpdb-подключение к GLPI (без использования $wpdb).
+ * Константы задаются в config.php.
+ *
+ * @return wpdb|WP_Error
  */
 function nm_glpi_db() {
     global $wpdb, $nm_glpi_wpdb;
@@ -51,7 +41,7 @@ function nm_glpi_db() {
         return $nm_glpi_wpdb;
     }
     $host = defined('NM_GLPI_DB_HOST') ? NM_GLPI_DB_HOST : null;
-    $name = defined('NM_GLPI_DB_NAME') ? NM_GLPI_DB_NAME : nm_glpi_dbname();
+    $name = defined('NM_GLPI_DB_NAME') ? NM_GLPI_DB_NAME : null;
     $user = defined('NM_GLPI_DB_USER') ? NM_GLPI_DB_USER : null;
     $pass = defined('NM_GLPI_DB_PASS') ? NM_GLPI_DB_PASS : null;
     if (!$host || !$name || !$user || $pass === null) {
@@ -76,8 +66,8 @@ function nm_glpi_table_exists($tableRaw) {
     if (is_wp_error($dbi)) return false;
     $db  = nm_glpi_dbname();
     $sql = $dbi->prepare('SHOW TABLES FROM ' . nm_sql_ident($db) . ' LIKE %s', $tableRaw);
-    $found = $dbi->get_var($sql);
-    return (bool)$found;
+    $res = $dbi->get_var($sql);
+    return (bool)$res;
 }
 
 /**
@@ -86,14 +76,9 @@ function nm_glpi_table_exists($tableRaw) {
  */
 function nm_glpi_select($tableRaw, $columns = '*', $where = '', array $params = [], $output = ARRAY_A) {
     $dbi = nm_glpi_db();
-    if (is_wp_error($dbi)) {
-        return $dbi;
-    }
+    if (is_wp_error($dbi)) return $dbi;
     if (!nm_glpi_table_exists($tableRaw)) {
-        return new WP_Error(
-            'glpi_table_missing',
-            sprintf('GLPI table "%s" not found in database "%s".', $tableRaw, nm_glpi_dbname())
-        );
+        return new WP_Error('glpi_table_missing', sprintf('GLPI table "%s" not found in database "%s".', $tableRaw, nm_glpi_dbname()));
     }
     $table = nm_glpi_table($tableRaw);
     $sql   = "SELECT {$columns} FROM {$table}";
@@ -115,13 +100,11 @@ function nm_glpi_select($tableRaw, $columns = '*', $where = '', array $params = 
  */
 function nm_sql_get_statuses() {
     $res = nm_glpi_select('glpi_itilstatuses', 'id,name');
-    if (is_wp_error($res) || !is_array($res)) {
-        return [];
-    }
+    if (is_wp_error($res) || !is_array($res)) return [];
     return $res;
 }
 
-// Админ-подсказка, если соединение к GLPI не настроено
+// Админ-подсказка, если соединение к GLPI не настроено/падает
 add_action('admin_notices', function () {
     if (!current_user_can('manage_options')) return;
     $dbi = nm_glpi_db();
