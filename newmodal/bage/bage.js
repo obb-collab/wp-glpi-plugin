@@ -3,6 +3,7 @@
   const ajax = gexeBage.ajaxUrl;
   const nonce = gexeBage.nonce;
   const perPage = gexeBage.perPage || 20;
+  let loading = false;
 
   const els = {
     grid: document.getElementById('gexe-bage-grid'),
@@ -39,6 +40,11 @@
     f.append('nonce', nonce);
     Object.keys(data||{}).forEach(k => f.append(k, data[k]));
     return fetch(ajax, { method:'POST', body:f, credentials:'same-origin' }).then(r=>r.json());
+  }
+
+  function setLoading(on){
+    loading = !!on;
+    els.grid.classList.toggle('is-loading', loading);
   }
 
   function formatDate(s){
@@ -96,6 +102,8 @@
 
   function loadList(){
     showError('');
+    if (loading) return Promise.resolve();
+    setLoading(true);
     return post('gexe_bage_list_tickets', {
       page: state.page,
       per_page: perPage,
@@ -109,7 +117,8 @@
       els.page.textContent = state.page;
       els.prev.disabled = state.page <= 1;
       els.next.disabled = (state.page * perPage) >= total;
-    }).catch(e=>showError(e.message || 'Ошибка загрузки списка'));
+    }).catch(e=>showError(e.message || 'Ошибка загрузки списка'))
+      .finally(()=>setLoading(false));
   }
 
   // events
