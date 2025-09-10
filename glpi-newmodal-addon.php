@@ -189,4 +189,3 @@ add_filter('plugin_row_meta', function ($links, $file) {
 // That’s all. The actual business logic lives under /newmodal/*
 // -----------------------------------------------------------------------------
 
-
