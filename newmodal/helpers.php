@@ -135,3 +135,56 @@ function nm_require_can_assign($assignee_id) {
  * Small helpers
  */
 function nm_s($v) { return esc_html($v); }
+
+function nm_get_app_token(){
+    $tok = get_option(NM_META_APP_TOKEN);
+    return is_string($tok) ? trim($tok) : '';
+}
+
+function nm_get_current_glpi_user_token(){
+    $tok = get_user_meta(get_current_user_id(), NM_META_USER_TOKEN, true);
+    return is_string($tok) ? trim($tok) : '';
+}
+
+function nm_require_nonce() {
+    if (strtoupper($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
+        nm_json_error('bad_method', __('Неверный метод запроса.', 'nm'));
+    }
+    if (!isset($_POST['nm_nonce']) || !wp_verify_nonce($_POST['nm_nonce'], 'nm_ajax')) {
+        nm_json_error('forbidden', __('Сессия устарела. Обновите страницу.', 'nm'));
+    }
+}
+
+function nm_humanize_api_error($data){
+    $msg = is_array($data) && isset($data['message']) ? $data['message'] : '';
+    if (stripos($msg,'App-Token') !== false) $msg .= ' · Проверьте App-Token в настройках WP.';
+    if (stripos($msg,'user_token') !== false) $msg .= ' · Проверьте токен пользователя в его профиле.';
+    if (stripos($msg,'not found') !== false) $msg .= ' · Проверьте ID заявки.';
+    $map = [
+        'ERROR_APP_TOKEN_PARAMETERS_MISSING' => 'Не указан App-Token. Укажите его в настройках.',
+        'ERROR_NOT_ALLOWED_IP' => 'IP адрес не разрешён для API GLPI.',
+        'ERROR_LOGIN_PARAMETERS_MISSING' => 'Не указан user_token.',
+        'ERROR_ITEM_NOT_FOUND' => 'Объект не найден.',
+        'ERROR_RIGHT_MISSING' => 'Недостаточно прав.',
+    ];
+    foreach($map as $k=>$hint){ if (stripos($msg,$k)!==false){ $msg .= ' · '.$hint; break; } }
+    return $msg ?: 'Неизвестная ошибка GLPI API';
+}
+
+function nm_idempotent_check_and_set($rid){
+    if (!$rid) return false;
+    $key='nm_rid_'.preg_replace('~[^a-zA-Z0-9_-]~','',$rid);
+    if (get_transient($key)) return true;
+    set_transient($key,1,60);
+    return false;
+}
+
+function nm_fmt_dt($mysql){
+    if (!$mysql) return '';
+    try {
+        $ts = strtotime($mysql);
+        return date_i18n('d.m.Y H:i', $ts);
+    } catch (Exception $e){
+        return $mysql;
+    }
+}

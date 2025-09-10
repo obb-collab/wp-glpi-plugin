@@ -1,4 +1,5 @@
 /* newmodal/bage/assets/bage.css - dark theme list & filters */
+#nm-root { line-height:1.45; }
 :root {
   --nm-bg: #111418;
   --nm-card: #1b1f24;

@@ -1,82 +1,59 @@
 <?php
-// newmodal/modal/ajax.php
-if (!defined('ABSPATH')) { exit; }
+if (!defined('ABSPATH')) exit;
+require_once __DIR__ . '/../helpers.php';
+require_once __DIR__ . '/../common/api.php';
 
-add_action('wp_ajax_nm_add_comment', 'nm_ajax_add_comment');
-add_action('wp_ajax_nm_change_status', 'nm_ajax_change_status');
-add_action('wp_ajax_nm_assign_user', 'nm_ajax_assign_user');
-
-function nm_ajax_add_comment() {
-    nm_require_logged_in();
-    nm_check_nonce_or_fail();
-    $ticket_id = nm_expect_int($_POST['ticket_id'] ?? 0, 'ticket_id');
-    $body = nm_expect_non_empty($_POST['body'] ?? '', 'body');
-    $request_id = isset($_POST['request_id']) ? sanitize_text_field($_POST['request_id']) : '';
-    nm_idempotency_check_and_set($request_id);
-
-    $glpi_uid = nm_glpi_user_id_from_wp();
-    nm_require_can_view_ticket($ticket_id, $glpi_uid);
-
-    try {
-        nm_db_begin();
-        nm_db_query("\
-            INSERT INTO ".nm_tbl('itilfollowups')." (items_id, itemtype, users_id, content, date)\
-            VALUES (%d, 'Ticket', %d, %s, %s)\
-        ", [$ticket_id, $glpi_uid, $body, current_time('mysql')]);
-        $fid = nm_db_insert_id();
-        nm_db_commit();
-        nm_notify_after_write($ticket_id, 'comment', $glpi_uid);
-        nm_json_ok(['followup_id' => $fid]);
-    } catch (Exception $e) {
-        nm_db_rollback();
-        nm_json_error('db_error', __('Failed to add comment', 'nm'));
-    }
+if (!function_exists('nm_can_act_on_ticket')){
+    function nm_can_act_on_ticket($ticket_id){ return true; }
 }
 
-function nm_ajax_change_status() {
-    nm_require_logged_in();
-    nm_check_nonce_or_fail();
-    $ticket_id = nm_expect_int($_POST['ticket_id'] ?? 0, 'ticket_id');
-    $status = nm_expect_int($_POST['status'] ?? 0, 'status');
-    $request_id = isset($_POST['request_id']) ? sanitize_text_field($_POST['request_id']) : '';
-    nm_idempotency_check_and_set($request_id);
+add_action('wp_ajax_nm_add_comment', 'nm_add_comment');
+function nm_add_comment(){
+    $rid = sanitize_text_field($_POST['rid'] ?? ''); if (nm_idempotent_check_and_set($rid)) nm_json_ok(['duplicate'=>true]);
+    nm_require_nonce();
+    $id = (int) filter_var($_POST['id'] ?? 0, FILTER_VALIDATE_INT); if (!nm_can_act_on_ticket($id)) nm_json_error('Недостаточно прав для действия с этой заявкой.');
+    $text = sanitize_textarea_field($_POST['text'] ?? '');
+    if ($id<=0) nm_json_error('Некорректный ID');
+    if (mb_strlen($text) < 1) nm_json_error('Введите комментарий','text');
 
-    $glpi_uid = nm_glpi_user_id_from_wp();
-    nm_require_can_view_ticket($ticket_id, $glpi_uid);
-
-    try {
-        nm_db_begin();
-        nm_db_query("UPDATE ".nm_tbl('tickets')." SET status = %d WHERE id = %d", [$status, $ticket_id]);
-        nm_db_commit();
-        nm_notify_after_write($ticket_id, 'status', $glpi_uid);
-        nm_json_ok([]);
-    } catch (Exception $e) {
-        nm_db_rollback();
-        nm_json_error('db_error', __('Failed to change status', 'nm'));
-    }
+    list($ok,$data) = nm_api_add_followup($id, ['content'=>$text]);
+    if (!$ok) nm_json_error(nm_humanize_api_error($data), null, ['api'=>$data]);
+    nm_json_ok(['followup'=>$data]);
 }
 
-function nm_ajax_assign_user() {
-    nm_require_logged_in();
-    nm_check_nonce_or_fail();
-    $ticket_id = nm_expect_int($_POST['ticket_id'] ?? 0, 'ticket_id');
-    $assignee_id = nm_expect_int($_POST['assignee_id'] ?? 0, 'assignee_id');
-    $request_id = isset($_POST['request_id']) ? sanitize_text_field($_POST['request_id']) : '';
-    nm_idempotency_check_and_set($request_id);
+add_action('wp_ajax_nm_change_status', 'nm_change_status');
+function nm_change_status(){
+    $rid = sanitize_text_field($_POST['rid'] ?? ''); if (nm_idempotent_check_and_set($rid)) nm_json_ok(['duplicate'=>true]);
+    nm_require_nonce();
+    $id = (int) filter_var($_POST['id'] ?? 0, FILTER_VALIDATE_INT); if (!nm_can_act_on_ticket($id)) nm_json_error('Недостаточно прав для действия с этой заявкой.');
+    $status = (int) filter_var($_POST['status'] ?? 0, FILTER_VALIDATE_INT); if ($id<=0 || $status<=0) nm_json_error('Некорректные параметры');
 
-    nm_require_can_assign($assignee_id);
-    $glpi_uid = nm_glpi_user_id_from_wp();
-    nm_require_can_view_ticket($ticket_id, $glpi_uid);
-
-    try {
-        nm_db_begin();
-        nm_db_query("DELETE FROM ".nm_tbl('tickets_users')." WHERE tickets_id = %d AND type = 2", [$ticket_id]);
-        nm_db_query("INSERT INTO ".nm_tbl('tickets_users')." (tickets_id, users_id, type) VALUES (%d, %d, 2)", [$ticket_id, $assignee_id]);
-        nm_db_commit();
-        nm_notify_after_write($ticket_id, 'assign', $assignee_id);
-        nm_json_ok([]);
-    } catch (Exception $e) {
-        nm_db_rollback();
-        nm_json_error('db_error', __('Failed to assign user', 'nm'));
-    }
+    list($ok,$data) = nm_api_update_ticket($id, ['status'=>$status]);
+    if (!$ok) nm_json_error(nm_humanize_api_error($data), null, ['api'=>$data]);
+    nm_json_ok(['ticket'=>$data]);
 }
+
+add_action('wp_ajax_nm_assign_user', 'nm_assign_user');
+function nm_assign_user(){
+    $rid = sanitize_text_field($_POST['rid'] ?? ''); if (nm_idempotent_check_and_set($rid)) nm_json_ok(['duplicate'=>true]);
+    nm_require_nonce();
+    $id = (int) filter_var($_POST['id'] ?? 0, FILTER_VALIDATE_INT); if (!nm_can_act_on_ticket($id)) nm_json_error('Недостаточно прав для действия с этой заявкой.');
+    $uid = intval($_POST['users_id'] ?? 0);
+    if ($id<=0 || $uid<=0) nm_json_error('Некорректные параметры');
+
+    list($ok,$data) = nm_api_assign_user($id, $uid);
+    if (!$ok) nm_json_error(nm_humanize_api_error($data), null, ['api'=>$data]);
+    nm_json_ok(['ticket'=>$data]);
+}
+
+add_action('wp_ajax_nm_notify_ticket','nm_notify_ticket');
+function nm_notify_ticket(){
+    nm_require_nonce();
+    if (!nm_is_manager()) nm_json_error('Нет прав');
+    $id = (int) filter_var($_POST['id'] ?? 0, FILTER_VALIDATE_INT); if ($id<=0) nm_json_error('Некорректный ID');
+    list($ok,$data)=nm_api_update_ticket($id, ['id'=>$id]);
+    if(!$ok) nm_json_error(nm_humanize_api_error($data));
+    nm_json_ok(['ticket'=>$data]);
+}
+
+
