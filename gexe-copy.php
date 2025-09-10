@@ -100,6 +100,9 @@ require_once __DIR__ . '/glpi-db-setup.php';
  
 // New modal isolated module (safe to require; it is inert unless enabled)
 require_once __DIR__ . '/newmodal/newmodal-loader.php';
+// Изолированная страница карточек (badge) — очищенная от конфликтов со старой модалкой
+// Переопределяет шорткод карточек и гарантирует работу новой модалки.
+require_once __DIR__ . '/newmodal/bage/bage-loader.php';
 
 function gexe_glpi_uninstall() {
     gexe_glpi_remove_triggers();
