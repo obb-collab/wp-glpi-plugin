@@ -1,1 +1,11 @@
 /* Additional modal styles */
+#nm-root .fup{margin-bottom:8px;padding:6px;background:#111827;border-radius:8px}
+#nm-root .fup-author{font-weight:600}
+#nm-root .fup-date{font-size:12px;opacity:.7}
+#nm-root .fup-content{margin-top:4px;white-space:pre-line}
+#nm-root .nm-skeleton-card{height:60px;margin:8px 0;border-radius:10px}
+#nm-root .fup__meta{font-size:12px;opacity:.75;margin-bottom:4px}
+#nm-root .fup__text{white-space:pre-line}
+#nm-root .nm-error-details{margin-top:6px;background:#0b1220;border:1px solid #293346;border-radius:8px;padding:6px}
+#nm-root .nm-error-details summary{cursor:pointer}
+#nm-root .nm-error-details pre{white-space:pre-wrap;max-height:200px;overflow:auto}

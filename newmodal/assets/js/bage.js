@@ -1,123 +1,21 @@
-/* newmodal/assets/js/bage.js */
-(function($){
-  'use strict';
-
-  function renderCards(items){
-    var html = '';
-    items.forEach(function(it){
-      var tags = '';
-      tags += '<span class="nm-tag status-'+it.status+'">'+ (NM.statuses[String(it.status)]||('Status '+it.status)) +'</span>';
-      if (it.category_name) tags += '<span class="nm-tag">'+ it.category_name +'</span>';
-      html += '<div class="nm-card" data-id="'+it.id+'">' +
-                '<div class="nm-title" data-ticket="'+it.id+'">#'+it.id+' — '+$('<div/>').text(it.name).html()+'</div>' +
-                '<div class="nm-meta"><span>'+ (it.date||'') +'</span><span>'+ (it.assignee_id?'#'+it.assignee_id:'') +'</span></div>'+
-                '<div class="nm-tags">'+ tags +'</div>'+
-              '</div>';
-    });
-    if (!items.length) html = '<div class="nm-empty">Нет заявок</div>';
-    $('#nm-cards').html(html);
-  }
-
-  function updateCounts(counts){
-    $('.nm-badge[data-status]').each(function(){
-      var st = String($(this).data('status'));
-      var n = counts.by_status && counts.by_status[st] ? counts.by_status[st] : 0;
-      $(this).find('.nm-count').text(n);
-    });
-  }
-
-  function loadCards(){
-    var params = window.NM_STATE || {};
-    NM_API.apiGet('nm_get_cards', params).done(function(resp){
-      if (!resp || !resp.ok){ console.warn(resp); return; }
-      renderCards(resp.items||[]);
-      if (resp.counts) updateCounts(resp.counts);
-      $(document).trigger('nm:cards:loaded', resp);
-    });
-  }
-
-  function applyStatusFilter(st){
-    $('.nm-badge').removeClass('active');
-    if (st) {
-      $('.nm-badge[data-status="'+st+'"]').addClass('active');
-      window.NM_STATE.status = [st];
-    } else {
-      window.NM_STATE.status = [];
-    }
-    loadCards();
-  }
-
-  function openNewTicket(){
-    $('#nm-overlay').show();
-    $('#nm-new-ticket-root').show().html('<div class="nm-modal"><div class="nm-modal-body">...</div></div>');
-    NM_API.apiGet('nm_new_ticket_form').done(function(html){
-      $('#nm-new-ticket-root').html(html);
-      $(document).trigger('nm:newTicket:open');
-    });
-  }
-
-  function openTicketModal(id){
-    $('#nm-overlay').show();
-    $('#nm-modal-root').show().html('<div class="nm-modal"><div class="nm-modal-body">Загрузка...</div></div>');
-    NM_API.apiGet('nm_get_card', { ticket_id: id }).done(function(resp){
-      if (!resp || !resp.ok){ $('#nm-modal-root').html('<div class="nm-modal"><div class="nm-modal-body">Ошибка</div></div>'); return; }
-      var t = resp.ticket, f = resp.followups||[];
-      var html = '<div class="nm-modal">'+
-                   '<div class="nm-modal-header"><div class="nm-modal-title">#'+t.id+' — '+$('<div/>').text(t.name).html()+'</div><button class="nm-modal-close">&times;</button></div>'+\
-                   '<div class="nm-modal-body">'+
-                     '<div class="nm-ticket-meta"><span class="nm-tag status-'+t.status+'">'+(NM.statuses[String(t.status)]||('Status '+t.status))+'</span>'+
-                     (t.category_name?'<span class="nm-tag">'+t.category_name+'</span>':'')+
-                     '</div>'+\
-                     '<div class="nm-ticket-content">'+ (t.content?$('<div/>').text(t.content).html():'') +'</div>'+\
-                     '<div class="nm-followups"><div class="nm-followups-title">Комментарии</div><div class="nm-followups-list">';
-      f.forEach(function(x){
-        html += '<div class="nm-followup"><div class="nm-followup-head">'+ (x.user_name||'') +' — '+ (x.date||'') +'</div><div class="nm-followup-body">'+$('<div/>').text(x.content||'').html()+'</div></div>';
-      });
-      html +=        '</div>'+\
-                     '<form id="nm-followup-form"><textarea name="body" placeholder="Добавить комментарий" required></textarea>'+\
-                     '<div class="nm-actions">'+\
-                       '<button type="submit" class="nm-btn" id="nm-send-comment">Отправить</button>'+\
-                       '<button type="button" class="nm-btn" id="nm-take-in-work" data-status="2">Принято в работу</button>'+\
-                     '</div>'+\
-                     '</form>'+\
-                   '</div>'+\
-                 '</div>';
-      $('#nm-modal-root').html(html).data('ticket', t.id);
-      $(document).trigger('nm:modal:open', t);
-    });
-  }
-
-  $(document).on('click', '.nm-badge', function(){
-    var st = $(this).data('status');
-    applyStatusFilter(st);
-  });
-
-  $(document).on('click', '#nm-new-ticket', function(e){
-    e.preventDefault();
-    openNewTicket();
-  });
-
-  $(document).on('click', '.nm-card .nm-title', function(){
-    var id = $(this).data('ticket');
-    openTicketModal(id);
-  });
-
-  $(document).on('click', '.nm-modal-close, #nm-overlay', function(){
-    NM_API.closeAllModals();
-  });
-
-  $(document).on('input', '#nm-search', function(){
-    var q = $(this).val();
-    window.NM_STATE.search = q;
-    clearTimeout(window.__nmSearchTimer);
-    window.__nmSearchTimer = setTimeout(loadCards, 250);
-  });
-
-  $(function(){
-    if (!document.getElementById('nm-root')) return;
-    window.NM_STATE = { status: [], search: '', page: 1, per_page: 20 };
-    loadCards();
-  });
-
-  window.NM_API = $.extend({}, window.NM_API, { loadCards: loadCards });
-})(jQuery);
+(function(){
+  const root = document.getElementById('nm-root');
+  if (!root) return;
+  const state = { page: 0, loading: false, done: false, q: '', items: [], scope: 'mine', seen: new Set() };
+  const counters = document.createElement('div'); counters.className='nm-counters'; root.appendChild(counters);
+  const list = document.createElement('div'); list.className='nm-list'; root.appendChild(list);
+  const loader = document.createElement('div'); loader.className='nm-loader'; loader.textContent='Загрузка...'; root.appendChild(loader);
+  const sentinel = document.createElement('div'); root.appendChild(sentinel);
+  function showSkeletons(){ if(state.page===0){ for(let i=0;i<3;i++){ const d=document.createElement('div'); d.className='nm-skeleton nm-skeleton-card'; list.appendChild(d);} } }
+  function clearSkeletons(){ list.querySelectorAll('.nm-skeleton-card').forEach(e=>e.remove()); }
+  function escapeHtml(s){ return (s||'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+  function renderItems(items){ for(const it of items){ if(state.seen.has(it.id)) continue; state.seen.add(it.id); const card=document.createElement('div'); card.className='nm-card'; card.setAttribute('data-id', it.id); card.innerHTML='<div class="nm-card__title">'+escapeHtml(it.name||'')+'</div><div class="nm-card__meta">#'+it.id+'</div>'; list.appendChild(card);} }
+  async function fetchPage(){ if(state.loading || state.done) return; state.loading=true; loader.style.display='block'; showSkeletons(); const body=new URLSearchParams(); body.append('action','nm_get_cards'); body.append('nm_nonce', nmAjax.nonce); body.append('page', String(state.page)); body.append('scope', state.scope); body.append('q', state.q); const resp=await fetch(nmAjax.url,{method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body}); const data=await resp.json().catch(()=>({ok:false})); if(!data.ok){ loader.textContent=data.message||'Ошибка'; state.done=true; state.loading=false; clearSkeletons(); return;} if((data.items||[]).length===0 && state.page===0){ list.innerHTML='<div class="nm-empty">Нет заявок</div>'; } else { renderItems(data.items||[]); } state.page++; if(!data.items || data.items.length===0){ state.done=true; loader.textContent='Конец списка'; } state.loading=false; loader.style.display='none'; clearSkeletons(); }
+  const io=new IntersectionObserver(entries=>{ entries.forEach(e=>{ if(e.isIntersecting) fetchPage(); }); }, {rootMargin:'600px'});
+  io.observe(sentinel);
+  fetchPage();
+  async function fetchCounts(){ const b=new URLSearchParams(); b.append('action','nm_get_counts'); b.append('nm_nonce', nmAjax.nonce); b.append('scope', state.scope); const r=await fetch(nmAjax.url,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:b}); const d=await r.json().catch(()=>({ok:false})); if(d&&d.ok){ counters.textContent=`Все ${d.total} · В работе ${d.work} · В плане ${d.plan} · В стопе ${d.stop} · Новые ${d.new} · Просрочены ${d.overdue}`; } }
+  fetchCounts();
+  function resetAndFetch(){ state.page=0; state.done=false; state.seen.clear(); list.innerHTML=''; fetchPage(); }
+  window.refreshListAfterAction=function(){ try{fetchCounts();}catch(e){} resetAndFetch(); };
+})();
