@@ -1,5 +1,6 @@
 /* Изолированная тёмная тема карточек (минимум — не конфликтует со старым CSS) */
-.gexe-bage{ padding:24px; color:#e8eef7; background:transparent; }
+.gexe-bage{ padding:16px 0 24px; color:#e8eef7; background:transparent; }
+.gexe-bage__container{ margin:0 auto; width:min(1180px, 96vw); }
 .gexe-bage__toolbar{ display:flex; gap:10px; align-items:center; margin-bottom:16px; }
 .gexe-bage__btn{ background:#1d2230; color:#fff; border:1px solid rgba(255,255,255,.1); border-radius:10px; padding:8px 12px; cursor:pointer; }
 .gexe-bage__btn:hover{ background:#26304a; }
@@ -10,7 +11,12 @@
 .gexe-bage__pill{ display:flex; align-items:center; gap:8px; background:#141925; color:#cdd7ee; border:1px solid rgba(255,255,255,.08); border-radius:14px; padding:10px 14px; cursor:pointer; }
 .gexe-bage__pill.is-active{ background:#1e2b4e; color:#fff; border-color:#3a56a1; }
 .gexe-bage__num{ display:inline-block; min-width:18px; text-align:center; font-weight:700; }
-.gexe-bage__grid{ display:grid; grid-template-columns: repeat(auto-fill,minmax(320px,1fr)); gap:12px; }
+.gexe-bage__grid{
+  display:grid;
+  grid-template-columns: repeat(auto-fill,minmax(350px,1fr));
+  gap:12px;
+  align-items:stretch;
+}
 .gexe-bage__card{ background:#0e111a; border:1px solid rgba(255,255,255,.08); border-radius:14px; padding:12px; display:flex; flex-direction:column; gap:8px; cursor:pointer; }
 .gexe-bage__card:hover{ background:#121726; }
 .gexe-bage__title{ font-weight:700; font-size:16px; line-height:1.25; }

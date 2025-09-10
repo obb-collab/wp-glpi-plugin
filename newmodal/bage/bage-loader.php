@@ -2,12 +2,40 @@
 /**
  * BAGE (изолированная страница карточек под новую модалку).
  * - Полный клон: свой шаблон, свой JS, свой CSS.
- * - Никаких подключений старых шорткодов/шаблонов/скриптов.
+ * - Никаких подключений старых шорткодов/скриптов.
  * - Данные и действия — только через GLPI REST API.
  */
 if (!defined('ABSPATH')) exit;
 
 require_once __DIR__ . '/../newmodal-api.php'; // используем общий API-обёртку (без SQL)
+
+/**
+ * Обёртка вокруг gexe_newmodal_api_call с авто-восстановлением GLPI-сессии.
+ * Делает один повтор при типичных ошибках токена.
+ */
+function gexe_bage_api_safe(string $method, string $path, array $payload = [], array $query = []) {
+    try {
+        return gexe_newmodal_api_call($method, $path, $payload, $query);
+    } catch (Exception $e) {
+        $msg = $e->getMessage();
+        $need_retry = false;
+        if (is_string($msg)) {
+            $need_retry = (
+                stripos($msg, 'Token') !== false ||
+                stripos($msg, 'session') !== false ||
+                stripos($msg, 'registry') !== false ||
+                stripos($msg, 'expired') !== false
+            );
+        }
+        if ($need_retry) {
+            if (function_exists('gexe_newmodal_api_reset_session')) {
+                gexe_newmodal_api_reset_session();
+            }
+            return gexe_newmodal_api_call($method, $path, $payload, $query);
+        }
+        throw $e;
+    }
+}
 
 /**
  * Шорткод [glpi_cards_new]
@@ -32,6 +60,8 @@ add_shortcode('glpi_cards_new', function ($atts = []) {
             ['id' => (int) get_option('glpi_overdue_status', 0), 'name' => 'Просрочены'],
         ],
         'perPage'      => 20,
+        // Маркер для новой модалки
+        'useNewModal'  => defined('GEXE_USE_NEWMODAL') ? (bool) GEXE_USE_NEWMODAL : true,
     ]);
     // HTML-шаблон
     ob_start();
@@ -82,7 +112,7 @@ add_action('wp_ajax_gexe_bage_list_tickets', function () {
             'order' => 'DESC',
             'sort'  => 30 // date_mod
         ];
-        $data = gexe_newmodal_api_call('POST', 'search/Ticket', $payload, $query);
+        $data = gexe_bage_api_safe('POST', 'search/Ticket', $payload, $query);
         // Приводим в удобный фронту формат
         $rows = isset($data['data']) && is_array($data['data']) ? $data['data'] : [];
         $totalcount = isset($data['totalcount']) ? (int)$data['totalcount'] : count($rows);
@@ -130,7 +160,7 @@ add_action('wp_ajax_gexe_bage_counters', function () {
                     ['field' => 12, 'searchtype' => 'equals', 'value' => $st],
                 ],
             ];
-            $res = gexe_newmodal_api_call('POST', 'search/Ticket', $payload, ['range' => '0-0']);
+            $res = gexe_bage_api_safe('POST', 'search/Ticket', $payload, ['range' => '0-0']);
             $counts[$st] = isset($res['totalcount']) ? (int)$res['totalcount'] : 0;
         }
         // «Все» — сумма открытых (без 6)
