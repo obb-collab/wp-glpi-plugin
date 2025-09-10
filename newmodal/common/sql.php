@@ -2,11 +2,9 @@
 /**
  * Newmodal SQL helpers (safe)
  *
- * Цель: обращаться к БД GLPI корректно и безопасно,
- * даже если она находится в другой базе, а не там, где WordPress.
- * - Имя БД GLPI берём из константы NM_GLPI_DB (если есть) или опции nm_glpi_dbname.
- * - Имя таблицы формируем как `db`.`table` c экранированием.
- * - Перед запросами проверяем наличие таблицы, чтобы не ронять сайт.
+ * Корректная работа с БД GLPI, даже если она в отдельной БД.
+ * Формируем `dbname`.`table`, проверяем существование таблиц,
+ * не роняем сайт при ошибках.
  */
 if (!defined('ABSPATH')) { exit; }
 
@@ -72,7 +70,8 @@ function nm_glpi_table_exists($tableRaw) {
 }
 
 /**
- * Универсальный селект к GLPI c проверкой на существование таблицы.
+ * Универсальный SELECT по GLPI с проверкой существования таблицы.
+ * Возвращает массив строк или WP_Error — но не приводит к фаталу.
  *
  * @param string $tableRaw  имя таблицы без БД (например, 'glpi_itilstatuses')
  * @param string $columns   список колонок (например, 'id,name')
@@ -87,7 +86,7 @@ function nm_glpi_select($tableRaw, $columns = '*', $where = '', array $params = 
     if (!nm_glpi_table_exists($tableRaw)) {
         return new WP_Error(
             'glpi_table_missing',
-            sprintf('GLPI table "%s" not found in database "%s". Check plugin settings.', $tableRaw, nm_glpi_dbname())
+            sprintf('GLPI table "%s" not found in database "%s".', $tableRaw, nm_glpi_dbname())
         );
     }
 
@@ -107,12 +106,14 @@ function nm_glpi_select($tableRaw, $columns = '*', $where = '', array $params = 
 }
 
 /**
- * Получить список статусов (id, name) из GLPI.
- * Возвращает массив или WP_Error. Не бросает фатал.
- *
- * @return array|WP_Error
+ * Список статусов (id,name) из GLPI.
+ * Если таблицы нет — возвращаем пустой массив (без падения).
  */
 function nm_sql_get_statuses() {
-    return nm_glpi_select('glpi_itilstatuses', 'id,name');
+    $res = nm_glpi_select('glpi_itilstatuses', 'id,name');
+    if (is_wp_error($res)) {
+        return [];
+    }
+    return is_array($res) ? $res : [];
 }
 

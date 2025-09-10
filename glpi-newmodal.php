@@ -14,6 +14,7 @@ define('NM_BASE_DIR', plugin_dir_path(__FILE__) . 'newmodal/');
 define('NM_BASE_URL', plugin_dir_url(__FILE__) . 'newmodal/');
 
 // === Load common layer ===
+require_once NM_BASE_DIR . 'common/compat.php';
 require_once NM_BASE_DIR . 'config.php';
 require_once NM_BASE_DIR . 'helpers.php';
 require_once NM_BASE_DIR . 'common/api.php';
@@ -54,7 +55,7 @@ function nm_maybe_enqueue_assets() {
     $local = [
         'ajaxUrl'    => admin_url('admin-ajax.php'),
         'nonce'      => wp_create_nonce('nm_nonce'),
-        'statuses'   => nm_default_status_map(),
+        'statuses'   => nm_get_status_map(),
         'glpiPrefix' => nm_glpi_prefix(),
         'i18n'       => [
             'error' => __('Error', 'nm'),

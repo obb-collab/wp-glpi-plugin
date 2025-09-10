@@ -13,8 +13,8 @@ function nm_default_status_map() {
         '2' => 'Processing (assigned)',
         '3' => 'Processing (planned)',
         '4' => 'Pending',
-        '5' => 'Solved',
-        '6' => 'Closed',
+        '5' => 'Closed',
+        '6' => 'Solved',
     ];
 }
 
