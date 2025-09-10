@@ -23,7 +23,7 @@ if (!defined('ABSPATH')) { exit; }
 if (!defined('FRGLPI_NEWMODAL_ADDON_VER')) {
     define('FRGLPI_NEWMODAL_ADDON_VER', '2.0.0');
 }
-// Единая версия ассетов newmodal (используется и внутри compat)
+// Единая версия ассетов newmodal (используется в enqueue и внутри compat)
 if (!defined('FRGLPI_NEWMODAL_VER')) {
     define('FRGLPI_NEWMODAL_VER', '2.0.0');
 }
@@ -31,7 +31,7 @@ if (!defined('FRGLPI_NEWMODAL_DIR')) {
     define('FRGLPI_NEWMODAL_DIR', __DIR__ . '/newmodal');
 }
 if (!defined('FRGLPI_NEWMODAL_URL')) {
-    // Точный URL каталога /newmodal (оканчивается слэшем)
+    // Точный базовый URL каталога /newmodal (с завершающим слэшем)
     define('FRGLPI_NEWMODAL_URL', trailingslashit( plugins_url('newmodal', __FILE__) ));
 }
 
@@ -73,7 +73,7 @@ add_action('plugins_loaded', function () {
     // Minimal required files from /newmodal. We keep includes guarded and
     // fail gracefully with informative admin_notice instead of fatal.
     $required_files = [
-        // Compat layer — объявляет NM_* константы/ключи (должен идти первым)
+        // Compat layer — объявляет NM_* константы/ключи (ДОЛЖЕН идти первым)
         FRGLPI_NEWMODAL_DIR . '/common/compat.php',
 
         // Core
