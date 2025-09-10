@@ -560,27 +560,59 @@ function glpi_db_create_ticket(array $payload) {
 
 
 /**
- * Load status IDs from glpi_itilstatuses and map common names.
+ * Status map for GLPI 9.5.x.
+ * В 9.5 таблицы glpi_itilstatuses НЕТ — используем статические ID.
+ * Возвращаем id наиболее используемых статусов (по ТЗ: "решено" = 6).
  *
  * @return array{work:int,planned:int,onhold:int,resolved:int}
  */
 function gexe_glpi_status_map() {
     static $cache = null;
-    if ($cache !== null) return $cache;
-    global $glpi_db;
-    $cache = ['work' => 2, 'planned' => 3, 'onhold' => 4, 'resolved' => 6];
-    $rows = $glpi_db->get_results('SELECT id,name FROM glpi_itilstatuses', ARRAY_A);
-    if ($rows) {
-        $names = [];
-        foreach ($rows as $r) {
-            $names[mb_strtolower(trim($r['name']))] = (int) $r['id'];
-        }
-        $cache['work'] = $names['в работе'] ?? $names['in progress'] ?? $cache['work'];
-        $cache['planned'] = $names['в плане'] ?? $names['planned'] ?? $cache['planned'];
-        $cache['onhold'] = $names['в стопе'] ?? $names['on hold'] ?? $names['ожидание'] ?? $names['等待'] ?? $cache['onhold'];
-        $cache['resolved'] = $names['решено'] ?? $names['resolved'] ?? $names['solved'] ?? $cache['resolved'];
+    if ($cache !== null) {
+        return $cache;
     }
+
+    // Дефолт для 9.5.x — без каких-либо запросов в БД.
+    $cache = [
+        'work'     => 2, // In progress
+        'planned'  => 3, // Planned
+        'onhold'   => 4, // Pending / On hold
+        'resolved' => 6, // Solved
+    ];
+
+    // Защита от будущих изменений: если таблица когда-нибудь появится — используем мягко.
+    try {
+        global $glpi_db;
+        if ($glpi_db instanceof wpdb) {
+            $like = $glpi_db->prepare("SHOW TABLES LIKE %s", 'glpi_itilstatuses');
+            $exists = (bool) $glpi_db->get_var($like);
+            if ($exists) {
+                $rows = $glpi_db->get_results('SELECT id,name FROM glpi_itilstatuses', ARRAY_A);
+                if (is_array($rows) && $rows) {
+                    $names = [];
+                    foreach ($rows as $r) {
+                        $nm = mb_strtolower(trim((string)$r['name']));
+                        $names[$nm] = (int)$r['id'];
+                    }
+                    $cache['work']     = $names['в работе'] ?? $names['in progress'] ?? $cache['work'];
+                    $cache['planned']  = $names['в плане']  ?? $names['planned']     ?? $cache['planned'];
+                    $cache['onhold']   = $names['ожидание'] ?? $names['on hold']     ?? $cache['onhold'];
+                    $cache['resolved'] = $names['решено']   ?? $names['resolved']    ?? $names['solved'] ?? $cache['resolved'];
+                }
+            }
+        }
+    } catch (Throwable $e) {
+        // Никаких падений: остаёмся на дефолтах для 9.5.x
+    }
+
     return $cache;
+}
+
+function gexe_glpi_table_exists(string $table): bool {
+    global $glpi_db;
+    if (!($glpi_db instanceof wpdb) || $table === '') return false;
+    $like = $glpi_db->prepare("SHOW TABLES LIKE %s", $table);
+    return (bool) $glpi_db->get_var($like);
 }
 
 /**
