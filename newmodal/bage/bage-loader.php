@@ -3,171 +3,181 @@
  * BAGE (изолированная страница карточек под новую модалку).
  * - Полный клон: свой шаблон, свой JS, свой CSS.
  * - Никаких подключений старых шорткодов/скриптов.
- * - Данные и действия — только через GLPI REST API.
+ * - Данные читаем через API (где уместно), изменения — через SQL, затем пингуем API триггеры.
  */
 if (!defined('ABSPATH')) exit;
 
-require_once __DIR__ . '/../newmodal-api.php'; // используем общий API-обёртку (без SQL)
+require_once __DIR__ . '/../common/helpers.php';
+require_once __DIR__ . '/../common/db.php';
+require_once __DIR__ . '/../common/notify-api.php';
+require_once __DIR__ . '/../newmodal-api.php';
+require_once __DIR__ . '/../modal/ticket-modal.php';
 
-/**
- * Обёртка вокруг gexe_newmodal_api_call с авто-восстановлением GLPI-сессии.
- * Делает один повтор при типичных ошибках токена.
- */
-function gexe_bage_api_safe(string $method, string $path, array $payload = [], array $query = []) {
+// Шорткод [glpi_cards_new]
+// Рендерит контейнер карточек и инициализирует изолированные ассеты.
+function gexe_new_bage_shortcode($atts = []) {
+    if (!is_user_logged_in()) {
+        return '<div class="gexe-bage gexe-bage--error">Требуется авторизация.</div>';
+    }
+    ob_start();
+    require __DIR__ . '/bage-template.php';
+    // Контейнер модалки выводится через footer-хук в newmodal-loader
+    return ob_get_clean();
+}
+add_shortcode('glpi_cards_new', 'gexe_new_bage_shortcode');
+
+// Подключение ассетов только на страницах, где присутствует шорткод.
+function gexe_new_bage_maybe_enqueue_assets() {
+    if (!gexe_nm_is_shortcode_present('glpi_cards_new')) return;
+    // CSS
+    wp_enqueue_style('gexe-bage-css', plugins_url('newmodal/bage/bage.css', dirname(__FILE__, 2)), [], '1.0.0');
+    wp_enqueue_style('gexe-newmodal-css', plugins_url('newmodal/newmodal.css', dirname(__FILE__, 2)), [], '1.0.0');
+    wp_enqueue_style('gexe-newmodal-modal-css', plugins_url('newmodal/modal/modal.css', dirname(__FILE__, 2)), [], '1.0.0');
+    wp_enqueue_style('gexe-new-ticket-css', plugins_url('newmodal/new-ticket/assets/new-ticket.css', dirname(__FILE__, 2)), [], '1.0.0');
+
+    // JS
+    wp_enqueue_script('gexe-bage-js', plugins_url('newmodal/bage/bage.js', dirname(__FILE__, 2)), ['jquery'], '1.0.0', true);
+    wp_enqueue_script('gexe-newmodal-js', plugins_url('newmodal/newmodal.js', dirname(__FILE__, 2)), ['jquery'], '1.0.0', true);
+    wp_enqueue_script('gexe-newmodal-modal-js', plugins_url('newmodal/modal/modal.js', dirname(__FILE__, 2)), ['jquery'], '1.0.0', true);
+    wp_enqueue_script('gexe-new-ticket-js', plugins_url('newmodal/new-ticket/assets/new-ticket.js', dirname(__FILE__, 2)), ['jquery'], '1.0.0', true);
+
+    // Рантайм-параметры и nonce
+    wp_localize_script('gexe-bage-js', 'gexeNewBage', [
+        'ajaxUrl' => admin_url('admin-ajax.php'),
+        'nonce'   => wp_create_nonce('gexe_nm'),
+        'i18n'    => [
+            'loadError' => 'Ошибка загрузки заявок',
+            'unauth'    => 'Нет прав доступа',
+        ],
+    ]);
+    wp_localize_script('gexe-newmodal-modal-js', 'gexeNm', [
+        'ajaxUrl' => admin_url('admin-ajax.php'),
+        'nonce'   => wp_create_nonce('gexe_nm'),
+        'i18n'    => [
+            'commentError' => 'Не удалось отправить комментарий',
+            'statusError'  => 'Не удалось изменить статус',
+            'assignError'  => 'Не удалось назначить исполнителя',
+        ],
+    ]);
+}
+add_action('wp_enqueue_scripts', 'gexe_new_bage_maybe_enqueue_assets');
+
+// ============ AJAX (SQL-операции + API-пинг) ============
+// Добавление комментария
+function gexe_nm_ajax_add_comment() {
     try {
-        return gexe_newmodal_api_call($method, $path, $payload, $query);
-    } catch (Exception $e) {
-        $msg = $e->getMessage();
-        $need_retry = false;
-        if (is_string($msg)) {
-            $need_retry = (
-                stripos($msg, 'Token') !== false ||
-                stripos($msg, 'session') !== false ||
-                stripos($msg, 'registry') !== false ||
-                stripos($msg, 'expired') !== false
-            );
+        gexe_nm_check_nonce();
+        $ticket_id = isset($_POST['ticket_id']) ? (int) $_POST['ticket_id'] : 0;
+        $text      = isset($_POST['text']) ? wp_unslash((string)$_POST['text']) : '';
+        if ($ticket_id <= 0 || $text === '') {
+            return gexe_nm_json(false, 'bad_request', 'Некорректные параметры', []);
         }
-        if ($need_retry) {
-            if (function_exists('gexe_newmodal_api_reset_session')) {
-                gexe_newmodal_api_reset_session();
-            }
-            return gexe_newmodal_api_call($method, $path, $payload, $query);
+        $res = nm_sql_add_followup($ticket_id, $text, null);
+        if (!$res['ok']) {
+            return gexe_nm_json(false, $res['code'] ?? 'sql_error', $res['message'] ?? 'Ошибка SQL', []);
         }
-        throw $e;
+        nm_api_trigger_notifications(); // пингуем триггеры
+        return gexe_nm_json(true, 'ok', 'Комментарий добавлен', ['followup_id' => $res['followup_id'] ?? 0]);
+    } catch (Throwable $e) {
+        return gexe_nm_json(false, 'exception', $e->getMessage(), []);
     }
 }
+add_action('wp_ajax_gexe_nm_add_comment', 'gexe_nm_ajax_add_comment');
 
-/**
- * Шорткод [glpi_cards_new]
- * Рендерит чистый контейнер и подключает ассеты только для этой страницы.
- */
-add_shortcode('glpi_cards_new', function ($atts = []) {
-    // ассеты
-    $ver  = defined('GEXE_TRIGGERS_VERSION') ? GEXE_TRIGGERS_VERSION : '1.0.0';
-    $base = plugin_dir_url(__FILE__);
-    wp_enqueue_style('gexe-bage', $base . 'bage.css', [], $ver);
-    wp_enqueue_script('gexe-bage', $base . 'bage.js', [], $ver, true);
-    wp_localize_script('gexe-bage', 'gexeBage', [
-        'ajaxUrl'      => admin_url('admin-ajax.php'),
-        'nonce'        => wp_create_nonce('gexe_bage_nonce'),
-        'solvedStatus' => (int) get_option('glpi_solved_status', 6),
-        'statuses'     => [
-            ['id' => 0, 'name' => 'Все задачи'],
-            ['id' => 2, 'name' => 'В работе'],
-            ['id' => 3, 'name' => 'В плане'],
-            ['id' => 4, 'name' => 'В стопе'],
-            ['id' => 1, 'name' => 'Новые'],
-            ['id' => (int) get_option('glpi_overdue_status', 0), 'name' => 'Просрочены'],
-        ],
-        'perPage'      => 20,
-        // Маркер для новой модалки
-        'useNewModal'  => defined('GEXE_USE_NEWMODAL') ? (bool) GEXE_USE_NEWMODAL : true,
-    ]);
-    // HTML-шаблон
-    ob_start();
-    include __DIR__ . '/bage-template.php';
-    return (string) ob_get_clean();
-});
-
-/**
- * AJAX: список заявок (фильтры/поиск/пагинация).
- * Вход: page, per_page, status, category, q
- */
-add_action('wp_ajax_gexe_bage_list_tickets', function () {
-    if (!wp_verify_nonce($_POST['nonce'] ?? '', 'gexe_bage_nonce')) {
-        wp_send_json_error(['message' => 'Security check failed: invalid nonce.']);
-    }
-    $page     = max(1, (int)($_POST['page'] ?? 1));
-    $per_page = min(100, max(5, (int)($_POST['per_page'] ?? 20)));
-    $status   = (int)($_POST['status'] ?? 0);
-    $cat      = (int)($_POST['category'] ?? 0);
-    $q        = trim((string)($_POST['q'] ?? ''));
-
+// Смена статуса
+function gexe_nm_ajax_change_status() {
     try {
-        $offset = ($page - 1) * $per_page;
-        $query  = [
-            'range' => $offset . '-' . ($offset + $per_page - 1),
-        ];
-        // Поиск через /search/Ticket
-        $criteria = [];
-        // Текущий исполнитель
-        $ctx = gexe_newmodal_current_glpi_context();
-        // Ticket_User.type=2 (назначенный техник)
-        $criteria[] = ['field' => 'assign', 'searchtype' => 'equals', 'value' => $ctx['glpi_user_id']];
-        // Статус (если задан)
-        if ($status > 0) {
-            $criteria[] = ['field' => 12, 'searchtype' => 'equals', 'value' => $status]; // 12 = status
+        gexe_nm_check_nonce();
+        $ticket_id = isset($_POST['ticket_id']) ? (int) $_POST['ticket_id'] : 0;
+        $status    = isset($_POST['status']) ? (int) $_POST['status'] : 0;
+        if ($ticket_id <= 0 || $status <= 0) {
+            return gexe_nm_json(false, 'bad_request', 'Некорректные параметры', []);
         }
-        // Категория (если задана)
-        if ($cat > 0) {
-            $criteria[] = ['field' => 7, 'searchtype' => 'equals', 'value' => $cat]; // 7 = itilcategories_id
+        $res = nm_sql_update_status($ticket_id, $status);
+        if (!$res['ok']) {
+            return gexe_nm_json(false, $res['code'] ?? 'sql_error', $res['message'] ?? 'Ошибка SQL', []);
         }
-        // Текстовый поиск
-        if ($q !== '') {
-            $criteria[] = ['field' => 1, 'searchtype' => 'contains', 'value' => $q]; // 1 = name
+        nm_api_trigger_notifications();
+        return gexe_nm_json(true, 'ok', 'Статус обновлён', []);
+    } catch (Throwable $e) {
+        return gexe_nm_json(false, 'exception', $e->getMessage(), []);
+    }
+}
+add_action('wp_ajax_gexe_nm_change_status', 'gexe_nm_ajax_change_status');
+
+// Назначение исполнителя
+function gexe_nm_ajax_assign_user() {
+    try {
+        gexe_nm_check_nonce();
+        $ticket_id = isset($_POST['ticket_id']) ? (int) $_POST['ticket_id'] : 0;
+        $assignee  = isset($_POST['assignee']) ? (int) $_POST['assignee'] : 0;
+        if ($ticket_id <= 0 || $assignee <= 0) {
+            return gexe_nm_json(false, 'bad_request', 'Некорректные параметры', []);
         }
+        $res = nm_sql_assign_user($ticket_id, $assignee);
+        if (!$res['ok']) {
+            return gexe_nm_json(false, $res['code'] ?? 'sql_error', $res['message'] ?? 'Ошибка SQL', []);
+        }
+        nm_api_trigger_notifications();
+        return gexe_nm_json(true, 'ok', 'Исполнитель назначен', []);
+    } catch (Throwable $e) {
+        return gexe_nm_json(false, 'exception', $e->getMessage(), []);
+    }
+}
+add_action('wp_ajax_gexe_nm_assign_user', 'gexe_nm_ajax_assign_user');
+
+// Создание заявки (форма "Новая заявка" из модуля new-ticket)
+function gexe_nm_ajax_create_ticket() {
+    try {
+        gexe_nm_check_nonce();
         $payload = [
-            'criteria' => $criteria,
-            'forcedisplay' => [2, 1, 12, 7, 30, 15, 16], // id, name, status, category, date_mod, sla, location
-            'order' => 'DESC',
-            'sort'  => 30 // date_mod
+            'name'        => isset($_POST['name']) ? wp_unslash((string)$_POST['name']) : '',
+            'content'     => isset($_POST['content']) ? wp_unslash((string)$_POST['content']) : '',
+            'category'    => isset($_POST['category']) ? (int) $_POST['category'] : 0,
+            'location'    => isset($_POST['location']) ? (int) $_POST['location'] : 0,
+            'due'         => isset($_POST['due']) ? wp_unslash((string)$_POST['due']) : '',
+            'assignee'    => isset($_POST['assignee']) ? (int) $_POST['assignee'] : 0,
         ];
-        $data = gexe_bage_api_safe('POST', 'search/Ticket', $payload, $query);
-        // Приводим в удобный фронту формат
-        $rows = isset($data['data']) && is_array($data['data']) ? $data['data'] : [];
-        $totalcount = isset($data['totalcount']) ? (int)$data['totalcount'] : count($rows);
-        $tickets = [];
-        foreach ($rows as $row) {
-            $map = [];
-            foreach ($row as $cell) {
-                $map[$cell['name']] = $cell['value'];
-            }
-            $tickets[] = [
-                'id'        => (int)($map['id'] ?? 0),
-                'name'      => (string)($map['name'] ?? ''),
-                'status'    => (int)($map['status'] ?? 0),
-                'category'  => (string)($map['itilcategories_id'] ?? ''),
-                'date_mod'  => (string)($map['date_mod'] ?? ''),
-                'location'  => (string)($map['locations_id'] ?? ''),
-            ];
+        $res = nm_sql_create_ticket($payload);
+        if (!$res['ok']) {
+            return gexe_nm_json(false, $res['code'] ?? 'sql_error', $res['message'] ?? 'Ошибка SQL', []);
         }
-        wp_send_json_success([
-            'page'   => $page,
-            'per'    => $per_page,
-            'total'  => $totalcount,
-            'items'  => $tickets
-        ]);
-    } catch (Exception $e) {
-        wp_send_json_error(['message' => 'Ошибка загрузки списка: ' . $e->getMessage()]);
+        nm_api_trigger_notifications();
+        return gexe_nm_json(true, 'ok', 'Заявка создана', ['ticket_id' => $res['ticket_id'] ?? 0]);
+    } catch (Throwable $e) {
+        return gexe_nm_json(false, 'exception', $e->getMessage(), []);
     }
-});
+}
+add_action('wp_ajax_gexe_nm_create_ticket', 'gexe_nm_ajax_create_ticket');
 
-/**
- * AJAX: счётчики по статусам (для бейджей).
- */
-add_action('wp_ajax_gexe_bage_counters', function () {
-    if (!wp_verify_nonce($_POST['nonce'] ?? '', 'gexe_bage_nonce')) {
-        wp_send_json_error(['message' => 'Security check failed: invalid nonce.']);
-    }
+// Чтение списка карточек (для примера — может опираться на API)
+function gexe_nm_ajax_list_tickets() {
     try {
-        $ctx = gexe_newmodal_current_glpi_context();
-        $counts = [];
-        $statuses = [1,2,3,4,6]; // 6 — «решено/закрыто» по брифу
-        foreach ($statuses as $st) {
-            $payload = [
-                'criteria' => [
-                    ['field' => 'assign', 'searchtype' => 'equals', 'value' => $ctx['glpi_user_id']],
-                    ['field' => 12, 'searchtype' => 'equals', 'value' => $st],
-                ],
-            ];
-            $res = gexe_bage_api_safe('POST', 'search/Ticket', $payload, ['range' => '0-0']);
-            $counts[$st] = isset($res['totalcount']) ? (int)$res['totalcount'] : 0;
-        }
-        // «Все» — сумма открытых (без 6)
-        $counts[0] = ($counts[1] ?? 0) + ($counts[2] ?? 0) + ($counts[3] ?? 0) + ($counts[4] ?? 0);
-        wp_send_json_success(['counts' => $counts]);
-    } catch (Exception $e) {
-        wp_send_json_error(['message' => 'Ошибка подсчёта: ' . $e->getMessage()]);
+        gexe_nm_check_nonce();
+        $page  = isset($_GET['page']) ? max(1, (int) $_GET['page']) : 1;
+        $query = isset($_GET['q']) ? wp_unslash((string)$_GET['q']) : '';
+        // Здесь можно использовать API для поиска, чтобы не дублировать складную логику выборок
+        $data = gexe_newmodal_api_call('GET', '/Ticket', [
+            'criteria' => [],
+            'range'    => [($page-1)*25, 25],
+            'searchText' => $query,
+        ]);
+        return wp_send_json(['ok' => true, 'items' => $data['data'] ?? [], 'code' => 'ok', 'message' => '']);
+    } catch (Throwable $e) {
+        return wp_send_json(['ok' => false, 'code' => 'exception', 'message' => $e->getMessage()]);
     }
-});
+}
+add_action('wp_ajax_gexe_nm_list_tickets', 'gexe_nm_ajax_list_tickets');
+
+// ============ Конец AJAX ============
+
+// Безопасное отключение старых хуков/ассетов на страницах «клона» не требуется —
+// мы не подключаем ничего лишнего. Главное — не инклюдить старые файлы отсюда.
+
+// Фолбек для неавторизованных (всегда JSON с ошибкой)
+add_action('wp_ajax_nopriv_gexe_nm_add_comment', function(){ wp_send_json(['ok'=>false,'code'=>'unauth','message'=>'Требуется авторизация']); });
+add_action('wp_ajax_nopriv_gexe_nm_change_status', function(){ wp_send_json(['ok'=>false,'code'=>'unauth','message'=>'Требуется авторизация']); });
+add_action('wp_ajax_nopriv_gexe_nm_assign_user', function(){ wp_send_json(['ok'=>false,'code'=>'unauth','message'=>'Требуется авторизация']); });
+add_action('wp_ajax_nopriv_gexe_nm_create_ticket', function(){ wp_send_json(['ok'=>false,'code'=>'unauth','message'=>'Требуется авторизация']); });
+add_action('wp_ajax_nopriv_gexe_nm_list_tickets', function(){ wp_send_json(['ok'=>false,'code'=>'unauth','message'=>'Требуется авторизация']); });
 

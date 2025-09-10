@@ -1,0 +1,10 @@
+.nm-new{background:#0b1220;color:#fff;border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:14px}
+.nm-new__row{display:flex;gap:12px;margin-bottom:10px;flex-wrap:wrap}
+.nm-new__col{flex:1 1 260px}
+.nm-label{display:block;font-size:12px;color:#cbd5e1;margin-bottom:6px}
+.nm-input,.nm-select,.nm-textarea{width:100%;background:#0b1220;border:1px solid rgba(255,255,255,.12);border-radius:10px;color:#fff;padding:8px}
+.nm-textarea{min-height:90px}
+.nm-actions{display:flex;gap:8px;justify-content:flex-end}
+.nm-btn{background:#1f2937;border-radius:10px;border:1px solid rgba(255,255,255,.08);padding:8px 12px;color:#fff;cursor:pointer}
+.nm-btn--primary{background:#2563eb;border-color:#2563eb}
+.nm-error{margin-top:8px;color:#fecaca;white-space:pre-line}
